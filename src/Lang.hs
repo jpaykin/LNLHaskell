@@ -66,14 +66,22 @@ subst _       pfAdd s (Put _ a)            = case pfAdd of
 subst _       pfAdd s (LetBang _ _ _)      = case pfAdd of
   
 
-substAbs :: (Splice f1 x f2 ~ f)
+substAbs :: (Splice f1 x f2 ~ f, Splice f1' y f2' ~ f)
          => EmptyCtx f g
          -> LExp f g s
          -> AddCtx x s  f1  f2  g0  g1
          -> AddCtx y t1 f1' f2' g1 g2
          -> LExp (Splice f1' y f2') g2 t2
          -> LExp f g0 (t1 ⊸ t2)
-substAbs = undefined
+substAbs pfEmpty s pfAddX pfAddY e = Abs pfAddY' $ subst pfEmpty pfAddX' s e
+  -- since (x:s)∈g1  and g1[x |-> s]=g2,
+  -- we also have (x:s)∈g2
+  -- and so ∃ g1' such that AddCtx x s f1 f2 g1' g2
+  -- and AddCtxy t f1' f2' g0 g1'
+  -- with this we can get a substitution g1' |- e{s/x} and
+  -- g0 |- λ x.e{s/x}
+  where
+    (pfAddY', pfAddX') = addTwice pfAddX pfAddY
 
 substApp :: (Splice f1 x f2 ~ f)
          => EmptyCtx f g
@@ -83,7 +91,12 @@ substApp :: (Splice f1 x f2 ~ f)
          -> LExp f g1 (t1 ⊸ t2)
          -> LExp f g2 t1
          -> LExp f g0 t2
-substApp = undefined
+substApp pfEmpty s pfAdd pfMerge e1 e2 = 
+  case mergeAdd pfMerge pfAdd of
+    Left  (pfAdd1, pfMerge1) -> App pfMerge1 (subst pfEmpty pfAdd1 s e1) e2
+    Right (pfAdd2, pfMerge2) -> App pfMerge2 e1 (subst pfEmpty pfAdd2 s e2)
+  -- since (x:s)∈g3 and Merge g1 g2 g3, 
+  -- (x:s) ∈ g1 or (x:s) ∈ g2.
 
 
 fromVPut :: forall f g a. LVal f g (Lower a) -> a

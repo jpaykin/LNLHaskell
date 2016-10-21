@@ -58,6 +58,20 @@ data AddCtx  :: Nat -> LType -> Frame -> Frame -> Ctx -> Ctx -> * where
 addCtxWf :: AddCtx x s f1 f2 g g' -> (WfCtx (Splice f1 x f2) g, WfCtx (Splice f1 x f2) g')
 addCtxWf = undefined
 
+type family Insert s f1 f2 g :: Ctx where
+  Insert s '[]       f2 ('(x,'Unused) ': g) = '(x,'Used s) ': g
+  Insert s (_ ': f1) f2 (v ': g)            = v ': Insert s f1 f2 g
+
+-- swaping
+addTwice :: Splice f1 x f2 ~ Splice f1' y f2'
+         => AddCtx x s f1  f2  g1 g2
+         -> AddCtx y t f1' f2' g2 g3
+         -> (AddCtx y t f1' f2' g1 (Insert t f1' f2' g1), 
+             AddCtx x s f1 f2 (Insert t f1' f2' g1) g3)
+addTwice (AddHere pfWf)   (AddLater pfAdd)  = undefined
+addTwice (AddLater pfAdd) (AddHere pfWf)    = undefined
+addTwice (AddLater pfAdd) (AddLater pfAdd') = undefined
+
 -- Singleton Context ------------------------------------------
 
 -- SingletonCtx x s f1 f2 g
@@ -115,3 +129,14 @@ mergeEmpty MergeE       EmptyNil        = (EmptyNil, EmptyNil)
 mergeEmpty (MergeU pfM) (EmptyCons pfE) = 
   let (pfE1, pfE2) = mergeEmpty pfM pfE 
   in (EmptyCons pfE1, EmptyCons pfE2)
+
+type family Remove f1 f2 g :: Ctx where
+  Remove '[]       f2 ('(x, u) ': g) = '(x, 'Unused) ': g
+  Remove (_ ': f1) f2 ('(x, u) ': g) = '(x, u) ': Remove f1 f2 g
+
+
+mergeAdd :: Merge g1 g2 g 
+         -> AddCtx x s f1 f2 g0 g
+         -> Either (AddCtx x s f1 f2 (Remove f1 f2 g1) g1, Merge (Remove f1 f2 g1) g2 g0)
+                   (AddCtx x s f1 f2 (Remove f1 f2 g2) g2, Merge g1 (Remove f1 f2 g2) g0)
+mergeAdd = undefined
