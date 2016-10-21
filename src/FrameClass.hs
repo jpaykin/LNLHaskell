@@ -13,6 +13,30 @@ import Data.Constraint
 import Types
 import Frame
 
+-- Splice --------------------------------------------------
+
+type family EqId (x :: Ident) (y :: Ident) :: Bool where
+  EqId 'Z 'Z         = 'True
+  EqId 'Z ('S _)     = 'False
+  EqId ('S _) 'Z     = 'False 
+  EqId ('S m) ('S n) = EqId m n
+
+type family If (b :: Bool) (t :: k) (f :: k) :: k where
+  If 'True  t f = t
+  If 'False t f = f
+
+type family SplitL (x :: Ident) (f :: Frame) :: Frame where
+  SplitL x (y ': f) = If (EqId x y) '[] (y ': SplitL x f)
+
+type family SplitR (x :: Ident) (f :: Frame) :: Frame where
+  SplitR x (y ': f) = If (EqId x y) f (SplitL x f)
+
+type family Split (x :: Ident) (f :: Frame) :: (Frame,Frame) where
+  Split x f = '(SplitL x f, SplitR x f)
+
+class CSplice f1 x f2 f | f1 x f2 -> f where
+  splice :: Dict (f ~ Splice f1 x f2)
+
 -- InsertFrame ------------------------------------------------
 
 type family AddFrame (f1::Frame) (x::Ident) (f2::Frame) :: Frame where
@@ -68,7 +92,8 @@ class CSingletonCtx x s f1 f2 g | x s f1 f2 -> g where
 
 instance CEmptyCtx f g => CSingletonCtx x s '[] f ( '(x,'Used s) ': g) where
   singletonCtx = AddHereS emptyCtx
-instance CSingletonCtx x s f1 f2 g => CSingletonCtx x s (y ': f1) f2 ('(y,'Unused) ': g) where
+instance CSingletonCtx x s f1 f2 g 
+      => CSingletonCtx x s (y ': f1) f2 ('(y,'Unused) ': g) where
   singletonCtx = AddLaterS singletonCtx
 
 

@@ -6,22 +6,28 @@
 #-}
 
 
-module Test where
+module Examples where
 
 import Types
 import Interface
 
-e1 :: forall a. Lift '[ 'Z ] (a ⊸ a)
-e1 = suspend @'[ 'Z ] $ λ @'Z @a @'[] @'[] (var @'Z @a @'[] @'[])
 
-e2 :: forall a. Lift '[ 'Z ] (Lower (Lift '[ 'Z ] a) ⊸ a)
+
+e1 :: forall a. Lift '[ X ] (a ⊸ a)
+e1 = suspend $ λ @X @'[] $ var @X @'[]
+
+e2 :: forall a. Lift '[ X ] (Lower (Lift '[ X ] a) ⊸ a)
 -- suspend $ λ x. x >! force
-e2 = suspend @'[ 'Z ] $ λ @'Z @_ @'[] @'[] 
-                      $ var @'Z @_ @'[] @'[] >! force @'[ 'Z ]
+e2 = suspend $ λ @X @'[] 
+             $ var @X @'[]  >! force 
 
-e3 :: forall a b. Lift '[ 'Z, 'S 'Z] (a ⊸ ((a ⊸ b) ⊸ b))
+e3 :: forall a b. Lift '[ X, Y ] (a ⊸ ((a ⊸ b) ⊸ b))
 -- suspend $ λ x. λ y. x y
-e3 = suspend @'[ 'Z, 'S 'Z ] $ λ @'Z @a @'[] @'[ 'S 'Z ]
-                             $ λ @('S 'Z) @(a ⊸ b) @'[ 'Z ] @'[]
-                             $ var @('S 'Z) @(a ⊸ b) @'[ 'Z ] @'[]
-                            @@ var @'Z @a @'[] @'[ 'S 'Z ]
+e3 = suspend $ λ @X @'[]
+             $ λ @Y @'[ X ] 
+             $    var @Y @'[ X ] 
+               @@ var @X @'[]
+
+type X = 'Z
+type Y = 'S 'Z
+type Z = 'S ('S 'Z)
