@@ -90,24 +90,26 @@ fromVPut :: forall f g a. LVal f g (Lower a) -> a
 fromVPut (VPut _ a) = a
 
 eval' :: forall f g s. EmptyCtx f g -> LExp f g s -> LVal f g s
-eval' = undefined
--- eval' pfEmpty (App pfMerge e1 e2) = 
---   case v1 of
---     VAbs _ pfAdd e' -> 
---       eval' pfEmpty $ transport pfEmpty1 pfEmpty $ subst pfEmpty2 pfAdd e2' e'
---   where
---     v1                  = eval' pfEmpty1 e1
---     e2'                 = eval pfEmpty2 e2 -- call by value
--- --  e2'                 = e2               -- call by name
---     (pfEmpty1,pfEmpty2) = emptyMerge pfEmpty pfMerge
--- eval' pfEmpty (LetBang pfMerge e f) = 
---     eval' pfEmpty $ transport pfEmpty2 pfEmpty e2
---   where
---     v1                  = eval' pfEmpty1 e
---     e2                  = f $ fromVPut v1
---     (pfEmpty1,pfEmpty2) = emptyMerge pfEmpty pfMerge
--- eval' pfE (Abs pfA e) = VAbs pfE pfA e
--- eval' _ (Put a) = VPut a
+-- Abstraction is a value
+eval' pfEmpty (Abs pfAdd e)           = VAbs pfEmpty pfAdd e
+-- Application
+eval' pfEmpty (App pfMerge e1 e2)     = 
+  case (eval' pfEmpty1 e1, eval pfEmpty2 e2) of
+    (VAbs _ pfAdd e1', e2') -> 
+       case emptyUnique pfEmpty1 pfEmpty of
+         Dict -> eval' pfEmpty $ subst pfEmpty2 pfAdd e2' e1'
+  where
+    (pfEmpty1,pfEmpty2) = mergeEmpty pfMerge pfEmpty
+-- Put is a value
+eval' pfEmpty (Put _ a)               = VPut pfEmpty a
+-- LetBang
+eval' pfEmpty (LetBang pfMerge e k) = 
+  case emptyUnique pfEmpty2 pfEmpty of Dict -> eval' pfEmpty2 $ k a
+  where
+    (pfEmpty1,pfEmpty2) = mergeEmpty pfMerge pfEmpty
+    v                   = eval' pfEmpty1 e
+    a                   = fromVPut v
+
 
 eval :: forall f g s. EmptyCtx f g -> LExp f g s -> LExp f g s
 eval pfEmpty e = valToExp $ eval' pfEmpty e
