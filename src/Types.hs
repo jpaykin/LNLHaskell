@@ -21,11 +21,10 @@ infixr 0 ⊸
 type Ident = Nat
 data Usage = Used LType | Unused
 type Var = (Ident,Usage)
+type Ctx = [Usage]
 
 
 -- a frame is a list of all identifiers (free and bound) in a term.
-type Frame = [Ident]
-type Ctx = [Var]
 
 -- Nats ---------------------------------------------------------
 

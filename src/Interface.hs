@@ -12,41 +12,41 @@ import Data.Kind
 import Data.Constraint
 
 import Types
-import Frame
-import FrameClass
+import Context
+import Classes
 import Lang
 
-var :: forall x f1 f2 t g. CSingletonCtx x t f1 f2 g 
-    => LExp (Splice f1 x f2) g t
-var = Var (singletonCtx @x @t @f1 @f2)
+var :: forall x t g. CSingletonCtx x t g 
+    => LExp g t
+var = Var (singletonCtx @x @t)
 
-λ :: forall x f1 f2 s t g g'. CAddCtx x s f1 f2 g g' 
-  => LExp (Splice f1 x f2) g' t 
-  -> LExp (Splice f1 x f2) g (s ⊸ t)
-λ t = Abs (addCtx @x @_ @f1 @f2) t
+λ :: forall x s t g g'. CAddCtx x s g g' 
+  => LExp g' t 
+  -> LExp g (s ⊸ t)
+λ t = Abs (addCtx @x @_) t
 
 (@@) :: CMerge g1 g2 g3 
-    => LExp f g1 (s ⊸ t)
-    -> LExp f g2 s
-    -> LExp f g3 t
+    => LExp g1 (s ⊸ t)
+    -> LExp g2 s
+    -> LExp g3 t
 e1 @@ e2 = App merge e1 e2
 
-put :: forall (f::Frame) (g::Ctx) a. CEmptyCtx f g => a -> LExp f g (Lower a)
-put a = Put (emptyCtx @f @g) a
+put :: a -> LExp '[] (Lower a)
+put a = Put EmptyNil a
 
 (>!) :: CMerge g1 g2 g3
-     => LExp f g1 (Lower a)
-     -> (a -> LExp f g2 t)
-     -> LExp f g3 t
+     => LExp g1 (Lower a)
+     -> (a -> LExp g2 t)
+     -> LExp g3 t
 (>!) = LetBang merge
 
 
-data Lift :: Frame -> LType -> * where
-  Suspend :: forall f g t. CEmptyCtx f g => LExp f g t -> Lift f t
+data Lift :: LType -> * where
+  Suspend :: forall g t. CEmptyCtx g => LExp g t -> Lift t
 
 
 data Lin a where
-  Lin :: forall f a. Lift f (Lower a) -> Lin a
+  Lin :: Lift (Lower a) -> Lin a
 
 
 -- fmapLExp :: forall f g a b. EmptyCtx f g -> (a -> b) -> 
@@ -65,9 +65,8 @@ data Lin a where
 -- appLift :: forall f a b. Lift f (Lower (a -> b)) -> Lift f (Lower a) -> Lift f (Lower b)
 -- appLift (Suspend e1) (Suspend e2) = Suspend $ appLExp (emptyCtx @f) e1 (coerce @f e2)
 
-coerce :: forall f g1 g2 t. (CEmptyCtx f g1, CEmptyCtx f g2) => LExp f g1 t -> LExp f g2 t
-coerce e = case emptyUnique (emptyCtx @f @g1) (emptyCtx @f @g2) of
-             Dict -> e
+coerce :: forall g1 g2 t. (CEmptyCtx g1, CEmptyCtx g2) => LExp g1 t -> LExp g2 t
+coerce e = transport e (emptyCtx @g1) (emptyCtx @g2)
 
 
 -- We've got some problems here.
@@ -90,22 +89,25 @@ coerce e = case emptyUnique (emptyCtx @f @g1) (emptyCtx @f @g2) of
 
 
 -- force should also evaluate the expression
-force :: forall f g t. CEmptyCtx f g => Lift f t -> LExp f g t
+force :: forall t. Lift t -> LExp '[] t
 -- e :: LExp g t
-force (Suspend e) = coerce @f $ eval (emptyCtx @f) e
+force (Suspend e) = coerce $ eval emptyCtx e
+  -- where
+  --   c :: forall g t. CEmptyCtx g => LExp g t -> LExp '[] t
+  --   c e = coerce $ eval (emptyCtx @g) e 
 
 --forceL :: Lin a -> LExp '[] (Lower a)
 -- forceL (Lin e) = _  where
 --   e' = force e
 
-suspend :: forall f g a. CEmptyCtx f g => LExp f g a -> Lift f a
+suspend :: LExp '[] a -> Lift a
 suspend = Suspend
 
-suspendL :: forall f g a. CEmptyCtx f g => LExp f g (Lower a) -> Lin a
-suspendL = Lin . Suspend @f 
+suspendL :: forall g a. CEmptyCtx g => LExp g (Lower a) -> Lin a
+suspendL = Lin . Suspend
 
 evalL :: Lin a -> Lin a
 evalL (Lin e) = Lin $ evalL' e where
-  evalL' :: forall f a. Lift f (Lower a) -> Lift f (Lower a)
-  evalL' (Suspend e) = Suspend @f $ eval (emptyCtx @f) e
+  evalL' :: forall a. Lift (Lower a) -> Lift (Lower a)
+  evalL' (Suspend e) = Suspend $ eval (emptyCtx) e
 
