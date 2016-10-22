@@ -13,6 +13,14 @@ import Data.Constraint
 import Types
 
 
+-- Shift
+
+data Shift :: Ctx -> Ctx -> * where
+  ShiftHere  :: Shift g ('Unused ': g)
+  ShiftLater :: Shift g g' -> Shift (u ': g) (u ': g')
+
+  
+
 -- Equivalent Contexts ------------------------------------------
 
 data Equiv  :: Ctx -> Ctx -> * where
@@ -20,6 +28,13 @@ data Equiv  :: Ctx -> Ctx -> * where
   EquivEL   :: EmptyCtx g -> Equiv '[] g
   EquivER   :: EmptyCtx g -> Equiv g '[]
   EquivCons :: Equiv g1 g2 -> Equiv (u ': g1) (u ': g2)
+
+data EquivEmpty  :: Ctx -> Ctx -> * where
+  EquivENil  :: EquivEmpty '[] '[]
+  EquivEEL   :: EmptyCtx g -> EquivEmpty '[] g
+  EquivEER   :: EmptyCtx g -> EquivEmpty g '[]
+  EquivECons :: EquivEmpty g1 g2 -> EquivEmpty ('Unused ': g1) ('Unused ': g2)
+
 
 -- Append -------------------------------------------------------
 
@@ -61,6 +76,18 @@ type family Insert x s g :: Ctx where
 --addCtxEquiv :: Equiv g1 g2 -> AddCtx x s g1 g' -> AddCtx x s g2 g'
 
 
+singletonAdd :: SingletonCtx x s g -> AddCtx x s '[] g
+singletonAdd = undefined
+
+addSingleton :: AddCtx x s '[] g' -> SingletonCtx x s g'
+addSingleton = undefined
+
+addEmptyAbsurd :: AddCtx x s g g'
+               -> EmptyCtx g'
+               -> a
+addEmptyAbsurd (AddELater pfA) (EmptyCons pfE) = addEmptyAbsurd pfA pfE
+addEmptyAbsurd (AddLater pfA)  (EmptyCons pfE) = addEmptyAbsurd pfA pfE
+
 -- Singleton Context ------------------------------------------
 
 -- SingletonCtx x s f1 f2 g
@@ -70,24 +97,39 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
   AddLaterS :: SingletonCtx x s g
             -> SingletonCtx ('S x) s ('Unused ': g)
 
-addEmpty :: EmptyCtx g -> AddCtx x s g g' -> SingletonCtx x s g'
-addEmpty = undefined
+type family Sing x s :: Ctx where
+  Sing 'Z     s = '[ 'Used s ]
+  Sing ('S x) s = 'Unused ': Sing x s
+
+
 
 addSingletonEmpty :: forall x s g g'. 
                      AddCtx x s g g' 
                   -> SingletonCtx x s g'
                   -> EmptyCtx g
 addSingletonEmpty AddHere           AddHereS          = EmptyCons EmptyNil
+addSingletonEmpty AddEHere          AddHereS          = EmptyNil
 addSingletonEmpty (AddLater pfAdd) (AddLaterS pfSing) = 
                   EmptyCons $ addSingletonEmpty pfAdd pfSing
+addSingletonEmpty (AddELater pfAdd) (AddLaterS pfSing) = EmptyNil
 
+singletonInv :: SingletonCtx x s g
+             -> SingletonCtx y t g 
+             -> Dict ('(x,s) ~ '(y,t))
+singletonInv AddHereS AddHereS = Dict
+singletonInv (AddLaterS pf1) (AddLaterS pf2) = 
+  case singletonInv pf1 pf2 of Dict -> Dict
 
 addSingletonInv :: AddCtx x s g g' 
                -> SingletonCtx y t g' 
                -> Dict ('(x,s) ~ '(y,t))
+addSingletonInv AddEHere          AddHereS          = Dict
 addSingletonInv AddHere           AddHereS          = Dict
+addSingletonInv (AddELater pfAdd) (AddLaterS pfSing) = 
+  case addSingletonInv pfAdd pfSing of Dict -> Dict
 addSingletonInv (AddLater pfAdd) (AddLaterS pfSing) =
   case addSingletonInv pfAdd pfSing of Dict -> Dict
+
 
 addInsert :: AddCtx x s g1 g2
           -> Dict (g2 ~ Insert x s g1)

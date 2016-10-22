@@ -31,14 +31,14 @@ instance CEmptyCtx g => CEmptyCtx ('Unused ': g) where
 class CAddCtx x s g g' | x s g -> g' where
   addCtx :: AddCtx x s g g'
 
-instance CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
-  addCtx = AddHere 
+-- instance CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
+--   addCtx = AddHere 
 instance CAddCtx 'Z s '[] '[ 'Used s ] where
   addCtx = AddEHere
 instance CAddCtx x s g g' => CAddCtx ('S x) s (u ': g) (u ': g') where
   addCtx = AddLater addCtx
-instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
-  addCtx = AddELater addCtx
+-- instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
+--   addCtx = AddELater addCtx
 
 -- Singleton Context ------------------------------------------
 
@@ -59,9 +59,9 @@ class CMerge g1 g2 g3 | g1 g2 -> g3 where
 
 instance CMerge '[] '[] '[] where
   merge = MergeE
-instance CMerge '[] g g where
+instance CMerge '[] (u ': g) (u ': g) where
   merge = MergeEL
-instance CMerge g '[] g where
+instance CMerge (u ': g) '[] (u ': g) where
   merge = MergeER
 instance CMerge g1 g2 g3 
       => CMerge ('Used t ': g1) ('Unused ': g2) ('Used t ': g3) where
