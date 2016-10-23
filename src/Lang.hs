@@ -47,24 +47,29 @@ unshift1 :: LExp ('Unused ': g) t -> LExp g t
 unshift1 = Unshift ShiftHere
 
 data LVal :: LType -> * where
-  VAbs :: forall x s t g.
-         SingletonCtx x s g
-      -> LExp g t
+  VAbs :: forall x s t g g'.
+         EmptyCtx g 
+      -> AddCtx x s g g'
+      -> LExp g' t
       -> LVal (s ⊸ t)
   VPut :: a -> LVal (Lower a)
 
 valToExp :: LVal t -> LExp '[] t
-valToExp (VAbs pfSing e) = Abs (singletonAdd pfSing) e
+valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
 valToExp (VPut a) = Put EmptyNil a
 
 instance Num Nat where
-  _ + _ = undefined
-  _ - _ = undefined
-  _ * _ = undefined
-  abs e = e
-  signum e = undefined
+  Z   + n   = n
+  S m + n   = S (m+n)
+  Z   - n   = Z
+  m   - Z   = m
+  S m - S n = m - n
+  Z   * n   = Z
+  S m * n   = m * n + n
+  abs e     = e
+  signum e  = S Z
   fromInteger = undefined
-  negate e = undefined
+  negate e    = undefined
 
 
 singToNat :: SingletonCtx x s g -> Nat
@@ -148,20 +153,10 @@ substApp :: AddCtx x s g0 g
          -> LExp g1 (t1 ⊸ t2)
          -> LExp g2 t1
          -> LExp g0 t2
-substApp = undefined
--- substApp :: EmptyCtx g
---          -> LExp g s
---          -> AddCtx x s g0 g3 
---          -> Merge g1 g2 g3
---          -> LExp g1 (t1 ⊸ t2)
---          -> LExp g2 t1
---          -> LExp g0 t2
--- substApp pfEmpty s pfAdd pfMerge e1 e2 = 
---   case mergeAdd pfMerge pfAdd of
---     Left  (pfAdd1, pfMerge1) -> App pfMerge1 (subst pfEmpty pfAdd1 s e1) e2
---     Right (pfAdd2, pfMerge2) -> App pfMerge2 e1 (subst pfEmpty pfAdd2 s e2)
---   -- since (x:s)∈g3 and Merge g1 g2 g3, 
---   -- (x:s) ∈ g1 or (x:s) ∈ g2.
+substApp pfA s pfM e1 e2 = 
+  case mergeAdd pfM pfA of
+    Left  (pfA', pfM') -> App pfM' (subst pfA' s e1) e2
+    Right (pfA', pfM') -> App pfM' e1 (subst pfA' s e2)
 
 
 substLetBang :: AddCtx x s g g'
@@ -170,7 +165,10 @@ substLetBang :: AddCtx x s g g'
              -> LExp g1 (Lower a)
              -> (a -> LExp g2 t)
              -> LExp g t
-substLetBang = undefined
+substLetBang pfA s pfM e f =
+  case mergeAdd pfM pfA of
+    Left  (pfA', pfM') -> LetBang pfM' (subst pfA' s e) f
+    Right (pfA', pfM') -> LetBang pfM' e (\ x -> subst pfA' s (f x))
 
 substPut :: AddCtx x s g g'
          -> LExp '[] s
@@ -179,39 +177,34 @@ substPut :: AddCtx x s g g'
          -> LExp g (Lower a)
 substPut pfA _ pfE _ = addEmptyAbsurd pfA pfE
 
-substShift :: AddCtx x s g g'
+substShift :: forall x s t g0 g g'. AddCtx x s g g'
            -> LExp '[] s
            -> Shift g0 g'
            -> LExp g0 t
            -> LExp g t
-substShift (AddELater pfA) s ShiftHere            e = subst pfA s e
-substShift (AddELater pfA) s (ShiftLater pfShift) e = undefined
-substShift (AddLater pfA)  s ShiftHere            e = undefined
-substShift (AddLater pfA)  s (ShiftLater pfShift) e = undefined
-  -- Shift $ subst pfA s e
+substShift pfAdd s pfShift e = Shift pfShift' $ subst pfAdd' s e
+  where
+    -- pfAdd'   :: AddCtx x s (Remove x g0) g0
+    -- pfShift' :: Shift (Remove x g0) g
+    (pfAdd',pfShift') = addShift pfAdd pfShift
 
 substUnshift :: AddCtx x s g g'
              -> LExp '[] s
              -> Shift g' g''
              -> LExp g'' t
              -> LExp g   t
-substUnshift pfA s pfS e = undefined -- Unshift pfS e'
- where
---  e' :: LExp (ShiftF pfS g) t
-    e' = subst undefined s e
---  pfA' :: AddCtx x s (ShiftF pfS g) g''
-
--- Unshift pfS $ subst (AddLater pfA) s e
-
+substUnshift pfA s pfS e = Unshift pfShift' $ subst pfAdd' s e
+  where
+    (pfAdd',pfShift') = addShift2 pfA pfS
 
 -- Evaluation --------------------------------------------
 
 
-fromVPut :: forall g a. LVal (Lower a) -> a
+fromVPut :: LVal (Lower a) -> a
 fromVPut (VPut a) = a
 
 absToLVal :: EmptyCtx g -> AddCtx x s g g' -> LExp g' t -> LVal (s ⊸ t)
-absToLVal _ _ _ = undefined
+absToLVal pfE pfAdd e = VAbs pfE pfAdd e
 
 eval' :: forall g s. EmptyCtx g -> LExp g s -> LVal s
 -- Abstraction is a value
@@ -235,12 +228,13 @@ eval' pfEmpty (App pfMerge e1 e2)     =
     -- pfSing :: SingletonCtx x s g0
     -- e1'    :: LExp g0 t
     -- e2'    :: LExp '[] s
-    (VAbs pfSing e1', e2') -> eval' EmptyNil e'
+    (VAbs pfE pfA e1', e2') -> eval' EmptyNil e'
          where
-           e' = subst (singletonAdd pfSing) e2' e1'
+           e' = transportDown pfE $ subst pfA e2' e1'
 
   where
     (pfEmpty1,pfEmpty2) = mergeEmpty pfMerge pfEmpty
+
 -- Put is a value
 eval' pfEmpty (Put pf a)               = VPut a
 -- LetBang
@@ -254,8 +248,16 @@ eval' pfEmpty (LetBang pfMerge e k) =
     (pfEmpty1,pfEmpty2) = mergeEmpty pfMerge pfEmpty
     a                   = fromVPut $ eval' pfEmpty1 e
 
-eval' (EmptyCons pfE) (Shift _ e)   = undefined -- eval' pfE e
-eval' pfE             (Unshift _ e) = undefined -- eval' (EmptyCons pfE) e
+-- pfE :: EmptyCtx g2
+-- pfS :: Shift g1 g2
+-- e   :: LExp g1 t
+-- (Shift pfS e) :: LExp g2 s
+eval' pfE             (Shift pfS e)   = eval' (unshiftEmpty pfS pfE) e
+-- pfE :: EmptyCtx g1
+-- pfS :: Shift g1 g2
+-- e   :: LExp g2 t
+-- (Unshift pfS e) :: LExp g1 s
+eval' pfE             (Unshift pfS e) = eval' (shiftEmpty pfS pfE) e
 
 
 eval :: forall f g s. EmptyCtx g -> LExp g s -> LExp '[] s
@@ -264,9 +266,6 @@ eval pfEmpty e = valToExp $ eval' pfEmpty e
 
 -- transport --------------------------------------------
 
--- transport :: LExp g1 t -> EmptyCtx g1 -> EmptyCtx g2 -> LExp g2 t
--- transport e pf1 pf2 = transportUp pf2 $ transportDown pf1 e
-
 transport :: EquivEmpty g1 g2 -> LExp g1 t -> LExp g2 t
 transport EquivENil e = e
 transport (EquivEEL pfEmpty) e = transportUp pfEmpty e
@@ -274,102 +273,13 @@ transport (EquivEER pfEmpty) e = transportDown pfEmpty e
 transport (EquivECons pfEquiv) e = 
     shift1 $ transport pfEquiv $ unshift1 e
 
-
-
 transportDown :: EmptyCtx g -> LExp g t -> LExp '[] t
 transportDown EmptyNil       e = e
 transportDown (EmptyCons pf) e = transportDown pf $ unshift1 e
 
-
--- transportSnoc :: Snoc g 'Unused g' -> LExp g' t -> LExp g t
--- transportSnoc SnocNil        e = transportDown (EmptyCons EmptyNil) e
--- -- g ~ u' ': g0
--- -- g' ~ u' ': g0'
--- -- pfS :: Snoc g0 Unused g0'
--- -- e :: LExp (u' ': g0')
--- transportSnoc (SnocCons pfS) e = undefined -- ???
-
--- transportDownSingHere :: EmptyCtx g
---                       -> LExp ('Used s ': g) t
---                       -> LExp '[ 'Used s ] t
--- transportDownSingHere EmptyNil       e = e
--- transportDownSingHere (EmptyCons pf) e = 
---   transportDownSingHere pf $ transportSnoc (SnocCons (SnocCons SnocNil)) e
-
--- transportDownSing' :: SingletonCtx x s g' 
---                    -> LExp g' t
---                    -> (SingletonCtx x s (Sing x s), LExp (Sing x s) t)
--- transportDownSing' = undefined
-
--- transportDownSing :: EmptyCtx g 
---                   -> AddCtx x s g g' 
---                   -> LExp g' t 
---                   -> (SingletonCtx x s (Sing x s), LExp (Sing x s) t)
--- transportDownSing EmptyNil         pfAdd          e = 
---   transportDownSing' (addSingleton pfAdd) e
--- transportDownSing (EmptyCons pfE) pfAdd           e = help pfE pfAdd
-
--- help :: EmptyCtx g
---      -> AddCtx x s ('Unused ': g) g'
---      -> LExp g' t
---      -> (SingletonCtx x s (Sing x s), LExp (Sing x s) t)
--- -- g is empty
--- -- g' is empty
--- help pfE AddHere e = (AddHereS, e)
-
-
-
--- g ~ 'Unused ': g0
--- pfE :: EmptyCtx g0
--- g' ~ 'Used s ': g0
--- e :: LExp ('Used s ': g0) t
--- x ~ 'Z
--- want: (SingletonCtx Z s [Used s], LExp [Used s] t)
--- transportDownSing (EmptyCons pfE)  AddHere        e = undefined
--- g ~ 'Unused ': g0
--- pfE :: EmptyCtx g0
--- x ~ 'S x'
--- g' ~ 'Unused ': g0'
--- pfA :: AddCtx x' s g0 g0'
--- e   :: LExp ('Unused ': g0') t
--- want: ( SingletonCtx (S x') s ('Unused ': Sing x' s)
---       , LExp ('Unused ': Sing x' s) t )
--- transportDownSing (EmptyCons pfE) (AddLater pfA)  e = 
---   (AddLaterS pfS, Shift e')
---   where
---     (pfS, e') = transportDownSing pfE pfA (Unshift e)
     
 transportUp :: EmptyCtx g -> LExp '[] t -> LExp g t
 transportUp EmptyNil       e = e
 transportUp (EmptyCons pf) e = shift1 $ transportUp pf e
 
-
-
--- transportDown EmptyNil e = e
--- transportDown (EmptyCons pf) e = transportDown pf $ transportUncons e
-
--- NOT BY SHIFTING THE TERM
--- use proofs instead
--- transportUncons :: LExp ('Unused ': g) t -> LExp g t
--- transportUncons (Var (AddLaterS pfSing)) = Var pfSing
--- transportUncons (Abs pfAdd e)            = undefined
--- transportUncons (App pfMerge e1 e2)      = undefined
--- transportUncons (Put (EmptyCons pfEmpty) a)          = Put pfEmpty a
--- transportUncons (LetBang pfMerge e f)    = undefined 
-
-
-
--- transportUp :: EmptyCtx g -> LExp '[] t -> LExp g t
--- transportUp EmptyNil e = e
--- transportUp (EmptyCons pf) e = transportCons $ transportUp pf e
-
--- MAYBE ALSO NOT BY SHIFTING?
--- transportCons :: LExp g t -> LExp ('Unused ': g) t
--- transportCons (Var pfSing) = Var (AddLaterS pfSing)
--- transportCons (Abs pfAdd e) = Abs (AddLater pfAdd) $ transportCons e
--- transportCons (App pfMerge e1 e2) = App (MergeU pfMerge) (transportCons e1) (transportCons e2)
--- transportCons (Put pfEmpty a) = Put (EmptyCons pfEmpty) a
--- transportCons (LetBang pfMerge e f) = LetBang (MergeU pfMerge) (transportCons e) f'
---   where
---     f' a = transportCons (f a)
 

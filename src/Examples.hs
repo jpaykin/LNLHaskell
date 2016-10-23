@@ -49,7 +49,7 @@ e3 = suspend $ λ @X
 -- e4 :: Lift (Lower Bool)
 -- var @X :: LExp '[ t ] t
 -- λ @X (var @X) :: CAddCtx x s g '[ t ] => LExp g (s ⊸ t)
-e4 = suspend $ (λ @X (var @X)) `app` put True
+e4 = run . suspendL $ (λ @X (var @X)) `app` put "Hi"
 
 -- e5 :: (a -> b) -> Lift (Lower a ⊸ Lower b)
 e5 f = suspend $ λ @X $ var @X >! \ a -> put (f a)

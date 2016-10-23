@@ -47,7 +47,7 @@ put a = Put EmptyNil a
 
 
 data Lift :: LType -> * where
-  Suspend :: forall g t. CEmptyCtx g => LExp g t -> Lift t
+  Suspend :: forall t. LExp '[] t -> Lift t
 
 
 data Lin a where
@@ -79,37 +79,38 @@ coerce e = transportDown emptyCtx e
 
 -- We've got some problems here.
 
--- instance Functor Lin where
---   -- f :: a -> b
---   -- a :: Lin a ~ Lift f (Lower a)
---   -- fmap f a :: Lift (Lower b)
---   fmap f (Lin a) = Lin (fmapLift f a)
--- instance Applicative Lin where
---   pure a = suspendL @'[] (put @'[] a)
---   -- a :: Lift (Lower a) 
---   -- f :: Lift (Lower (a -> b))
---   -- f <*> a :: Lift (Lower b)
---   Lin f <*> Lin a = Lin $ appLift f a
--- instance Monad Lin where
---   -- e :: Lin a = Lift (Lower a)
---   -- f :: a -> Lift (Lower b)
---   e >>= f  = suspendL @'[] $ forceL e >! \a -> forceL (f a)
-
+instance Functor Lin where
+  -- f :: a -> b
+  -- a :: Lin a ~ Lift f (Lower a)
+  -- fmap f a :: Lift (Lower b)
+  fmap f (Lin (Suspend e)) = Lin . Suspend $ e >! \ x → put (f x)
+instance Applicative Lin where
+  pure a = Lin $ suspend (put a)
+  -- a :: Lift (Lower a) 
+  -- f :: Lift (Lower (a -> b))
+  -- f <*> a :: Lift (Lower b)
+  Lin (Suspend f) <*> Lin (Suspend e) = Lin . Suspend $ e >! \ x -> 
+                                                        f >! \ f' -> 
+                                                        put (f' x)
+instance Monad Lin where
+  -- e :: Lin a = Lift (Lower a)
+  -- f :: a -> Lift (Lower b)
+  Lin (Suspend e) >>= f  = Lin . Suspend $ e >! \ x -> forceL (f x)
 
 -- force should also evaluate the expression
 force :: forall t. Lift t -> LExp '[] t
 -- e :: LExp g t
 force (Suspend e) = coerce $ eval emptyCtx e
 
---forceL :: Lin a -> LExp '[] (Lower a)
--- forceL (Lin e) = _  where
---   e' = force e
+
+forceL :: Lin a -> LExp '[] (Lower a)
+forceL (Lin e) = force e
 
 suspend :: LExp '[] a -> Lift a
-suspend = Suspend
+suspend = Suspend 
 
-suspendL :: forall g a. CEmptyCtx g => LExp g (Lower a) -> Lin a
-suspendL = Lin . Suspend
+suspendL :: LExp '[] (Lower a) -> Lin a
+suspendL = Lin . Suspend 
 
 evalC :: CEmptyCtx g => LExp g a -> LExp '[] a
 evalC e = eval emptyCtx e
@@ -118,3 +119,9 @@ evalL :: Lin a -> Lin a
 evalL (Lin e) = Lin $ evalL' e where
   evalL' :: forall a. Lift (Lower a) -> Lift (Lower a)
   evalL' (Suspend e) = Suspend $ eval (emptyCtx) e
+
+evalVal :: Lin a -> LVal (Lower a) 
+evalVal (Lin (Suspend e)) = eval' EmptyNil e
+
+run :: Lin a -> a
+run e = fromVPut $ evalVal e
