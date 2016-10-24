@@ -45,18 +45,11 @@ converts some nice linear code to the annotated type-class interface.
 
 The following things still need to be done:
 
-1) Define the substitution and evaluation functions in Lang.hs. This is going to
-depend on a lot of lemmas about the predicates in Frame, which are going to be
-annoying to prove. 
-
-2) Add the Template Haskell layer and come up with syntax/a good top-level
+1) Add the Template Haskell layer and come up with syntax/a good top-level
 interface for the language. This step will involve coming up with fresh
 identifiers, good error messages, etc. and writing some kind of checker.
 
-3) Type inference in the Template Haskell layer, to minimize the type
-annotations needed?
-
-4) Add user-defined linear data types. The first step of this may be to manually
+2) Add user-defined linear data types. The first step of this may be to manually
 add units, products, sums, etc, but ideally I would like users to specify their
 own linear data types. Other considerations include the ability to use a data
 structure either linearly (if the data is linear) or non-linearly if the data is
