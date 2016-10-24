@@ -42,7 +42,14 @@ substAbs :: In x s g
          -> AddCtx y t1 g g'
          -> LExp g' t2
          -> LExp (Remove x g) (t1 ⊸ t2)
-substAbs = undefined
+substAbs pfI s pfA e = Abs pfA' $ subst pfI' s e
+  where
+ -- pfI' :: In x s g'
+    pfI' = inAdd pfI pfA
+ -- e'   :: LExp (Remove x g') t2
+    e'   = subst pfI' s e
+ -- pfA' :: AddCtx y t (Remove x g) (Remove x g')
+    pfA' = inAddRemove pfI pfA
 
 
 substApp  :: In x s g 
@@ -51,7 +58,10 @@ substApp  :: In x s g
           -> LExp g1 (t1 ⊸ t2)
           -> LExp g2 t1
           -> LExp (Remove x g) t2
-substApp = undefined
+substApp pfI s pfM e1 e2 = 
+  case mergeInSplit pfM pfI of
+    Left  pfI1 -> App (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
+    Right pfI2 -> App (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
 
 substPut :: In x s g
          -> LExp '[] s
@@ -66,7 +76,10 @@ substLetBang :: In x s g
              -> LExp g1 (Lower a)
              -> (a -> LExp g2 t)
              -> LExp (Remove x g) t
-substLetBang = undefined
+substLetBang pfI s pfM e f = 
+  case mergeInSplit pfM pfI of
+    Left  pfI1 -> LetBang (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e) f
+    Right pfI2 -> LetBang (mergeIn2 pfM pfI2 pfI) e (\x -> subst pfI2 s (f x))
 
 substShift :: In x s g
            -> LExp '[] s
@@ -79,58 +92,18 @@ substShift pfI s pfS e = Shift pfS' $ subst pfI' s e
     pfI' = inShift pfI pfS
     pfS' = shiftRemove pfS pfI' pfI
 
-{-
--- g=(Used s : g0)
--- want: LExp (Unused : g0) t
--- g'=(Used s : g0')
--- pfS :: Shift g0' g0
--- e :: LExp (Used s : g0') t
-substShift InHere s (ShiftLater pfS) e = Shift pfS' e'
-  where
---  e' :: LExp (Unused : g0')
-    e' = subst InHere s e
---  pfS' :: Shift (Unused : g0') (Unused : g0)
-    pfS' = ShiftLater pfS
-
--- g=u:g'
--- x=S y
--- pfI :: In y s g'
--- want: LExp (u:Remove y g') t
--- e :: LExp g' t
--- subst y s pfI e :: LExp (Remove y g') t
-substShift (InLater pfI) s ShiftHere        e = Shift ShiftHere $ subst pfI s e
-
--- g=u:g0
--- s=S y
--- pfI :: In y s g0
--- g'=u:g0'
--- pfS :: Shift g0' g0
--- e :: LExp (u:g0') t
--- want: LExp (u:Remove y g0) t
--- substShift pfI s pfS :: LExp g0' t -> LExp (Remove y g0) t
-substShift (InLater pfI) s (ShiftLater pfS) e = Shift pfS'' e'
-  where
- -- pfI' :: Shift (InShift y i) s g0'
-    pfI' = inShift pfI pfS
- -- e' :: LExp (u:Remove y g0') t
-    e' = subst (InLater pfI') s e
- -- pfS' :: Shift (Remove y g0') (Remove y g0)
-    pfS' = shiftRemove pfS pfI' pfI
- -- pfS'' :: Shift (u:Remove y g0') (u:Remove y g0')
-    pfS'' = ShiftLater pfS'
--}
 
 substUnshift :: In x s g
              -> LExp '[] s
              -> Shift i g g'
              -> LExp g' t
              -> LExp (Remove x g) t
-substUnshift pfI s pfS e = undefined
-{- Unshift pfS' $ subst pfI' s e
+substUnshift pfI s pfS e = Unshift pfS' $ subst pfI' s e
   where
     pfI' = inUnshift pfI pfS
-    pfS' = inUnshiftRemove pfI pfS
--}
+    pfS' = unshiftRemove pfS pfI pfI'
+
+
 -- Evaluation --------------------------------------------
 
 eval' :: EmptyCtx g -> LExp g s -> LVal s

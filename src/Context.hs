@@ -87,6 +87,20 @@ addTwice (AddLater pfAdd1) (AddLater pfAdd2) =
          in (AddLater pfAdd1', AddLater pfAdd2')
 -}
 
+inAdd :: In x s g
+      -> AddCtx y t g g'
+      -> In x s g'
+inAdd InHere        (AddLater _)   = InHere
+inAdd (InLater pfI) AddHere        = InLater pfI
+inAdd (InLater pfI) (AddLater pfA) = InLater $ inAdd pfI pfA
+
+inAddRemove :: In x s g
+            -> AddCtx y t g g'
+            -> AddCtx y t (Remove x g) (Remove x g')
+inAddRemove InHere        (AddLater pfA) = AddLater pfA
+inAddRemove (InLater pfI) AddHere        = AddHere
+inAddRemove (InLater pfI) (AddLater pfA) = AddLater $ inAddRemove pfI pfA
+
 
 singletonAdd :: SingletonCtx x s g -> AddCtx x s '[] g
 singletonAdd AddHereS        = AddEHere
@@ -168,7 +182,10 @@ type family Remove x g :: Ctx where
 emptyRemove :: EmptyCtx g
             -> AddCtx x s g g'
             -> EmptyCtx (Remove x g')
-emptyRemove = undefined
+emptyRemove EmptyNil        AddEHere        = EmptyCons EmptyNil
+emptyRemove EmptyNil        (AddELater pfA) = EmptyCons $ emptyRemove EmptyNil pfA
+emptyRemove pfE             AddHere         = pfE
+emptyRemove (EmptyCons pfE) (AddLater pfA)  = EmptyCons $ emptyRemove pfE pfA
 
 
 -- In -------------------------------
@@ -202,10 +219,10 @@ inRemove (InLater pfIn) = AddLater $ inRemove pfIn
 -- Relation between In and Shift
 
 type family InShift x n :: Nat where
---   InShift 'Z     'Z     = undefined
   InShift ('S x) 'Z     = x
   InShift 'Z     ('S n) = 'Z
   InShift ('S x) ('S n) = 'S (InShift x n)
+
 
 inShift :: In x s g
         -> Shift i g' g
@@ -213,6 +230,19 @@ inShift :: In x s g
 inShift (InLater pfI) ShiftHere = pfI
 inShift InHere        (ShiftLater pfS) = InHere
 inShift (InLater pfI) (ShiftLater pfS) = InLater $ inShift pfI pfS
+
+type family InUnshift x i :: Nat where
+  InUnshift x      'Z     = 'S x
+  InUnshift 'Z     ('S i) = 'Z
+  InUnshift ('S x) ('S i) = 'S (InUnshift x i)
+
+inUnshift :: In x s g
+          -> Shift i g g'
+          -> In (InUnshift x i) s g'
+inUnshift pfI           ShiftHere        = InLater pfI
+inUnshift InHere        (ShiftLater pfS) = InHere
+inUnshift (InLater pfI) (ShiftLater pfS) = InLater $ inUnshift pfI pfS
+
 
 shiftRemove :: Shift i g g'
             -> In (InShift x i) s g
@@ -249,6 +279,16 @@ shiftRemove (ShiftLater pfS) pfI InHere         = ShiftLater pfS
 shiftRemove (ShiftLater pfS) (InLater pfI) (InLater pfI') = 
     ShiftLater $ shiftRemove pfS pfI pfI'
 
+unshiftRemove :: Shift i g g'
+              -> In x s g
+              -> In (InUnshift x i) t g'
+              -> Shift i (Remove x g) (Remove (InUnshift x i) g')
+unshiftRemove ShiftHere        (InLater pfI) pfI'           = ShiftHere
+unshiftRemove (ShiftLater pfS) InHere        pfI'           = ShiftLater pfS
+unshiftRemove (ShiftLater pfS) (InLater pfI) (InLater pfI') = 
+    ShiftLater $ unshiftRemove pfS pfI pfI'
+
+
 -- Relation between In and Merge
 
 mergeInSplit :: Merge g1 g2 g
@@ -274,13 +314,27 @@ mergeInSplit (MergeU pfM) (InLater pfI) =
     Right pfI' -> Right $ InLater pfI'
 
 
-{-
 mergeIn1 :: Merge g1 g2 g3
          -> In x s g1
          -> In x s g3
          -> Merge (Remove x g1) g2 (Remove x g3)
-mergeIn1 = undefined
--}
+mergeIn1 MergeER _ _ = MergeER
+mergeIn1 (MergeL pfM) InHere InHere = MergeU pfM
+mergeIn1 (MergeL pfM) (InLater pfI1) (InLater pfI3) = MergeL $ mergeIn1 pfM pfI1 pfI3
+mergeIn1 (MergeR pfM) (InLater pfI1) (InLater pfI3) = MergeR $ mergeIn1 pfM pfI1 pfI3
+mergeIn1 (MergeU pfM) (InLater pfI1) (InLater pfI3) = MergeU $ mergeIn1 pfM pfI1 pfI3
+
+mergeIn2 :: Merge g1 g2 g3
+         -> In x s g2
+         -> In x s g3
+         -> Merge g1 (Remove x g2) (Remove x g3)
+mergeIn2 MergeEL _ _ = MergeEL
+mergeIn2 (MergeR pfM) InHere InHere = MergeU pfM
+mergeIn2 (MergeL pfM) (InLater pfI2) (InLater pfI3) = MergeL $ mergeIn2 pfM pfI2 pfI3
+mergeIn2 (MergeR pfM) (InLater pfI2) (InLater pfI3) = MergeR $ mergeIn2 pfM pfI2 pfI3
+mergeIn2 (MergeU pfM) (InLater pfI2) (InLater pfI3) = MergeU $ mergeIn2 pfM pfI2 pfI3
+
+
 
 {-
 addTwiceEquiv :: AddCtx x s g1 g
@@ -344,6 +398,7 @@ mergeAddRemove :: Merge g1 g2 g
 mergeAddRemove = undefined
 
 -}
+
 
 --- Shifting and Adding
 
