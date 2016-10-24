@@ -12,6 +12,10 @@ import Types
 import Lang
 import Interface
 
+type X = 'Z
+type Y = 'S 'Z
+type Z = 'S ('S 'Z)
+
 
 e0 :: forall a. LExp '[] (a ⊸ a)
 e0 = λ @X (var @X)
@@ -25,7 +29,7 @@ e0' = var @X
 
 
 --e1 :: forall a. Lift (a ⊸ a)
-e1 = suspend $ λ @X (var @X)
+lid = suspend $ λ @X (var @X)
 
 -- e1 = [ suspend | λ x -> x |]
 
@@ -44,18 +48,15 @@ e2 = suspend $ λ @X
 e3 = suspend $ λ @X 
              $ λ @Y 
              $    var @Y 
-               @@ var @X 
+               `app` var @X 
 
 -- e4 :: Lift (Lower Bool)
 -- var @X :: LExp '[ t ] t
 -- λ @X (var @X) :: CAddCtx x s g '[ t ] => LExp g (s ⊸ t)
-e4 = run . suspendL $ (λ @X (var @X)) `app` put "Hi"
+e4 = run . suspendL $ app @'[] (force lid) (put "Hi")
 
 -- e5 :: (a -> b) -> Lift (Lower a ⊸ Lower b)
 e5 f = suspend $ λ @X $ var @X >! \ a -> put (f a)
 -- e5 f = [ suspend | λ x → x >! λ a -> put (f a) |]
 
-type X = 'Z
-type Y = 'S 'Z
-type Z = 'S ('S 'Z)
 

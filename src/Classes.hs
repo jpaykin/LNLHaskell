@@ -14,7 +14,15 @@ import Types
 import Context
 
 
+-- In Context ---------------------------------------------
 
+class CIn x s g where
+  inCtx :: In x s g
+
+instance CIn 'Z s ('Used s ': g) where
+  inCtx = InHere
+instance CIn x s g => CIn ('S x) s (u ': g) where
+  inCtx = InLater inCtx
 
 -- Empty Context ------------------------------------------------
 

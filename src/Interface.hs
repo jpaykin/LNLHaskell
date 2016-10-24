@@ -15,26 +15,23 @@ import Types
 import Context
 import Classes
 import Lang
+import Subst
 
 var :: forall x g t. CSingletonCtx x t g 
     => LExp g t
 var = Var (singletonCtx @x @t)
 
-λ :: forall x s t g g'. CAddCtx x s g g' 
+λ :: forall x s t g g'. CAddCtx x s g g'
   => LExp g' t 
   -> LExp g (s ⊸ t)
-λ t = Abs (addCtx @x @_) t
+λ t = Abs (addCtx @x) t
 
-(@@) :: CMerge g1 g2 g3 
+app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)
     -> LExp g2 s
     -> LExp g3 t
-e1 @@ e2 = App merge e1 e2
+e1 `app` e2 = App merge e1 e2
 
-app :: LExp '[] (s ⊸ t)
-      -> LExp g s
-      -> LExp g t
-e1 `app` e2 = App MergeEL e1 e2
 
 put :: a -> LExp '[] (Lower a)
 put a = Put EmptyNil a

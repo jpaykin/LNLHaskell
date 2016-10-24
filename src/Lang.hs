@@ -35,8 +35,8 @@ data LExp :: Ctx -> LType -> * where
       -> (a -> LExp g2 t)
       -> LExp g3 t
 
-  Shift   :: Shift g1 g2 -> LExp g1 t -> LExp g2 t
-  Unshift :: Shift g1 g2 -> LExp g2 t -> LExp g1 t
+  Shift   :: Shift i g1 g2 -> LExp g1 t -> LExp g2 t
+  Unshift :: Shift i g1 g2 -> LExp g2 t -> LExp g1 t
 
 -- values
 
@@ -107,7 +107,7 @@ instance Show (LExp g t) where
   show (Unshift _ e)   = show e
 
 -- Substitution ------------------------------------------------------
-
+{-
 subst :: forall x s t g g'.
          AddCtx x s g g'
       -> LExp '[] s 
@@ -155,6 +155,8 @@ substApp :: AddCtx x s g0 g
          -> LExp g0 t2
 substApp pfA s pfM e1 e2 = 
   case mergeAdd pfM pfA of
+                       -- pfA' :: AddCtx x s (Remove x g1) g1
+                       -- pfM' :: Merge (Remove x g1) g2 (Remove x g)
     Left  (pfA', pfM') -> App pfM' (subst pfA' s e1) e2
     Right (pfA', pfM') -> App pfM' e1 (subst pfA' s e2)
 
@@ -196,6 +198,7 @@ substUnshift :: AddCtx x s g g'
 substUnshift pfA s pfS e = Unshift pfShift' $ subst pfAdd' s e
   where
     (pfAdd',pfShift') = addShift2 pfA pfS
+-}
 
 -- Evaluation --------------------------------------------
 
@@ -206,6 +209,7 @@ fromVPut (VPut a) = a
 absToLVal :: EmptyCtx g -> AddCtx x s g g' -> LExp g' t -> LVal (s ⊸ t)
 absToLVal pfE pfAdd e = VAbs pfE pfAdd e
 
+{-
 eval' :: forall g s. EmptyCtx g -> LExp g s -> LVal s
 -- Abstraction is a value
 -- pfEmpty :: EmptyCtx g
@@ -262,7 +266,7 @@ eval' pfE             (Unshift pfS e) = eval' (shiftEmpty pfS pfE) e
 
 eval :: forall f g s. EmptyCtx g -> LExp g s -> LExp '[] s
 eval pfEmpty e = valToExp $ eval' pfEmpty e
-
+-}
 
 -- transport --------------------------------------------
 

@@ -13,17 +13,17 @@ import Data.Constraint
 import Types
 
 
--- Shift
+-- Shift -----------------------------------------------------
 
-data Shift :: Ctx -> Ctx -> * where
-  ShiftHere  :: Shift g ('Unused ': g)
-  ShiftLater :: Shift g g' -> Shift (u ': g) (u ': g')
+data Shift :: Nat -> Ctx -> Ctx -> * where
+  ShiftHere  :: Shift 'Z g ('Unused ': g)
+  ShiftLater :: Shift n g g' -> Shift ('S n) (u ': g) (u ': g')
 
-shiftEmpty :: Shift g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
+shiftEmpty :: Shift n g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
 shiftEmpty ShiftHere            pfEmpty             = EmptyCons pfEmpty  
 shiftEmpty (ShiftLater pfShift) (EmptyCons pfEmpty) = EmptyCons (shiftEmpty pfShift pfEmpty)
 
-unshiftEmpty :: Shift g1 g2 -> EmptyCtx g2 -> EmptyCtx g1
+unshiftEmpty :: Shift n g1 g2 -> EmptyCtx g2 -> EmptyCtx g1
 unshiftEmpty ShiftHere            (EmptyCons pfEmpty) = pfEmpty
 unshiftEmpty (ShiftLater pfShift) (EmptyCons pfEmpty) = EmptyCons (unshiftEmpty pfShift pfEmpty)
 
@@ -59,12 +59,13 @@ data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
   AddELater  :: AddCtx x s '[] g -> AddCtx ('S x) s '[] ('Unused ': g)
   AddLater   :: AddCtx x s g g'  -> AddCtx ('S x) s (u ': g) (u ': g')
 
-
+{-
 type family Insert x s g :: Ctx where
   Insert 'Z     s '[]            = '[ 'Used s ]
   Insert 'Z     s ('Unused ': g) = 'Used s ': g
   Insert ('S x) s '[]            = 'Unused ': Insert x s '[]
   Insert ('S x) s (u       ': g) = u ': Insert x s g
+
 
 addInsert :: AddCtx x s g1 g2
           -> Dict (g2 ~ Insert x s g1)
@@ -84,7 +85,7 @@ addTwice (AddLater pfAdd)   AddHere          =
 addTwice (AddLater pfAdd1) (AddLater pfAdd2) = 
          let (pfAdd1', pfAdd2') = addTwice pfAdd1 pfAdd2
          in (AddLater pfAdd1', AddLater pfAdd2')
-
+-}
 
 
 singletonAdd :: SingletonCtx x s g -> AddCtx x s '[] g
@@ -95,11 +96,6 @@ addSingleton :: AddCtx x s '[] g' -> SingletonCtx x s g'
 addSingleton AddEHere        = AddHereS
 addSingleton (AddELater pfA) = AddLaterS $ addSingleton pfA
 
-addEmptyAbsurd :: AddCtx x s g g'
-               -> EmptyCtx g'
-               -> a
-addEmptyAbsurd (AddELater pfA) (EmptyCons pfE) = addEmptyAbsurd pfA pfE
-addEmptyAbsurd (AddLater pfA)  (EmptyCons pfE) = addEmptyAbsurd pfA pfE
 
 -- Singleton Context ------------------------------------------
 
@@ -110,6 +106,13 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
   AddLaterS :: SingletonCtx x s g
             -> SingletonCtx ('S x) s ('Unused ': g)
 
+
+singletonEmpty :: SingletonCtx x s g
+               -> EmptyCtx (Remove x g)
+singletonEmpty AddHereS        = EmptyCons EmptyNil
+singletonEmpty (AddLaterS pfS) = EmptyCons $ singletonEmpty pfS
+
+{-
 addSingletonEmpty :: forall x s g g'. 
                      AddCtx x s g g' 
                   -> SingletonCtx x s g'
@@ -119,23 +122,7 @@ addSingletonEmpty AddEHere          AddHereS          = EmptyNil
 addSingletonEmpty (AddLater pfAdd) (AddLaterS pfSing) = 
                   EmptyCons $ addSingletonEmpty pfAdd pfSing
 addSingletonEmpty (AddELater pfAdd) (AddLaterS pfSing) = EmptyNil
-
-singletonInv :: SingletonCtx x s g
-             -> SingletonCtx y t g 
-             -> Dict ('(x,s) ~ '(y,t))
-singletonInv AddHereS AddHereS = Dict
-singletonInv (AddLaterS pf1) (AddLaterS pf2) = 
-  case singletonInv pf1 pf2 of Dict -> Dict
-
-addSingletonInv :: AddCtx x s g g' 
-               -> SingletonCtx y t g' 
-               -> Dict ('(x,s) ~ '(y,t))
-addSingletonInv AddEHere          AddHereS          = Dict
-addSingletonInv AddHere           AddHereS          = Dict
-addSingletonInv (AddELater pfAdd) (AddLaterS pfSing) = 
-  case addSingletonInv pfAdd pfSing of Dict -> Dict
-addSingletonInv (AddLater pfAdd) (AddLaterS pfSing) =
-  case addSingletonInv pfAdd pfSing of Dict -> Dict
+-}
 
 
 
@@ -170,20 +157,217 @@ mergeEmpty (MergeU pfM) (EmptyCons pfE) =
   let (pfE1, pfE2) = mergeEmpty pfM pfE 
   in (EmptyCons pfE1, EmptyCons pfE2)
 
+
+-- Remove ------------------------------------------
+
 type family Remove x g :: Ctx where
   Remove 'Z     (_ ': g) = 'Unused ': g
   Remove ('S x) (u ': g) = u ': Remove x g
 
 
+emptyRemove :: EmptyCtx g
+            -> AddCtx x s g g'
+            -> EmptyCtx (Remove x g')
+emptyRemove = undefined
+
+
+-- In -------------------------------
+
+data In :: Nat -> LType -> Ctx -> * where
+  InHere  :: In  'Z s ('Used s ': g)
+  InLater :: In x s g -> In ('S x) s (u ': g)
+
+
+addIn :: AddCtx x s g g' -> In x s g'
+addIn AddEHere = InHere
+addIn AddHere  = InHere
+addIn (AddELater pf) = InLater $ addIn pf
+addIn (AddLater pf)  = InLater $ addIn pf
+
+inEmptyAbsurd :: In x s g -> EmptyCtx g -> a
+inEmptyAbsurd (InLater pfI) (EmptyCons pfE) = inEmptyAbsurd pfI pfE
+
+singletonInInv :: In x s g
+               -> SingletonCtx y t g
+               -> Dict ('(x,s)~'(y,t))
+singletonInInv InHere         AddHereS       = Dict
+singletonInInv (InLater pfI) (AddLaterS pfS) = 
+  case singletonInInv pfI pfS of Dict -> Dict
+
+inRemove :: In x s g
+         -> AddCtx x s (Remove x g) g
+inRemove InHere = AddHere 
+inRemove (InLater pfIn) = AddLater $ inRemove pfIn
+
+-- Relation between In and Shift
+
+type family InShift x n :: Nat where
+--   InShift 'Z     'Z     = undefined
+  InShift ('S x) 'Z     = x
+  InShift 'Z     ('S n) = 'Z
+  InShift ('S x) ('S n) = 'S (InShift x n)
+
+inShift :: In x s g
+        -> Shift i g' g
+        -> In (InShift x i) s g'
+inShift (InLater pfI) ShiftHere = pfI
+inShift InHere        (ShiftLater pfS) = InHere
+inShift (InLater pfI) (ShiftLater pfS) = InLater $ inShift pfI pfS
+
+shiftRemove :: Shift i g g'
+            -> In (InShift x i) s g
+            -> In x t g'
+            -> Shift i (Remove (InShift x i) g) (Remove x g')
+-- i=Z
+-- g'=Unused:g
+-- x=S y
+-- pfI' = In y t g
+-- Remove y g' = Unused:Remove y g
+-- InShift x i = y
+-- Remove (InShift x i) g = Remove y g
+shiftRemove ShiftHere        pfI (InLater pfI') = ShiftHere
+-- i=S j
+-- g=Used s:g0
+-- pfS :: Shift j g0 g0'
+-- x=Z
+-- g'=Used s:g0'
+-- InShift x i = InShift Z (S j) = Z
+-- Remove (InShift x i) g = Remove Z (Used s : g0) = Unused : g0
+-- Remove x g' = Remove Z (Used s : g0') = Unused : g0'
+shiftRemove (ShiftLater pfS) pfI InHere         = ShiftLater pfS
+-- i=S j
+-- g=u:g0
+-- g'=u:g0'
+-- pfS :: Shift j g0 g0'
+-- x=S y
+-- pfI' :: In y s g0'
+-- InShift x i = InShift (S y) (S j) = S (InShift y j)
+-- pfI :: In (InShift y j) g0
+-- shiftREmove pfS pfI pfI' :: Shift j (Remove (InShift y j) g0) (Remove y g0')
+-- want: Shift (S j) (Remove (S (InShift y j)) (u:g0)) (Remove (S y) (u:g0'))
+--     = Shift (S j) (u:Remove (InShift y j) g0) (u:Remove y g0')
+shiftRemove (ShiftLater pfS) (InLater pfI) (InLater pfI') = 
+    ShiftLater $ shiftRemove pfS pfI pfI'
+
+-- Relation between In and Merge
+
+mergeInSplit :: Merge g1 g2 g
+             -> In x s g
+             -> Either (In x s g1) (In x s g2)
+mergeInSplit MergeEL      InHere = Right InHere
+mergeInSplit MergeER      InHere = Left  InHere
+mergeInSplit (MergeL pfM) InHere = Left InHere
+mergeInSplit (MergeR pfM) InHere = Right InHere
+mergeInSplit MergeEL      (InLater pfI) = Right $ InLater pfI
+mergeInSplit MergeER      (InLater pfI) = Left  $ InLater pfI
+mergeInSplit (MergeL pfM) (InLater pfI) = 
+  case mergeInSplit pfM pfI of
+    Left  pfI' -> Left  $ InLater pfI'
+    Right pfI' -> Right $ InLater pfI'
+mergeInSplit (MergeR pfM) (InLater pfI) = 
+  case mergeInSplit pfM pfI of
+    Left  pfI' -> Left  $ InLater pfI'
+    Right pfI' -> Right $ InLater pfI'
+mergeInSplit (MergeU pfM) (InLater pfI) = 
+  case mergeInSplit pfM pfI of
+    Left  pfI' -> Left  $ InLater pfI'
+    Right pfI' -> Right $ InLater pfI'
+
+
+{-
+mergeIn1 :: Merge g1 g2 g3
+         -> In x s g1
+         -> In x s g3
+         -> Merge (Remove x g1) g2 (Remove x g3)
+mergeIn1 = undefined
+-}
+
+{-
+addTwiceEquiv :: AddCtx x s g1 g
+              -> AddCtx x s g2 g
+              -> Equiv g1 g2
+addTwiceEquiv = undefined
+
+
+mergeER :: Equiv g g'
+        -> Merge g '[] g'
+mergeER = undefined
+mergeEL :: Equiv g g'
+        -> Merge '[] g g'
+mergeEL = undefined
+
+mergeAdd1Help :: g1' ~ Remove x (Used t:g1)
+              => Merge g1 g2 g3
+              -> AddCtx x s g1' (Used t:g1)
+              -> AddCtx x s g3' (Used t:g3)
+              -> Merge g1' ('Unused ': g2) g3'
+-- g1'=Unused:g1
+-- g3'=[]
+mergeAdd1Help pfM AddHere AddEHere = undefined
+
+mergeAdd1 :: g1' ~ Remove x g1 => Merge g1 g2 g3
+          -> AddCtx x s g1' g1
+          -> AddCtx x s g3' g3
+          -> Merge g1' g2 g3'
+mergeAdd1 MergeER      pfA1 pfA3 = mergeER $ addTwiceEquiv pfA1 pfA3
+-- g1=Used t:g1''
+-- g2='Unused:g2''
+-- g3=Used t:g3''
+-- pfM :: Merge g1'' g2'' g3''
+-- pfA1 :: AddCtx x s g1' (Used t:g1'')
+-- pfA2 :: AddCtx x s g3' (Used t:g3'')
+-- want: Merge g1' (Unused:g2'') g3'
+mergeAdd1 (MergeL pfM) pfA1 pfA3 = mergeAdd1Help pfM pfA1 pfA3
+mergeAdd1 _ _ _ = undefined
+
+mergeAdd2 :: Merge g1 g2 g3
+          -> AddCtx x s g2' g2
+          -> AddCtx x s g3' g3
+          -> Merge g1 g2' g3'
+mergeAdd2 = undefined
+
+-- I'm not sure we can really get Merge _ _ g0;
+-- what if g0 is []??
+-- we really want Merge (Remove x g1) g2 (Remove x g3)
 mergeAdd :: Merge g1 g2 g 
          -> AddCtx x s g0 g
          -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 g0)
                    (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) g0)
-mergeAdd = undefined
+mergeAdd pfM pfA = case mergeInSplit pfM (addIn pfA) of 
+  Left  pfI -> Left  (inRemove pfI, mergeAdd1 pfM (inRemove pfI) pfA)
+  Right pfI -> Right (inRemove pfI, mergeAdd2 pfM (inRemove pfI) pfA)
 
+mergeAddRemove :: Merge g1 g2 g 
+         -> AddCtx x s g0 g
+         -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 (Remove x g))
+                   (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) (Remove x g))
+mergeAddRemove = undefined
+
+-}
 
 --- Shifting and Adding
 
+-- no because the index might not be the same
+{-
+inShiftRemove :: In x s g
+              -> Shift g' g
+              -> Shift g' (Remove x g)
+inShiftRemove InHere       (ShiftLater pfS) = undefined
+
+
+
+
+inUnshift :: In x s g
+          -> Shift g g'
+          -> In x s g'
+inUnshift = undefined
+
+inUnshiftRemove :: In x s g
+                -> Shift g g'
+                -> Shift (Remove x g) (Remove x g')
+inUnshiftRemove = undefined
+-}
+{-
 addShift :: AddCtx x s g1 g2
          -> Shift g2' g2
          -> (AddCtx x s (Remove x g2') g2', Shift (Remove x g2') g1)
@@ -221,3 +405,4 @@ addShift2 :: AddCtx x s g1 g2
           -> Shift g2 g3
           -> (AddCtx x s (Remove x g3) g3, Shift g1 (Remove x g3))
 addShift2 = undefined
+-}

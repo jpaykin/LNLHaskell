@@ -29,3 +29,7 @@ type Ctx = [Usage]
 -- Nats ---------------------------------------------------------
 
 data Nat = Z | S Nat deriving (Eq, Ord)
+
+type family Plus m n :: Nat where
+  Plus 'Z n = n
+  Plus ('S m) n = 'S (Plus m n)
