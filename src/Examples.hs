@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase, PartialTypeSignatures
+             EmptyCase, PartialTypeSignatures, TemplateHaskell
 #-}
 
 
@@ -11,6 +11,10 @@ module Examples where
 import Types
 import Lang
 import Interface
+import TH 
+
+import Language.Haskell.TH
+import Prelude hiding (abs)
 
 type X = 'Z
 type Y = 'S 'Z
@@ -30,6 +34,13 @@ e0' = var @X
 
 --e1 :: forall a. Lift (a ⊸ a)
 idL = suspend $ λ @X (var @X)
+
+
+suspendT e = $(transformTH [|e|])
+
+idNL x = x
+idTH = $(transformTH $ [| \x -> x |])
+--idTH' = suspendT (\x -> x)
 
 -- e1 = [ suspend | λ x -> x |]
 

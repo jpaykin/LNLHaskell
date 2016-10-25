@@ -59,7 +59,6 @@ instance CSingletonCtx x s g
       => CSingletonCtx ('S x) s ('Unused ': g) where
   singletonCtx = AddLaterS singletonCtx
 
-
 -- Merge ----------------------------------------------------
 
 class CMerge g1 g2 g3 | g1 g2 -> g3 where

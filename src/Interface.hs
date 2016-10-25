@@ -21,10 +21,19 @@ var :: forall x g t. CSingletonCtx x t g
     => LExp g t
 var = Var (singletonCtx @x @t)
 
+varSing :: forall x s. LExp (Sing x s) s
+varSing = undefined
+
 λ :: forall x s t g g'. CAddCtx x s g g'
   => LExp g' t 
   -> LExp g (s ⊸ t)
 λ t = Abs (addCtx @x) t
+
+abs :: forall x s t g g'. CAddCtx x s g g'
+    => NatS x
+    -> LExp g' t
+    -> LExp g (s ⊸ t)
+abs _ = λ @x
 
 app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)

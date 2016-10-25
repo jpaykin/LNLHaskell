@@ -2,13 +2,14 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase
+             EmptyCase, DeriveLift, StandaloneDeriving
 #-}
 
 module Context where
 
 import Data.Kind
 import Data.Constraint
+import Language.Haskell.TH.Syntax
 
 import Types
 
@@ -18,6 +19,9 @@ import Types
 data Shift :: Nat -> Ctx -> Ctx -> * where
   ShiftHere  :: Shift 'Z g ('Unused ': g)
   ShiftLater :: Shift n g g' -> Shift ('S n) (u ': g) (u ': g')
+deriving instance Lift (Shift i g g')
+--deriving instance Lift (Shift 'Z g ('Unused ': g))
+--deriving instance Lift (Shift n g g') => Lift (Shift ('S n) (u ': g) (u ': g'))
 
 shiftEmpty :: Shift n g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
 shiftEmpty ShiftHere            pfEmpty             = EmptyCons pfEmpty  
@@ -34,20 +38,21 @@ data Equiv  :: Ctx -> Ctx -> * where
   EquivEL   :: EmptyCtx g -> Equiv '[] g
   EquivER   :: EmptyCtx g -> Equiv g '[]
   EquivCons :: Equiv g1 g2 -> Equiv (u ': g1) (u ': g2)
+deriving instance Lift (Equiv g g')
 
 data EquivEmpty  :: Ctx -> Ctx -> * where
   EquivENil  :: EquivEmpty '[] '[]
   EquivEEL   :: EmptyCtx g -> EquivEmpty '[] g
   EquivEER   :: EmptyCtx g -> EquivEmpty g '[]
   EquivECons :: EquivEmpty g1 g2 -> EquivEmpty ('Unused ': g1) ('Unused ': g2)
-
+deriving instance Lift (EquivEmpty g g')
 
 -- Empty Context ------------------------------------------------
 
 data EmptyCtx :: Ctx -> * where
   EmptyNil  :: EmptyCtx '[]
   EmptyCons :: forall x g. EmptyCtx g -> EmptyCtx ('Unused ': g)
-
+deriving instance Lift (EmptyCtx g)
 
 -- Add To Context ----------------------------------------------
 
@@ -58,6 +63,7 @@ data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
   AddHere    :: AddCtx 'Z s ('Unused ': g) ('Used s ': g)
   AddELater  :: AddCtx x s '[] g -> AddCtx ('S x) s '[] ('Unused ': g)
   AddLater   :: AddCtx x s g g'  -> AddCtx ('S x) s (u ': g) (u ': g')
+deriving instance Lift (AddCtx x s g g')
 
 {-
 type family Insert x s g :: Ctx where
@@ -119,7 +125,7 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
   AddHereS  :: SingletonCtx 'Z s '[ 'Used s ]
   AddLaterS :: SingletonCtx x s g
             -> SingletonCtx ('S x) s ('Unused ': g)
-
+deriving instance Lift (SingletonCtx x s g)
 
 singletonEmpty :: SingletonCtx x s g
                -> EmptyCtx (Remove x g)
@@ -138,6 +144,14 @@ addSingletonEmpty (AddLater pfAdd) (AddLaterS pfSing) =
 addSingletonEmpty (AddELater pfAdd) (AddLaterS pfSing) = EmptyNil
 -}
 
+type family Sing x s :: Ctx where
+  Sing 'Z s = '[ 'Used s ]
+  Sing ('S x) s = 'Unused ': Sing x s
+
+singS :: NatS x -> SingletonCtx x s (Sing x s)
+singS ZS = AddHereS
+singS (SS x) = AddLaterS $ singS x
+
 
 
 -- Merge ----------------------------------------------------
@@ -154,7 +168,7 @@ data Merge :: Ctx -> Ctx -> Ctx -> * where
          -> Merge ('Unused ': g1) ('Used t ': g2) ('Used t ': g3)
   MergeU :: Merge g1 g2 g3 
          -> Merge ('Unused ': g1) ('Unused ': g2) ('Unused ': g3)
-
+deriving instance Lift (Merge g1 g2 g3)
 
 mergeEmpty3 :: forall g. EmptyCtx g -> Merge g g g
 mergeEmpty3 EmptyNil = MergeE
@@ -193,7 +207,9 @@ emptyRemove (EmptyCons pfE) (AddLater pfA)  = EmptyCons $ emptyRemove pfE pfA
 data In :: Nat -> LType -> Ctx -> * where
   InHere  :: In  'Z s ('Used s ': g)
   InLater :: In x s g -> In ('S x) s (u ': g)
-
+deriving instance Lift (In x s g)
+-- deriving instance Lift (In 'Z s ('Used s ': g))
+-- deriving instance Lift (In x s g) => Lift (In ('S x) s (u ': g))
 
 addIn :: AddCtx x s g g' -> In x s g'
 addIn AddEHere = InHere

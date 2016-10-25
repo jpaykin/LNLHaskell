@@ -2,13 +2,14 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, EmptyCase
+             ScopedTypeVariables, EmptyCase, DeriveLift, StandaloneDeriving
 #-}
 
 module Types where
 
 import Data.Kind
 import Data.Constraint
+import Language.Haskell.TH.Syntax
 
 
 data LType where
@@ -28,8 +29,16 @@ type Ctx = [Usage]
 
 -- Nats ---------------------------------------------------------
 
-data Nat = Z | S Nat deriving (Eq, Ord)
+data Nat = Z | S Nat deriving (Eq, Ord, Lift)
 
 type family Plus m n :: Nat where
   Plus 'Z n = n
   Plus ('S m) n = 'S (Plus m n)
+
+data NatS :: Nat -> * where
+  ZS :: NatS 'Z
+  SS :: NatS n -> NatS ('S n)
+deriving instance Lift (NatS n)
+
+data NatSS where
+  NatSS :: NatS n -> NatSS
