@@ -63,7 +63,11 @@ e5 f = suspend $ λ @X $ var @X >! \ a -> put (f a)
 -- e5 f = [ suspend | λ x → x >! λ a -> put (f a) |]
 
 --e6 :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ a ⊸ b ⊸ c)
---e6 = suspend $ λ @Z $ λ @X @a $ λ @Y @b @(a ⊸ b ⊸ c) @'[ 'Used a, 'Unused, 'Used (a ⊸ b ⊸ c)]
---   $ (var @Z `app` var @X) `app` var @Y
+e6 = suspend $ λ @Z $ λ @X $ λ @Y 
+             $ (var @Z `app` var @X) `app` var @Y
+
+--e6bad = suspend $ λ @Z $ λ @X $ λ @Y
+--                $ var @Z `app` var @X `app` var @Z
+--e6bad = suspend $ λ @X $ var @X `app` var @X
 
 idid = suspend $ force idL `app` force idL

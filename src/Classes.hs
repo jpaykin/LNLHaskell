@@ -39,14 +39,14 @@ instance CEmptyCtx g => CEmptyCtx ('Unused ': g) where
 class CAddCtx x s g g' | x s g -> g' where
   addCtx :: AddCtx x s g g'
 
--- instance CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
---   addCtx = AddHere 
+instance CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
+  addCtx = AddHere 
 instance CAddCtx 'Z s '[] '[ 'Used s ] where
   addCtx = AddEHere
 instance CAddCtx x s g g' => CAddCtx ('S x) s (u ': g) (u ': g') where
   addCtx = AddLater addCtx
--- instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
---   addCtx = AddELater addCtx
+instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
+  addCtx = AddELater addCtx
 
 -- Singleton Context ------------------------------------------
 
