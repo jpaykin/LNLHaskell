@@ -204,6 +204,7 @@ addIn (AddLater pf)  = InLater $ addIn pf
 inEmptyAbsurd :: In x s g -> EmptyCtx g -> a
 inEmptyAbsurd (InLater pfI) (EmptyCons pfE) = inEmptyAbsurd pfI pfE
 
+
 singletonInInv :: In x s g
                -> SingletonCtx y t g
                -> Dict ('(x,s)~'(y,t))
