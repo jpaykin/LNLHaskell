@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, FlexibleContexts,
              EmptyCase
 #-}
 
@@ -21,8 +21,6 @@ var :: forall x g t. CSingletonCtx x t g
     => LExp g t
 var = Var (singletonCtx @x @t)
 
-varSing :: forall x s. LExp (Sing x s) s
-varSing = undefined
 
 λ :: forall x s t g g'. CAddCtx x s g g'
   => LExp g' t 
@@ -41,6 +39,18 @@ app :: CMerge g1 g2 g3
     -> LExp g3 t
 e1 `app` e2 = App merge e1 e2
 
+(⊗) :: CMerge g1 g2 g3
+    => LExp g1 s
+    -> LExp g2 t
+    -> LExp g3 (s ⊗ t)
+e1 ⊗ e2 = Pair merge e1 e2
+
+letpair :: forall x y g2 s t g1 g3 g2' g2'' r.
+           (CMerge g1 g2 g3, CAddCtx x s g2 g2', CAddCtx y t g2' g2'')
+        => LExp g1 (s ⊗ t)
+        -> LExp g2'' r
+        -> LExp g3 r
+letpair e1 e2 = LetPair (merge @g1 @g2 @g3) (addCtx @x) (addCtx @y) e1 e2
 
 put :: a -> LExp '[] (Lower a)
 put a = Put EmptyNil a
@@ -50,6 +60,18 @@ put a = Put EmptyNil a
      -> (a -> LExp g2 t)
      -> LExp g3 t
 (>!) = LetBang merge
+
+
+
+match :: forall g1 g2 g2' g3 p s t. (CAddPat p s g2 g2', CMerge2 g1 g2 g3) 
+      => SPat p -> LExp g1 s -> LExp g2' t -> LExp g3 t
+match = undefined
+
+patExp :: SPat p -> AddPat p s '[] g' -> LExp g' s
+patExp = undefined
+
+mkPat :: forall s g' p. CAddPat p s '[] g' => SPat p -> LExp g' s
+mkPat p = patExp p addPat
 
 
 data Lift :: LType -> * where
