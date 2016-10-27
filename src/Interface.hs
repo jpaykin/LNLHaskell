@@ -21,6 +21,7 @@ var :: forall x g t. CSingletonCtx x t g
     => LExp g t
 var = Var (singletonCtx @x @t)
 
+
 λ :: forall x s t g g'. CAddCtx x s g g'
   => LExp g' t 
   -> LExp g (s ⊸ t)
@@ -32,6 +33,18 @@ app :: CMerge g1 g2 g3
     -> LExp g3 t
 e1 `app` e2 = App merge e1 e2
 
+(⊗) :: CMerge g1 g2 g3
+    => LExp g1 s
+    -> LExp g2 t
+    -> LExp g3 (s ⊗ t)
+e1 ⊗ e2 = Pair merge e1 e2
+
+letpair :: forall x y g2 s t g1 g3 g2' g2'' r.
+           (CMerge g1 g2 g3, CAddCtx x s g2 g2', CAddCtx y t g2' g2'')
+        => LExp g1 (s ⊗ t)
+        -> LExp g2'' r
+        -> LExp g3 r
+letpair e1 e2 = LetPair (merge @g1 @g2 @g3) (addCtx @x) (addCtx @y) e1 e2
 
 put :: a -> LExp '[] (Lower a)
 put a = Put EmptyNil a

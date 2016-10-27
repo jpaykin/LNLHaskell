@@ -13,14 +13,32 @@ import Data.Constraint
 import Types
 import Context
 
+-- Singleton instance
+
+class KnownUsage u where
+  usg :: SUsage u
+
+instance KnownUsage 'Unused where
+  usg = SUnused
+instance KnownUsage ('Used s) where
+  usg = SUsed @s
+
+class KnownCtx g where
+  ctx :: SCtx g
+
+instance KnownCtx '[] where
+  ctx = SNil
+instance (KnownCtx g,KnownUsage u) => KnownCtx (u ': g) where
+  ctx = SCons usg ctx
+
 
 -- In Context ---------------------------------------------
 
 class CIn x s g where
   inCtx :: In x s g
 
-instance CIn 'Z s ('Used s ': g) where
-  inCtx = InHere
+instance KnownCtx g => CIn 'Z s ('Used s ': g) where
+  inCtx = InHere ctx
 instance CIn x s g => CIn ('S x) s (u ': g) where
   inCtx = InLater inCtx
 
@@ -39,8 +57,8 @@ instance CEmptyCtx g => CEmptyCtx ('Unused ': g) where
 class CAddCtx x s g g' | x s g -> g' where
   addCtx :: AddCtx x s g g'
 
-instance CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
-  addCtx = AddHere 
+instance KnownCtx g => CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
+  addCtx = AddHere ctx
 instance CAddCtx 'Z s '[] '[ 'Used s ] where
   addCtx = AddEHere
 instance CAddCtx x s g g' => CAddCtx ('S x) s (u ': g) (u ': g') where

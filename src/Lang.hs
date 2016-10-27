@@ -29,6 +29,23 @@ data LExp :: Ctx -> LType -> * where
       -> LExp g2 s
       -> LExp g3 t
 
+  Unit :: LExp '[] One
+  LetUnit :: Merge g1 g2 g3
+          -> LExp g1 One
+          -> LExp g2 t
+          -> LExp g3 t
+
+  Pair :: Merge g1 g2 g3
+       -> LExp g1 s
+       -> LExp g2 t
+       -> LExp g3 (s ⊗ t)
+  LetPair :: Merge g1 g2 g3
+          -> AddCtx x s g2  g2'
+          -> AddCtx y t g2' g2''
+          -> LExp g1 (s ⊗ t)
+          -> LExp g2'' r
+          -> LExp g3 r 
+
   Put     :: EmptyCtx g -> a -> LExp g (Lower a)
   LetBang :: Merge g1 g2 g3
       -> LExp g1 (Lower a)
@@ -47,6 +64,8 @@ unshift1 :: LExp ('Unused ': g) t -> LExp g t
 unshift1 = Unshift ShiftHere
 
 data LVal :: LType -> * where
+  VUnit :: LVal One
+  VPair :: LVal s -> LVal t -> LVal (s ⊗ t)
   VAbs :: forall x s t g g'.
          EmptyCtx g 
       -> AddCtx x s g g'
@@ -57,6 +76,8 @@ data LVal :: LType -> * where
 valToExp :: LVal t -> LExp '[] t
 valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
 valToExp (VPut a) = Put EmptyNil a
+valToExp VUnit = Unit
+valToExp (VPair s t) = Pair MergeE (valToExp s) (valToExp t)
 
 instance Num Nat where
   Z   + n   = n
@@ -78,7 +99,7 @@ singToNat (AddLaterS pf) = S $ singToNat pf
 
 addToNat :: AddCtx x s g g' -> Nat
 addToNat AddEHere = Z
-addToNat AddHere = Z
+addToNat (AddHere _) = Z
 addToNat (AddELater pf) = S (addToNat pf)
 addToNat (AddLater pf) = S (addToNat pf)
 
@@ -99,6 +120,13 @@ instance Show (AddCtx x s g g') where
 
 instance Show (LExp g t) where
   show (Var pfSing)    = show pfSing
+  show Unit            = "()"
+  show (LetUnit _ s t) = "let () = " ++ show s ++ " in " ++ show t
+  show (Pair _ s t)    = "(" ++ show s ++ ", " ++ show t ++ ")"
+  show (LetPair _ pfA1 pfA2 s t) = "let (" ++ x ++ "," ++ y ++ ") = " ++ show s ++ " in " ++ show t
+    where
+      x = show pfA1 
+      y = show pfA2
   show (Abs pfAdd e)   = "λ" ++ show pfAdd ++ ". " ++ show e
   show (App _ e1 e2)   = show e1 ++ " " ++ show e2
   show (Put _ a)       = show "PUT"
@@ -205,9 +233,6 @@ substUnshift pfA s pfS e = Unshift pfShift' $ subst pfAdd' s e
 
 fromVPut :: LVal (Lower a) -> a
 fromVPut (VPut a) = a
-
-absToLVal :: EmptyCtx g -> AddCtx x s g g' -> LExp g' t -> LVal (s ⊸ t)
-absToLVal pfE pfAdd e = VAbs pfE pfAdd e
 
 {-
 eval' :: forall g s. EmptyCtx g -> LExp g s -> LVal s
