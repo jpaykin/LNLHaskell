@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase, PartialTypeSignatures
+             EmptyCase, PartialTypeSignatures, LambdaCase, FlexibleContexts
 #-}
 
 
@@ -10,6 +10,8 @@ module Examples where
 
 import Types
 import Lang
+import Context
+import Classes
 import Interface
 
 type X = 'Z
@@ -21,7 +23,17 @@ type Z = 'S ('S 'Z)
 swap = suspend $ λ @Z 
                $ letpair @X @Y @'[] (var @Z)
                $ (var @Y) ⊗ (var @X)
-
+-- swap' = suspend $ λ @Z
+--       $ match @_ @_ @_ @_ (MkPair (MkVar @X) (MkVar @Y)) (var @Z)
+--       $ var @Y ⊗ var @X
+--   where 
+--     p :: SPat (PPair (PVar X) (PVar Y))
+--     p = MkPair (MkVar @X) (MkVar @Y)
+--     f :: (CAddPat (PPair (PVar X) (PVar Y)) (s ⊗ t) g2 g2'
+--          ,CMerge2 '[ 'Unused, 'Unused, 'Unused] g2 g3)
+--       => LExp g2' r 
+--       -> LExp '[ 'Used s, 'Used t, 'Unused]  r
+--     f = p `match` var @Z
 
 -- e1a ∷ Lift (a ⊸ a)
 -- e1a = [ suspend | λ x. x ]

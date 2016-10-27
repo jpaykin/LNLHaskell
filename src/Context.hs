@@ -13,6 +13,35 @@ import Data.Constraint
 import Types
 
 
+-- Pattern Matching -----------------------------------------
+
+data Pat where
+  PUnit :: Pat
+  PVar  :: Ident -> Pat
+  PPair :: Pat -> Pat -> Pat
+
+data SPat :: Pat -> * where
+  MkUnit :: SPat 'PUnit
+  MkVar  :: forall x. SPat ('PVar x)
+  MkPair :: SPat p1 -> SPat p2 -> SPat (PPair p1 p2)
+
+
+data Match :: Pat -> LType -> Ctx -> * where
+  MatchOne   :: Match 'PUnit 'One '[]
+  MatchVar   :: forall x s g. SingletonCtx x s g -> Match ('PVar x) s g
+  MatchTuple :: Merge g1 g2 g3
+             -> Match p1 s g1
+             -> Match p2 t g2
+             -> Match (PPair p1 p2) (s ⊗ t) g3
+
+data AddPat :: Pat -> LType -> Ctx -> Ctx -> * where
+  AddOne  :: AddPat 'PUnit 'One g g
+  AddVar  :: AddCtx x s g g' -> AddPat ('PVar x) s g g'
+  AddPair :: AddPat p1 s1 g1 g2
+          -> AddPat p2 s2 g2 g3
+          -> AddPat ('PPair p1 p2) (s1 ⊗ s2) g1 g3
+  
+
 -- Shift -----------------------------------------------------
 
 data Shift :: Nat -> Ctx -> Ctx -> * where

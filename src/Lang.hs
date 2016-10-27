@@ -134,6 +134,13 @@ instance Show (LExp g t) where
   show (Shift _ e)     = show e
   show (Unshift _ e)   = show e
 
+-- p :: Pat
+-- pfMatch p = e1 in e2
+
+
+
+
+
 -- Substitution ------------------------------------------------------
 {-
 subst :: forall x s t g g'.
