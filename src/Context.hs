@@ -51,6 +51,25 @@ addPatsRemove pfI (AddPatsCons pfA pfAs) =
   where
     pfI' = addPatIn pfI pfA
 
+addPatRemovePat :: InPat p t g
+                -> AddPat p' t g g'
+                -> AddPat p' t (RemovePat p g) (RemovePat p g')
+addPatRemovePat = undefined
+
+addPatsRemovePat :: InPat p t g
+                 -> AddPats ps ts g g'
+                 -> AddPats ps ts (RemovePat p g) (RemovePat p g')
+addPatsRemovePat = undefined
+
+addPatInLater :: InPat p t g
+              -> AddPat p' t' g g'
+              -> InPat p t g'
+addPatInLater = undefined
+
+addPatsInLater :: InPat p t g
+               -> AddPats ps ts g g'
+               -> InPat p t g'
+addPatsInLater = undefined
 
 addPatIn :: In x s g -> AddPat p t g g' -> In x s g'
 addPatIn pfI (AddVar pfA)        = inAdd pfI pfA
@@ -346,12 +365,30 @@ type family RemovePat p g :: Ctx where
 
 type family RemovePats ps g :: Ctx where
   RemovePats '[] g = g
-  RemovePats (p ': ps) g = RemovePat p (RemovePats ps g)
+  RemovePats (p ': ps) g = RemovePats ps (RemovePat p g)
 
 emptyRemovePat :: EmptyCtx g
                -> AddPat p s g g'
                -> EmptyCtx (RemovePat p g')
-emptyRemovePat = undefined
+emptyRemovePat pfE (AddVar pfA)    = emptyRemove pfE pfA
+emptyRemovePat pfE (AddTuple pfAs) = emptyRemovePats pfE pfAs
+
+emptyRemovePats :: EmptyCtx g
+                -> AddPats ps ts g g'
+                -> EmptyCtx (RemovePats ps g')
+emptyRemovePats pfE AddPatsNil = pfE
+emptyRemovePats pfE (AddPatsCons pfA pfAs) = emptyRemovePats pfE' pfAs' 
+  where
+--  pfE'  :: EmptyCtx (RemovePat p g0)
+    pfE'  = emptyRemovePat pfE pfA
+--  pfI   :: InPat p t g0
+    pfI   = addInPat pfA
+--  pfAs' :: AddPats ps' ts' (RemovePat p g0) (RemovePat p g')
+    pfAs' = addPatsRemovePat pfI pfAs 
+--  pfE'' :: EmptyCtx (RemovePats ps' (RemovePat p g'))
+    pfE'' = emptyRemovePats pfE' pfAs'
+
+
 
 -- In -------------------------------
 
@@ -392,11 +429,10 @@ data InPat :: Pattern -> LType -> Ctx -> * where
   InTuple :: InPats ps ts g -> InPat (PTuple ps) (Tuple ts) g
 
 data InPats :: [Pattern] -> [LType] -> Ctx -> * where
-  InNil :: InPats '[] '[] '[]
-  InCons :: Merge g1 g2 g3
-         -> InPat p t g1
-         -> InPats ps ts g2
-         -> InPats (p ': ps) (t ': ts) g3
+  InNil :: InPats '[] '[] g
+  InCons :: InPat p t g
+         -> InPats ps ts g
+         -> InPats (p ': ps) (t ': ts) g
 
 -- Relation between In and Shift
 
@@ -540,4 +576,21 @@ mergeInPats2 :: Merge g1 g2 g
 mergeInPats2 = undefined
 
 addInPat :: AddPat p s g g' -> InPat p s g'
-addInPat = undefined
+addInPat (AddVar pfA)    = InVar   $ addIn pfA
+addInPat (AddTuple pfAs) = InTuple $ addInPats pfAs
+
+
+addInPats :: AddPats ps ts g g' -> InPats ps ts g'
+addInPats AddPatsNil = InNil
+addInPats (AddPatsCons pfA pfAs) = InCons pfI'' pfIs
+  where
+ -- pfA  :: AddPat p t g g0
+ -- pfAs :: AddPats ps' ts' g0 g'
+ -- pfI' :: InPat p t g0
+    pfI'  = addInPat pfA
+ -- pfI'' :: InPat p t g'
+    pfI'' = addPatsInLater pfI' pfAs
+ -- pfIs :: InPats ps' ts' g'
+    pfIs = addInPats pfAs
+
+
