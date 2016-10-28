@@ -32,19 +32,6 @@ instance (KnownCtx g,KnownUsage u) => KnownCtx (u ': g) where
   ctx = SCons usg ctx
 
 
--- Pattern matching ---------------------------------------
-
-class CAddPat p t g g' | p g' -> g t where
-  addPat :: AddPat p t g g'
-
-instance CAddPat 'PUnit 'One g g where
-  addPat = AddOne
-instance CAddCtxRev x s g g' => CAddPat ('PVar x) s g g' where
-  addPat = AddVar addCtxRev
-instance (CAddPat p1 s1 g1 g2, CAddPat p2 s2 g2 g3) 
-      => CAddPat ('PPair p1 p2) (s1 ⊗ s2) g1 g3 where
-  addPat = AddPair (addPat @p1 @s1 @g1 @g2) (addPat @p2 @s2 @g2 @g3)
-
 -- In Context ---------------------------------------------
 
 class CIn x s g where

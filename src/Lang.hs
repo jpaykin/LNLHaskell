@@ -47,6 +47,14 @@ data LExp :: Ctx -> LType -> * where
           -> LExp g2'' r
           -> LExp g3 r 
 
+  ETuple :: LExps g ts
+         -> LExp g (Tuple ts)
+  Case :: Merge g1 g2 g3
+       -> AddPat p s g2 g2'
+       -> LExp g1 s
+       -> LExp g2' t
+       -> LExp g3 t
+
   Put     :: EmptyCtx g -> a -> LExp g (Lower a)
   LetBang :: Merge g1 g2 g3
       -> LExp g1 (Lower a)
@@ -55,6 +63,13 @@ data LExp :: Ctx -> LType -> * where
 
   Shift   :: Shift i g1 g2 -> LExp g1 t -> LExp g2 t
   Unshift :: Shift i g1 g2 -> LExp g2 t -> LExp g1 t
+
+data LExps :: Ctx -> [LType] -> * where
+  LExpNil  :: LExps '[] '[]
+  LExpCons :: Merge g1 g2 g3 
+           -> LExp  g1 t
+           -> LExps g2 ts
+           -> LExps g3 (t ': ts)
 
 -- values
 
@@ -67,12 +82,18 @@ unshift1 = Unshift ShiftHere
 data LVal :: LType -> * where
   VUnit :: LVal One
   VPair :: LVal s -> LVal t -> LVal (s ⊗ t)
+  VTuple :: LVals ts -> LVal (Tuple ts)
+  
   VAbs :: forall x s t g g'.
          EmptyCtx g 
       -> AddCtx x s g g'
       -> LExp g' t
       -> LVal (s ⊸ t)
   VPut :: a -> LVal (Lower a)
+
+data LVals :: [LType] -> * where
+  VNil :: LVals '[]
+  VCons :: LVal s -> LVals ts -> LVals (s ': ts)
 
 valToExp :: LVal t -> LExp '[] t
 valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
@@ -130,14 +151,11 @@ instance Show (LExp g t) where
       y = show pfA2
   show (Abs pfAdd e)   = "λ" ++ show pfAdd ++ ". " ++ show e
   show (App _ e1 e2)   = show e1 ++ " " ++ show e2
+  show (Case _ _ _ _)  = undefined
   show (Put _ a)       = show "PUT"
   show (LetBang _ e f) = show e ++ " >! " ++ show "FUN"
   show (Shift _ e)     = show e
   show (Unshift _ e)   = show e
-
--- p :: Pat
--- pfMatch p = e1 in e2
-
 
 
 

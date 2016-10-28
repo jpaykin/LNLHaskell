@@ -15,12 +15,14 @@ import Language.Haskell.TH.Syntax
 data LType where
   One   :: LType
   Tensor :: LType -> LType -> LType
+  Tuple  :: [LType] -> LType
   Lolli :: LType -> LType -> LType
   Lower :: * -> LType
 type s ⊸ t = Lolli s t
 infixr 0 ⊸
 type s ⊗ t = Tensor s t
 infixr 3 ⊗
+
 
 
 type Ident = Nat
@@ -31,17 +33,20 @@ type Ctx = [Usage]
 data SUsage :: Usage -> * where
   SUsed   :: forall s. SUsage ('Used s)
   SUnused :: SUsage 'Unused
+deriving instance Lift (SUsage u)
 
 data SCtx :: Ctx -> * where
   SNil  :: SCtx '[]
   SCons :: SUsage u -> SCtx g -> SCtx (u ': g)
+deriving instance Lift (SCtx g)
 
+{-
 data SSUsage where
    SSUsage :: SUsage u -> SSUsage
 data SSCtx where
    SSCtx :: SCtx g -> SSCtx
 
-{-
+
 toSSUsage (Used s) = SSUsage SUsed
 toSSUsage Unused   = SSUsage SUnused
 

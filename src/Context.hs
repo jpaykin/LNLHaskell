@@ -16,32 +16,50 @@ import Types
 
 -- Pattern Matching -----------------------------------------
 
-data Pat where
-  PUnit :: Pat
-  PVar  :: Ident -> Pat
-  PPair :: Pat -> Pat -> Pat
+data Pattern where
+  PVar  :: Ident -> Pattern
+  PTuple:: [Pattern] -> Pattern
 
-data SPat :: Pat -> * where
-  MkUnit :: SPat 'PUnit
-  MkVar  :: forall x. SPat ('PVar x)
-  MkPair :: SPat p1 -> SPat p2 -> SPat (PPair p1 p2)
+data SPat :: Pattern -> * where
+  MkVar   :: forall x. SPat ('PVar x)
+  MkTuple :: SPats ps -> SPat (PTuple ps)
+
+data SPats :: [Pattern] -> * where
+  MkNil    :: SPats '[]
+  MkCons   :: SPat p -> SPats ps -> SPats (p ': ps)
 
 
-data Match :: Pat -> LType -> Ctx -> * where
-  MatchOne   :: Match 'PUnit 'One '[]
-  MatchVar   :: forall x s g. SingletonCtx x s g -> Match ('PVar x) s g
-  MatchTuple :: Merge g1 g2 g3
-             -> Match p1 s g1
-             -> Match p2 t g2
-             -> Match (PPair p1 p2) (s ⊗ t) g3
-
-data AddPat :: Pat -> LType -> Ctx -> Ctx -> * where
-  AddOne  :: AddPat 'PUnit 'One g g
+data AddPat :: Pattern -> LType -> Ctx -> Ctx -> * where
   AddVar  :: AddCtx x s g g' -> AddPat ('PVar x) s g g'
-  AddPair :: AddPat p1 s1 g1 g2
-          -> AddPat p2 s2 g2 g3
-          -> AddPat ('PPair p1 p2) (s1 ⊗ s2) g1 g3
+  AddTuple :: AddPats ps ts g g' -> AddPat (PTuple ps) (Tuple ts) g g'
+
+data AddPats :: [Pattern] -> [LType] -> Ctx -> Ctx -> * where
+  AddPatsNil :: AddPats '[] '[] g g
+  AddPatsCons :: AddPat p t g1 g2 -> AddPats ps ts g2 g3 -> AddPats (p ': ps) (t ': ts) g1 g3
   
+
+addPatRemove :: In x s g -> AddPat p t g g'
+             -> AddPat p t (Remove x g) (Remove x g')
+addPatRemove pfI (AddVar  pfA)       = AddVar $ inAddRemove pfI pfA
+addPatRemove pfI (AddTuple pfAs)     = AddTuple $ addPatsRemove pfI pfAs
+
+addPatsRemove :: In x s g -> AddPats ps ts g g'
+              -> AddPats ps ts (Remove x g) (Remove x g')
+addPatsRemove pfI AddPatsNil             = AddPatsNil
+addPatsRemove pfI (AddPatsCons pfA pfAs) = 
+    AddPatsCons (addPatRemove pfI pfA) (addPatsRemove pfI' pfAs)
+  where
+    pfI' = addPatIn pfI pfA
+
+
+addPatIn :: In x s g -> AddPat p t g g' -> In x s g'
+addPatIn pfI (AddVar pfA)        = inAdd pfI pfA
+addPatIn pfI (AddTuple pfAs)     = addPatsIn pfI pfAs
+
+addPatsIn :: In x s g -> AddPats ps ts g g' -> In x s g'
+addPatsIn pfI AddPatsNil             = pfI
+addPatsIn pfI (AddPatsCons pfA pfAs) = addPatsIn (addPatIn pfI pfA) pfAs
+
 
 -- Shift -----------------------------------------------------
 
@@ -49,8 +67,6 @@ data Shift :: Nat -> Ctx -> Ctx -> * where
   ShiftHere  :: Shift 'Z g ('Unused ': g)
   ShiftLater :: Shift n g g' -> Shift ('S n) (u ': g) (u ': g')
 deriving instance Lift (Shift i g g')
---deriving instance Lift (Shift 'Z g ('Unused ': g))
---deriving instance Lift (Shift n g g') => Lift (Shift ('S n) (u ': g) (u ': g'))
 
 shiftEmpty :: Shift n g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
 shiftEmpty ShiftHere            pfEmpty             = EmptyCons pfEmpty  
@@ -140,6 +156,11 @@ inSCtxRemove :: In x s g -> SCtx g -> SCtx (Remove x g)
 inSCtxRemove (InHere g') g = SCons SUnused g'
 inSCtxRemove (InLater pfI) (SCons u g') = SCons u $ inSCtxRemove pfI g'
 
+emptyEquivEmpty :: EmptyCtx g -> EmptyCtx g' -> EquivEmpty g g'
+emptyEquivEmpty EmptyNil EmptyNil = EquivENil
+emptyEquivEmpty EmptyNil pfE = EquivEEL pfE
+emptyEquivEmpty pfE EmptyNil = EquivEER pfE
+emptyEquivEmpty (EmptyCons pfE1) (EmptyCons pfE2) = EquivECons $ emptyEquivEmpty pfE1 pfE2
 
 -- Empty Context ------------------------------------------------
 
@@ -319,6 +340,19 @@ emptyRemove pfE             (AddHere _)     = pfE
 emptyRemove (EmptyCons pfE) (AddLater pfA)  = EmptyCons $ emptyRemove pfE pfA
 
 
+type family RemovePat p g :: Ctx where
+  RemovePat ('PVar x) g = Remove x g
+  RemovePat ('PTuple ps) g = RemovePats ps g
+
+type family RemovePats ps g :: Ctx where
+  RemovePats '[] g = g
+  RemovePats (p ': ps) g = RemovePat p (RemovePats ps g)
+
+emptyRemovePat :: EmptyCtx g
+               -> AddPat p s g g'
+               -> EmptyCtx (RemovePat p g')
+emptyRemovePat = undefined
+
 -- In -------------------------------
 
 data In :: Nat -> LType -> Ctx -> * where
@@ -333,6 +367,7 @@ addIn AddEHere       = InHere SNil
 addIn (AddHere g)    = InHere g
 addIn (AddELater pf) = InLater $ addIn pf
 addIn (AddLater pf)  = InLater $ addIn pf
+
 
 inEmptyAbsurd :: In x s g -> EmptyCtx g -> a
 inEmptyAbsurd (InLater pfI) (EmptyCons pfE) = inEmptyAbsurd pfI pfE
@@ -349,6 +384,19 @@ inRemove :: In x s g
          -> AddCtx x s (Remove x g) g
 inRemove (InHere g) = AddHere g
 inRemove (InLater pfIn) = AddLater $ inRemove pfIn
+
+-- In Pat ---------------------------------------
+
+data InPat :: Pattern -> LType -> Ctx -> * where
+  InVar   :: In x s g -> InPat (PVar x) s g
+  InTuple :: InPats ps ts g -> InPat (PTuple ps) (Tuple ts) g
+
+data InPats :: [Pattern] -> [LType] -> Ctx -> * where
+  InNil :: InPats '[] '[] '[]
+  InCons :: Merge g1 g2 g3
+         -> InPat p t g1
+         -> InPats ps ts g2
+         -> InPats (p ': ps) (t ': ts) g3
 
 -- Relation between In and Shift
 
@@ -475,128 +523,21 @@ mergeIn2 (MergeU pfM) (InLater pfI2) (InLater pfI3) = MergeU $ mergeIn2 pfM pfI2
 
 
 
-{-
-addTwiceEquiv :: AddCtx x s g1 g
-              -> AddCtx x s g2 g
-              -> Equiv g1 g2
-addTwiceEquiv = undefined
+mergeInPats :: Merge g1 g2 g
+            -> InPats ps ts g2
+            -> InPats ps ts g
+mergeInPats = undefined
+
+mergeInPat :: Merge g1 g2 g
+           -> InPat p t g1
+           -> InPat p t g
+mergeInPat = undefined
 
 
-mergeER :: Equiv g g'
-        -> Merge g '[] g'
-mergeER = undefined
-mergeEL :: Equiv g g'
-        -> Merge '[] g g'
-mergeEL = undefined
+mergeInPats2 :: Merge g1 g2 g
+             -> InPats ps ts g2
+             -> Merge g1 (RemovePats ps g2) (RemovePats ps g)
+mergeInPats2 = undefined
 
-mergeAdd1Help :: g1' ~ Remove x (Used t:g1)
-              => Merge g1 g2 g3
-              -> AddCtx x s g1' (Used t:g1)
-              -> AddCtx x s g3' (Used t:g3)
-              -> Merge g1' ('Unused ': g2) g3'
--- g1'=Unused:g1
--- g3'=[]
-mergeAdd1Help pfM AddHere AddEHere = undefined
-
-mergeAdd1 :: g1' ~ Remove x g1 => Merge g1 g2 g3
-          -> AddCtx x s g1' g1
-          -> AddCtx x s g3' g3
-          -> Merge g1' g2 g3'
-mergeAdd1 MergeER      pfA1 pfA3 = mergeER $ addTwiceEquiv pfA1 pfA3
--- g1=Used t:g1''
--- g2='Unused:g2''
--- g3=Used t:g3''
--- pfM :: Merge g1'' g2'' g3''
--- pfA1 :: AddCtx x s g1' (Used t:g1'')
--- pfA2 :: AddCtx x s g3' (Used t:g3'')
--- want: Merge g1' (Unused:g2'') g3'
-mergeAdd1 (MergeL pfM) pfA1 pfA3 = mergeAdd1Help pfM pfA1 pfA3
-mergeAdd1 _ _ _ = undefined
-
-mergeAdd2 :: Merge g1 g2 g3
-          -> AddCtx x s g2' g2
-          -> AddCtx x s g3' g3
-          -> Merge g1 g2' g3'
-mergeAdd2 = undefined
-
--- I'm not sure we can really get Merge _ _ g0;
--- what if g0 is []??
--- we really want Merge (Remove x g1) g2 (Remove x g3)
-mergeAdd :: Merge g1 g2 g 
-         -> AddCtx x s g0 g
-         -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 g0)
-                   (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) g0)
-mergeAdd pfM pfA = case mergeInSplit pfM (addIn pfA) of 
-  Left  pfI -> Left  (inRemove pfI, mergeAdd1 pfM (inRemove pfI) pfA)
-  Right pfI -> Right (inRemove pfI, mergeAdd2 pfM (inRemove pfI) pfA)
-
-mergeAddRemove :: Merge g1 g2 g 
-         -> AddCtx x s g0 g
-         -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 (Remove x g))
-                   (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) (Remove x g))
-mergeAddRemove = undefined
-
--}
-
-
---- Shifting and Adding
-
--- no because the index might not be the same
-{-
-inShiftRemove :: In x s g
-              -> Shift g' g
-              -> Shift g' (Remove x g)
-inShiftRemove InHere       (ShiftLater pfS) = undefined
-
-
-
-
-inUnshift :: In x s g
-          -> Shift g g'
-          -> In x s g'
-inUnshift = undefined
-
-inUnshiftRemove :: In x s g
-                -> Shift g g'
-                -> Shift (Remove x g) (Remove x g')
-inUnshiftRemove = undefined
--}
-{-
-addShift :: AddCtx x s g1 g2
-         -> Shift g2' g2
-         -> (AddCtx x s (Remove x g2') g2', Shift (Remove x g2') g1)
--- x~0
--- g1=Unused:g0
--- g2=Used s:g0
--- g2'=Used s:g0'
--- pfShift :: Shift g0' g0
--- want: AddCtx 0 s (Unused:g0') (Used s:g0')
--- want: Shift (Unused:g0') (Unused:g0)
-addShift AddHere (ShiftLater pfShift) = (AddHere, ShiftLater pfShift)
--- x=0
--- g1=[]
--- g2=[Used s]
--- g2'=Used s:g0'
--- pfShift :: Shift g0' []
--- want: AddCtx 0 s (Unused:g0') (Used s:g0')
--- want: Shift (Unused:g0') []
-addShift AddEHere (ShiftLater pfShift) = case pfShift of 
--- x=S y
--- g1=[]
--- g2=Unused:g0
--- pfAdd :: AddCtx y s [] g0
--- g2'=Unused:g0'
--- pfShift :: Shift g0' g0
--- addShift pfAdd pfShift :: (AddCtx y s (Remove y g0') g0', Shift (Remove y g0') [])
--- want: AddCtx (S y) s (Unused:Remove y g0') (Unused:g0')
--- want: Shift (Unused:Remove y g0') []
-addShift (AddELater pfAdd) (ShiftLater pfShift) = 
-  let (_,pfShift') = addShift pfAdd pfShift in case pfShift' of 
-addShift (AddLater pfAdd) (ShiftLater pfShift) = 
-  let (pfAdd',pfShift') = addShift pfAdd pfShift in (AddLater pfAdd', ShiftLater pfShift')
-
-addShift2 :: AddCtx x s g1 g2
-          -> Shift g2 g3
-          -> (AddCtx x s (Remove x g3) g3, Shift g1 (Remove x g3))
-addShift2 = undefined
--}
+addInPat :: AddPat p s g g' -> InPat p s g'
+addInPat = undefined

@@ -19,6 +19,7 @@ import Prelude hiding (abs)
 import Language.Haskell.TH
 import qualified Data.Map.Lazy as M
 import qualified Control.Monad.State as S
+import Data.Maybe
 
 --suspend :: Q Exp -> 
 -- suspend x = $( x >>= transform >>= runQ )
@@ -27,6 +28,7 @@ natToS :: Nat -> NatSS
 natToS Z = NatSS ZS
 natToS (S n) = 
   case natToS n of NatSS n -> NatSS $ SS n
+
 
 data QState a = QState (S.StateT (M.Map Name Nat) Q a)
 
@@ -65,37 +67,37 @@ fresh = do
   ns <- return $ M.elems m
   return $ freshNat Z ns
 
-transformPat :: Pat -> QState [Nat]
+transformPat :: Pat -> QState Pattern
 transformPat (VarP n) = do
   x <- fresh
   m <- S.get
   S.put $ M.insert n x m
-  return [x]
+  return (PVar x)
 transformPat _ = error "Other pattern"
 
-transformPats :: [Pat] -> QState [Nat]
+transformPats :: [Pat] -> QState [Pattern]
 transformPats [] = return []
 transformPats (p : ps) = do
-  xs1 <- transformPat p 
-  xs2 <- transformPats ps
-  return $ xs1++xs2
+  p'  <- transformPat p 
+  ps' <- transformPats ps
+  return $ p':ps'
 
-transform :: Exp -> QState Exp
+transform :: Exp -> QState (Maybe Exp)
 transform (VarE n)          = do
   m <- S.get
   case M.lookup n m of
     Just x  -> do -- [| e |] >>= \e -> return (e,m)
       vName <- return $ mkName "Var"
       pf    <- case natToS x of NatSS x' -> runQState [| singS x' |]
-      return $ AppE (ConE vName) pf
-    Nothing -> return $ VarE n
+      return . Just $ AppE (ConE vName) pf
+    Nothing -> return . Just $ VarE n
 transform (LamE pats e)     = do
-  [x]   <- transformPats pats
+  [ PVar x]    <- transformPats pats
   e'    <- transform e
-  case natToS x of 
-    NatSS x' -> do
+  case (e',natToS x) of 
+    (Just e',NatSS x') -> do
       ex <- runQState [|x'|]
-      return $ AppE (AppE (VarE $ mkName "abs") ex) e'
+      return . Just $ AppE (AppE (VarE $ mkName "abs") ex) e'
 
 transform (ConE n)          = undefined
 transform (LitE l)          = undefined
@@ -126,6 +128,6 @@ suspendTH e = AppE (VarE $ mkName "suspend") e
 transformTH :: Q Exp -> Q Exp
 transformTH m = do
   e <- m 
-  e' <- runStateQ (transform e) M.empty
-  return $ suspendTH e'
+  me <- runStateQ (transform e) M.empty
+  return $ suspendTH $ fromMaybe e me
   

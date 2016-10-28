@@ -63,15 +63,15 @@ put a = Put EmptyNil a
 
 
 
-match :: forall g1 g2 g2' g3 p s t. (CAddPat p s g2 g2', CMerge2 g1 g2 g3) 
-      => SPat p -> LExp g1 s -> LExp g2' t -> LExp g3 t
-match = undefined
+-- match :: forall g1 g2 g2' g3 p s t. (CAddPat p s g2 g2', CMerge2 g1 g2 g3) 
+--       => SPat p -> LExp g1 s -> LExp g2' t -> LExp g3 t
+-- match = undefined
 
-patExp :: SPat p -> AddPat p s '[] g' -> LExp g' s
-patExp = undefined
+-- patExp :: SPat p -> AddPat p s '[] g' -> LExp g' s
+-- patExp = undefined
 
-mkPat :: forall s g' p. CAddPat p s '[] g' => SPat p -> LExp g' s
-mkPat p = patExp p addPat
+-- mkPat :: forall s g' p. CAddPat p s '[] g' => SPat p -> LExp g' s
+-- mkPat p = patExp p addPat
 
 
 data Lift :: LType -> * where

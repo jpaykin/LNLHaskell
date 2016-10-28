@@ -27,11 +27,56 @@ subst pfI s (App pfM e1 e2)     = substApp     pfI s pfM e1 e2
 subst pfI s Unit                = substUnit    pfI
 subst pfI s (LetUnit pfM e1 e2) = substLetUnit pfI s pfM e1 e2
 subst pfI s (Pair pfM e1 e2)    = substPair    pfI s pfM e1 e2
-subst pfI s (LetPair pfM pfAx pfAy e1 e2) = substLetPair pfI s pfM pfAx pfAy e1 e2
+subst pfI s (LetPair pfM pfAx pfAy e1 e2) 
+                                = substLetPair pfI s pfM pfAx pfAy e1 e2
+subst pfI s (ETuple es)         = substTuple   pfI s es
+subst pfI s (Case pfM pfA e1 e2)= substCase    pfI s pfM pfA e1 e2
 subst pfI s (Put pfE a)         = substPut     pfI s pfE a
 subst pfI s (LetBang pfM e f)   = substLetBang pfI s pfM e f
 subst pfI s (Shift pfS e)       = substShift   pfI s pfS e
 subst pfI s (Unshift pfS e)     = substUnshift pfI s pfS e
+
+substTuple' :: In x s g 
+            -> LExp '[] s
+            -> LExps g ts
+            -> LExps (Remove x g) ts
+substTuple' pfI s LExpNil = case pfI of 
+substTuple' pfI s (LExpCons pfM e es) = 
+  case mergeInSplit pfM pfI of
+    Left  pfI1 -> LExpCons pfM' (subst pfI1 s e) es
+      where
+        pfM' = mergeIn1 pfM pfI1 pfI
+    Right pfI2 -> LExpCons pfM' e (substTuple' pfI2 s es)
+      where
+        pfM' = mergeIn2 pfM pfI2 pfI
+
+
+substTuple :: In x s g -> LExp '[] s -> LExps g ts
+           -> LExp (Remove x g) (Tuple ts)
+substTuple pfI s es = ETuple $ substTuple' pfI s es
+
+
+substPat :: InPat p s g
+         -> LVal s 
+         -> LExp g t
+         -> LExp (RemovePat p g) t
+substPat (InVar pfI) s t = subst pfI (valToExp s) t
+substPat (InTuple pfIs) (VTuple vs) t = substPats pfIs vs t
+
+substPats :: InPats ps ts g 
+          -> LVals ts
+          -> LExp g t
+          -> LExp (RemovePats ps g) t
+substPats InNil VNil e = e
+substPats (InCons pfM pfI pfIs) (VCons v vs) e = substPat pfI' v $ substPats pfIs' vs e
+  where
+--  pfIs' :: InPats ps ts g
+    pfIs' = mergeInPats pfM pfIs
+--  pfI'  :: InPat p s (RemovePats ps g)
+    pfI'  = mergeInPat pfM' pfI
+--  pfM' :: Merge g1 (RemovePats ps g2) (RemovePats ps g) 
+    pfM' = mergeInPats2 pfM pfIs
+
 
 
 substVal :: In x s g -> LVal s -> LExp g t -> LExp (Remove x g) t
@@ -122,6 +167,28 @@ substLetPair pfI s pfM pfA1 pfA2 e1 e2 =
         pfM'   = mergeIn2 pfM pfI2 pfI
         pfA1'  = inAddRemove pfI2  pfA1
         pfA2'  = inAddRemove pfI2' pfA2
+
+substCase :: forall x p s t r g g1 g2 g2'.
+             In x s g 
+          -> LExp '[] s
+          -> Merge g1 g2 g
+          -> AddPat p t g2 g2'
+          -> LExp g1 t
+          -> LExp g2' r
+          -> LExp (Remove x g) r
+substCase pfI s pfM pfA e1 e2 = 
+  case mergeInSplit pfM pfI of
+    Left  pfI1 -> Case (mergeIn1 pfM pfI1 pfI) pfA (subst pfI1 s e1) e2
+    Right pfI2 -> Case pfM' pfA' e1 (subst pfI2' s e2)
+      where
+        pfI2' :: In x s g2'
+        pfI2' = addPatIn pfI2 pfA
+        pfM'  :: Merge g1 (Remove x g2) (Remove x g)
+        pfM' = mergeIn2 pfM pfI2 pfI
+        pfA'  :: AddPat p t (Remove x g2) (Remove x g2')
+        pfA'  = addPatRemove pfI2 pfA
+
+
 
 substPut :: In x s g
          -> LExp '[] s
@@ -231,6 +298,10 @@ eval' pfE (LetPair pfM pfA1 pfA2 e1 e2) =
     eq2'        = addRemoveEquiv pfA2' 
     eq2''       = equivTrans eq2 eq2'
 
+eval' pfE (ETuple es) = VTuple $ evalTuple pfE es
+eval' pfE (Case pfM pfA e1 e2) = evalCase pfE pfM pfA e1 e2
+
+
 eval' pfE (Put pf a) = VPut a
 eval' pfE (LetBang pfMerge e k) = 
   eval' EmptyNil $ transportDown pfE2 (k a)
@@ -249,6 +320,33 @@ eval' pfE             (Shift pfS e)   = eval' (unshiftEmpty pfS pfE) e
 -- (Unshift pfS e) :: LExp g1 s
 eval' pfE             (Unshift pfS e) = eval' (shiftEmpty pfS pfE) e
 
+
+
+evalCase :: EmptyCtx g 
+         -> Merge g1 g2 g 
+         -> AddPat p s g2 g2' 
+         -> LExp g1 s
+         -> LExp g2' t
+         -> LVal t
+evalCase pfE pfM pfA e1 e2 = 
+  case eval' pfE1 e1 of { v1 -> 
+    eval' pfE2' $ substPat (addInPat pfA) v1 e2
+  }
+  where
+  -- pfE1 :: EmptyCtx g1
+  -- pfE2 :: EmptyCtx g2
+    (pfE1,pfE2) = mergeEmpty pfM pfE
+ -- pfE2' :: EmptyCtx (RemovePat p g2')
+    pfE2' = emptyRemovePat pfE2 pfA
+
+
+evalTuple :: EmptyCtx g
+          -> LExps g ts
+          -> LVals ts
+evalTuple pfE LExpNil = VNil
+evalTuple pfE (LExpCons pfM e es) = VCons (eval' pfE1 e) (evalTuple pfE2 es)
+  where
+    (pfE1,pfE2) = mergeEmpty pfM pfE
 
 eval :: EmptyCtx g -> LExp g s -> LExp '[] s
 eval pfE e = valToExp $ eval' pfE e
