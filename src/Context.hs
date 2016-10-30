@@ -26,6 +26,11 @@ data SPat :: Pattern -> * where
 data SPats :: [Pattern] -> * where
   MkNil    :: SPats '[]
   MkCons   :: SPat p -> SPats ps -> SPats (p ': ps)
+
+type family FreshCtx g :: Nat where
+  FreshCtx '[] = 'Z
+  FreshCtx ('Unused ': g) = 'Z
+  FreshCtx ('Used _ ': g) = 'S (FreshCtx g)
   
 -- Shift -----------------------------------------------------
 

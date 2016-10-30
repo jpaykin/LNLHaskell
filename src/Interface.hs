@@ -18,18 +18,24 @@ import Proofs
 import Lang
 import Subst
 
-var :: forall x g t. CSingletonCtx x t g 
-    => LExp g t
-var = Var (singletonCtx @x @t)
+-- var :: forall x g t. CSingletonCtx x t g 
+--     => LExp g t
+-- var = Var (singletonCtx @x @t)
 
-var' :: NatS x -> LExp (Sing x s) s
-var' x = Var $ singS x
+var :: NatS x -> LExp (Sing x s) s
+var x = Var $ singS x
 
-
-λ :: forall x s t g g'. CAddCtx x s g g'
-  => LExp g' t 
+λ :: forall s t g g'. (KnownCtx g, CAddCtx (FreshCtx g) s g g')
+  => (LExp (Sing (FreshCtx g) s) s -> LExp g' t)
   -> LExp g (s ⊸ t)
-λ t = Abs (addCtx @x) t
+λ f = Abs pfA (f varx) where
+  pfA  = addCtx @(FreshCtx g) @s @g @g'
+  varx = var $ addToNatS pfA
+
+-- λ :: forall x s t g g'. CAddCtx x s g g'
+--   => LExp g' t 
+--   -> LExp g (s ⊸ t)
+-- λ t = Abs (addCtx @x) t
 
 abs :: forall x s t g. CIn x s g
     => LExp g t

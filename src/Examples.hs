@@ -27,9 +27,9 @@ type Z = 'S ('S 'Z)
 
 
 -- swap :: Lift (s⊗t ⊸ t⊗s)
-swap = suspend $ λ @Z 
-               $ letpair @X @Y @'[] (var @Z)
-               $ (var @Y) ⊗ (var @X)
+-- swap = suspend $ λ @Z 
+--                $ letpair @X @Y @'[] (var @Z)
+--                $ (var @Y) ⊗ (var @X)
 -- swap' = suspend $ λ @Z
 --       $ match @_ @_ @_ @_ (MkPair (MkVar @X) (MkVar @Y)) (var @Z)
 --       $ var @Y ⊗ var @X
@@ -45,52 +45,55 @@ swap = suspend $ λ @Z
 -- e1a ∷ Lift (a ⊸ a)
 -- e1a = [ suspend | λ x. x ]
 
-idL = suspend $ λ @X (var @X)
+idL   = suspend . λ $ \x -> x
 
-
-suspendT e = $(transformTH [|e|])
-
-idNL x = x
---idTH = $(transformTH $ [| \x -> x |])
-idTH = $(transformTH [| \x -> x |])
---idTH' = suspendT (\x -> x)
-
--- e1 = [ suspend | λ x -> x |]
-
-
---e2 :: forall a. Lift (Lower (Lift a) ⊸ a)
+-- counit :: forall a. Lift (Lower (Lift a) ⊸ a)
 -- suspend $ λ x. x >! force
-counit = suspend $ λ @X $ var @X >! force 
+counit = suspend . λ $ \x -> x >! force 
 
--- e3a :: Lift (a ⊸ (a ⊸ b) ⊸ b)
--- e3a = [ suspend | λ x. λ f. f x ]
-
-
---e3 :: forall a b. Lift (a ⊸ (a ⊸ b) ⊸ b)
+-- apply :: forall a b. Lift (a ⊸ (a ⊸ b) ⊸ b)
 -- suspend $ λ x. λ y. x y
-apply = suspend $ λ @X 
-                $ λ @Y 
-                $    var @Y 
-               `app` var @X 
+apply = suspend . λ $ \x-> λ $ \y -> y `app` x
+
+-- fmap' :: (a -> b) -> Lift (Lower a ⊸ Lower b)
+-- [ suspend | λ x → x >! λ a -> put (f a) |]
+fmap' f = suspend $ λ $ \x -> x >! \ a -> put (f a)
 
 -- e4 :: Lift (Lower Bool)
 -- var @X :: LExp '[ t ] t
 -- λ @X (var @X) :: CAddCtx x s g '[ t ] => LExp g (s ⊸ t)
-e4 = run . suspendL $ force idL `app` put "Hi"
+ret a = run . suspendL $ force idL `app` put a
+
+--app2 :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ a ⊸ b ⊸ c)
+app2 = suspend . λ $ \z -> λ $ \x -> λ $ \y -> z `app` x `app` y
 
 
+idid = suspend $ force idL `app` force idL
 
+-- failing examples -----------------------------
 
--- e5 :: (a -> b) -> Lift (Lower a ⊸ Lower b)
-e5 f = suspend $ λ @X $ var @X >! \ a -> put (f a)
--- e5 f = [ suspend | λ x → x >! λ a -> put (f a) |]
-
---e6 :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ a ⊸ b ⊸ c)
-e6 = suspend $ λ @Z $ λ @X $ λ @Y 
-             $ (var @Z `app` var @X) `app` var @Y
+-- bad = suspend . λ $ \z -> z `app` z
+-- bad = suspend . λ $ \x -> λ $ \y -> x
 
 --e6bad = suspend $ λ @Z $ λ @X $ λ @Y
 --                $ var @Z `app` var @X `app` var @Z
 --e6bad = suspend $ λ @X $ var @X `app` var @X
 
-idid = suspend $ force idL `app` force idL
+
+
+-- Template Haskell Examples ----------------------------
+
+-- suspendT e = $(transformTH [|e|])
+idNL x = x
+--idTH = $(transformTH $ [| \x -> x |])
+--idTH = $(transformTH [| \x -> x |])
+--idTH' = suspendT (\x -> x)
+
+
+
+
+
+
+
+
+

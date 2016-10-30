@@ -16,6 +16,10 @@ import Context
 
 -- singleton types ----------------------------------------------
 
+inNatS :: In x s g -> NatS x
+inNatS (InHere _) = ZS
+inNatS (InLater pfI) = SS $ inNatS pfI
+
 inSCtxRemove :: forall x s g. In x s g -> SCtx g -> SCtx (Remove x g)
 inSCtxRemove (InHere g)    _           = SCons SUnused g
 inSCtxRemove (InLater pfI) (SCons u g) = SCons u $ inSCtxRemove pfI g
@@ -38,6 +42,11 @@ addSCtx (AddLater pfA)  (SCons u g0) = SCons u $ addSCtx pfA g0
 
 sTail :: SCtx (u ': g) -> SCtx g
 sTail (SCons u g) = g
+
+freshInCtx :: SCtx g -> NatS (FreshCtx g)
+freshInCtx SNil              = ZS
+freshInCtx (SCons SUnused g) = ZS
+freshInCtx (SCons SUsed g)   = SS $ freshInCtx g
 
 -- Shift --------------------------------------------------------
 
@@ -240,7 +249,8 @@ addNotIn (AddLater pfA)  = NotInLater $ addNotIn pfA
 
 inRemove :: In x s g 
          -> AddCtx x s (Remove x g) g
-inRemove = undefined
+inRemove (InHere g) = AddHere g
+inRemove (InLater pfI) = AddLater $ inRemove pfI
 
 inAddRemove :: In x s g
             -> AddCtx y t g g'
