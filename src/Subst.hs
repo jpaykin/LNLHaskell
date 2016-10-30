@@ -69,14 +69,18 @@ substPats :: InPats ps ts g
           -> LExp g t
           -> LExp (RemovePats ps g) t
 substPats InNil VNil e = e
-substPats (InCons pfM pfI pfIs) (VCons v vs) e = substPat pfI' v $ substPats pfIs' vs e
+substPats (InCons pfD pfI pfIs) (VCons v vs) e = substPat pfI' v $ substPats pfIs vs e
   where
---  pfIs' :: InPats ps ts g
-    pfIs' = inPatsMerge2 pfM pfIs
---  pfI'  :: InPat p s (RemovePats ps g)
-    pfI'  = inPatMerge1 pfM' pfI
---  pfM' :: Merge g1 (RemovePats ps g2) (RemovePats ps g) 
-    pfM' = mergeInPats2 pfM pfIs
+ -- pfD  :: DisjointPatPats p ps'
+ -- pfI  :: InPat p t' g
+ -- pfIs :: InPats ps' ts' g
+ -- v    :: LVal t'
+ -- vs   :: LVals ts'
+ -- e    :: LExp g t
+ -- want: LExp (RemovePat p (RemovePats ps' g)) t
+ -- substPats pfIs vs e :: LExp (RemovePats ps' g) t
+ -- pfI' = ?? :: InPats p t' (RemovePats ps' g)
+    pfI' = disjointPatPatsIn pfD pfI pfIs
 
 
 

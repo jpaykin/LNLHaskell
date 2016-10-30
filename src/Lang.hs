@@ -64,6 +64,10 @@ data LExp :: Ctx -> LType -> * where
   Shift   :: Shift i g1 g2 -> LExp g1 t -> LExp g2 t
   Unshift :: Shift i g1 g2 -> LExp g2 t -> LExp g1 t
 
+expToSCtx :: LExp g t -> SCtx g
+expToSCtx = undefined
+
+
 data LExps :: Ctx -> [LType] -> * where
   LExpNil  :: LExps '[] '[]
   LExpCons :: Merge g1 g2 g3 

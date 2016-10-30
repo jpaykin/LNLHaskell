@@ -238,6 +238,10 @@ addNotIn (AddLater pfA)  = NotInLater $ addNotIn pfA
 -- Relationship between In and Add --------------------------------------
 -- if x ∈ g and you can add y to g then you can add y to (Remove x g) ---
 
+inRemove :: In x s g 
+         -> AddCtx x s (Remove x g) g
+inRemove = undefined
+
 inAddRemove :: In x s g
             -> AddCtx y t g g'
             -> AddCtx y t (Remove x g) (Remove x g')

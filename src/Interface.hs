@@ -14,6 +14,7 @@ import Data.Constraint
 import Types
 import Context
 import Classes
+import Proofs
 import Lang
 import Subst
 
@@ -21,17 +22,19 @@ var :: forall x g t. CSingletonCtx x t g
     => LExp g t
 var = Var (singletonCtx @x @t)
 
+var' :: NatS x -> LExp (Sing x s) s
+var' x = Var $ singS x
+
 
 λ :: forall x s t g g'. CAddCtx x s g g'
   => LExp g' t 
   -> LExp g (s ⊸ t)
 λ t = Abs (addCtx @x) t
 
-abs :: forall x s t g g'. CAddCtx x s g g'
-    => NatS x
-    -> LExp g' t
-    -> LExp g (s ⊸ t)
-abs _ = λ @x
+abs :: forall x s t g. CIn x s g
+    => LExp g t
+    -> LExp (Remove x g) (s ⊸ t)
+abs e = Abs (inRemove $ inCtx @x) e
 
 app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)
@@ -61,7 +64,12 @@ put a = Put EmptyNil a
      -> LExp g3 t
 (>!) = LetBang merge
 
-
+caseof :: forall p s t g1 g2 g3.
+          (CMerge g1 (RemovePat p g2) g3, CInPat p s g2)
+       => LExp g1 s
+       -> LExp g2 t
+       -> LExp g3 t
+caseof e1 e2 =  undefined -- Case (merge) (addPat @p) e1 e2
 
 -- match :: forall g1 g2 g2' g3 p s t. (CAddPat p s g2 g2', CMerge2 g1 g2 g3) 
 --       => SPat p -> LExp g1 s -> LExp g2' t -> LExp g3 t

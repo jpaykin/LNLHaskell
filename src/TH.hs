@@ -3,7 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables,
-             EmptyCase, TemplateHaskell
+             EmptyCase, TemplateHaskell, QuasiQuotes
 #-}
 
 
@@ -17,9 +17,11 @@ import Interface
 
 import Prelude hiding (abs)
 import Language.Haskell.TH
+import Language.Haskell.TH.Quote
 import qualified Data.Map.Lazy as M
 import qualified Control.Monad.State as S
 import Data.Maybe
+import Control.Monad.Trans.Maybe
 
 --suspend :: Q Exp -> 
 -- suspend x = $( x >>= transform >>= runQ )
@@ -29,8 +31,14 @@ natToS Z = NatSS ZS
 natToS (S n) = 
   case natToS n of NatSS n -> NatSS $ SS n
 
+data ELExp where
+  ELExp :: forall t g. LExp g t -> ELExp
 
-data QState a = QState (S.StateT (M.Map Name Nat) Q a)
+data MyState = MyState { mynames :: M.Map Name Ident
+                       , myconst :: M.Map Name ELExp
+                       }
+
+data QState a = QState (MaybeT (S.StateT MyState Q) a)
 
 instance Functor QState where
   fmap f (QState st) = QState $ S.fmap f st
@@ -41,19 +49,44 @@ instance Monad QState where
   QState e >>= f = QState $ do
     a <- e
     case f a of QState e' -> e'
-instance S.MonadState (M.Map Name Nat) QState where
---  state = QState . S.state
+instance S.MonadState MyState QState where
   get = QState S.get
   put a = QState $ S.put a
 
+getMap :: QState (M.Map Name Ident)
+getMap = S.get >>= return . mynames
+
+putMap :: M.Map Name Ident -> QState ()
+putMap m = do 
+  cs <- getConstants
+  S.put $ MyState { mynames = m , myconst=cs}
+
+getConstants :: QState (M.Map Name ELExp)
+getConstants = undefined
+
+nothing :: QState a
+nothing = QState $ MaybeT { runMaybeT = return Nothing }
+
+isMaybe :: QState a -> QState (Maybe a)
+isMaybe (QState m) = QState $ MaybeT { runMaybeT = do
+    m' <- runMaybeT m
+    case m' of
+      Nothing -> return Nothing
+      Just a  -> return $ Just (Just a)
+  }
+
 runQState :: Q a -> QState a
-runQState q = QState (S.StateT $ \m -> q >>= \a -> return (a,m))
+runQState q = QState (S.lift . S.StateT $ \m -> q >>= \a -> return (a,m))
 
-runStateQ :: QState a -> M.Map Name Nat -> Q a
-runStateQ (QState st) m = S.evalStateT st m
+runStateQ :: QState a -> M.Map Name Ident -> Q (Maybe a)
+runStateQ (QState st) m = S.evalStateT (runMaybeT st) (initState m)
 
---varNat :: NatSS -> LExp (Sing _ s) s
---varNat (NatSS n) = varNatS n
+initState :: M.Map Name Ident -> MyState
+initState m = MyState { mynames=m, myconst=M.fromList [] }
+-- constants :: M.Map Name (Q Exp)
+-- constants = M.fromList $ [ (mkName "put", [|put|]) 
+--                          , (mkName "(>!)", ]
+
 
 -- freshNat min ls returns the smallest nat >= min that is not in ls
 freshNat :: Nat -> [Nat] -> Nat
@@ -63,16 +96,18 @@ freshNat min (min' : ls) = if min < min' then min
 
 fresh :: QState Nat
 fresh = do
-  m  <- S.get
-  ns <- return $ M.elems m
-  return $ freshNat Z ns
+  m  <- getMap
+  return $ freshNat Z $ M.elems m
 
 transformPat :: Pat -> QState Pattern
 transformPat (VarP n) = do
   x <- fresh
-  m <- S.get
-  S.put $ M.insert n x m
-  return (PVar x)
+  m <- getMap
+  putMap $ M.insert n x m
+  return $ PVar x
+transformPat (TupP ps) = do
+  ps' <- mapM transformPat ps
+  return $ PTuple ps'
 transformPat _ = error "Other pattern"
 
 transformPats :: [Pat] -> QState [Pattern]
@@ -82,22 +117,44 @@ transformPats (p : ps) = do
   ps' <- transformPats ps
   return $ p':ps'
 
-transform :: Exp -> QState (Maybe Exp)
+transformLam :: Pattern -> Exp -> QState Exp
+transformLam (PVar x) e = do
+  case natToS x of { NatSS x' -> do
+    ex <- runQState [|x'|]
+    return $ AppE (AppE (VarE $ mkName "abs") ex) e
+  } 
+transformLam (PTuple ps) e = do
+  x <- fresh
+  case natToS x of { NatSS x' -> do
+    ex <- runQState [|x'|]
+ -- λ x. case x of p -> e
+    return $ (VarE $ mkName "abs") 
+             `AppE` ex
+             `AppE` ( (VarE $ mkName "caseof")
+                      `AppE` ex
+                      `AppE` e )
+  }
+transformLams :: [Pattern] -> Exp -> QState Exp
+transformLams []     e = return e
+transformLams [p]    e = transformLam p e
+transformLams (p:ps) e = do
+  e' <- transformLams ps e
+  transformLam p e'
+
+transform :: Exp -> QState Exp
 transform (VarE n)          = do
-  m <- S.get
+  m <- getMap
   case M.lookup n m of
     Just x  -> do -- [| e |] >>= \e -> return (e,m)
       vName <- return $ mkName "Var"
       pf    <- case natToS x of NatSS x' -> runQState [| singS x' |]
-      return . Just $ AppE (ConE vName) pf
-    Nothing -> return . Just $ VarE n
+      return $ AppE (ConE vName) pf
+    Nothing -> nothing
 transform (LamE pats e)     = do
-  [ PVar x]    <- transformPats pats
   e'    <- transform e
-  case (e',natToS x) of 
-    (Just e',NatSS x') -> do
-      ex <- runQState [|x'|]
-      return . Just $ AppE (AppE (VarE $ mkName "abs") ex) e'
+  ps    <- transformPats pats
+  transformLams ps e'
+transform (TupE es)         = undefined
 
 transform (ConE n)          = undefined
 transform (LitE l)          = undefined
@@ -106,7 +163,6 @@ transform (InfixE e1 e e2)  = undefined
 transform (UInfixE e1 e e2) = undefined
 transform (ParensE e)       = undefined
 transform (LamCaseE matches)= undefined
-transform (TupE es)         = undefined         
 transform (UnboxedTupE es)  = undefined
 transform (CondE e1 e2 e3)  = undefined        
 transform (MultiIfE ls)     = undefined
@@ -122,12 +178,19 @@ transform (RecUpdE e fs)    = undefined
 transform (StaticE e)       = undefined      
 transform (UnboundVarE n)   = undefined
 
-suspendTH :: Exp -> Exp
-suspendTH e = AppE (VarE $ mkName "suspend") e
+suspendTH :: QuasiQuoter 
+suspendTH = QuasiQuoter { quoteExp  = suspendE
+                        , quotePat  = undefined
+                        , quoteType = undefined
+                        , quoteDec  = undefined }
+
+suspendE :: String -> Q Exp
+suspendE = undefined
+
 
 transformTH :: Q Exp -> Q Exp
 transformTH m = do
   e <- m 
   me <- runStateQ (transform e) M.empty
-  return $ suspendTH $ fromMaybe e me
+  return $ AppE (VarE $ mkName "suspend") $ fromMaybe e me
   

@@ -42,6 +42,29 @@ instance KnownCtx g => CIn 'Z s ('Used s ': g) where
 instance CIn x s g => CIn ('S x) s (u ': g) where
   inCtx = InLater inCtx
 
+class CInPat p t g where
+  inPat :: InPat p t g
+
+instance CIn x s g => CInPat ('PVar x) s g where
+  inPat = InVar inCtx
+instance CInPats ps ts g => CInPat ('PTuple ps) ('Tuple ts) g where
+  inPat = InTuple inPats
+
+class CInPats ps ts g where
+  inPats :: InPats ps ts g
+
+instance CInPats '[] '[] g where
+  inPats = InNil
+instance (CDisjointPatPats ps p, CInPat p t g, CInPats ps ts g) => CInPats (p ': ps) (t ': ts) g where
+  inPats = InCons disjointPatPats inPat inPats
+
+-- Disjoint -----------------------------------------------
+
+class CDisjointPatPats ps p where
+  disjointPatPats :: DisjointPatPats ps p
+
+
+
 -- Empty Context ------------------------------------------------
 
 class CEmptyCtx g where
@@ -78,6 +101,9 @@ instance CAddCtxRev x s g g' => CAddCtxRev ('S x) s (u ': g) (u ': g') where
   addCtxRev = AddLater addCtxRev
 --instance CAddCtxRev x s '[] g' => CAddCtxRev ('S x) s '[] ('Unused ': g') where
 --  addCtxRev = AddELater addCtxRev
+
+class CAddPat p t g g' | p t g -> g' where
+  addPat :: AddPat p t g g'
 
 
 
