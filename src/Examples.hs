@@ -12,6 +12,7 @@ import Types
 import Lang
 import Context
 import Interface
+import Data.Constraint -- Dict
 
 type X = 'Z
 type Y = 'S 'Z
@@ -58,9 +59,4 @@ uncurry = suspend @'[ 'Unused, 'Unused, 'Unused, 'Unused ] $ λ$ \f -> λ$ \z ->
 
 curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 curry = Suspend $ λ$ \f -> λ$ \x -> λ$ \y -> f `app` (x ⊗ y)
-
-
--- use Dict to to unit tests on type families
-data Dict c where
-  Dict :: c => Dict c
 
