@@ -13,6 +13,10 @@ import Data.Constraint
 import Types
 
 
+-- Fresh variable ------------------------------------------
+
+
+
 -- Shift -----------------------------------------------------
 
 data Shift :: Nat -> Ctx -> Ctx -> * where

@@ -41,3 +41,6 @@ data SSCtx where
 
 data Nat = Z | S Nat deriving (Eq, Ord)
 
+data SIdent :: Nat -> * where
+  SZ :: SIdent 'Z
+  SS :: SIdent x -> SIdent ('S x)

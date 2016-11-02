@@ -18,11 +18,11 @@ import Lang
 import Subst
 
 var :: forall x g t. CSingletonCtx x t g 
-    => LExp g t
-var = Var (singletonCtx @x @t)
+    => SIdent x -> LExp g t
+var _ = Var (singletonCtx @x @t)
 
 
-λ :: forall x s t g g'. CAddCtx x s g g'
+λ :: forall x s t g g'. CIn x s g
   => LExp g' t 
   -> LExp g (s ⊸ t)
 λ t = Abs (addCtx @x) t
