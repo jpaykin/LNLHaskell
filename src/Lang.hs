@@ -3,7 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables,
-             EmptyCase
+             EmptyCase, RankNTypes
 #-}
 
 module Lang where
@@ -20,6 +20,9 @@ data LExp :: Ctx -> LType -> * where
 --  Var :: LExp _ [(x,t)] t
   Var :: forall x t f1 f2 g. SingletonCtx x t g -> LExp g t
   
+  -- Abs :: (forall x. AddCtx x s g g' -> LExp g' t)
+  --     -> LExp g t
+
   Abs :: forall x s t g g'. 
          AddCtx x s g g' 
       -> LExp g' t

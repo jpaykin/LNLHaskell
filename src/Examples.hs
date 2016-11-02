@@ -17,12 +17,12 @@ type X = 'Z
 type Y = 'S 'Z
 type Z = 'S ('S 'Z)
 
--- idL ∷ Lift (a ⊸ a)
-idL = Suspend . λ$ \x -> x
+idL ∷ forall a. Lift (a ⊸ a)
+idL = Suspend $ λ$ \x -> x
 
 
 -- counit :: forall a. Lift (Lower (Lift a) ⊸ a)
-counit = Suspend . λ$ \ x -> x >! force
+counit = Suspend $ λ$ \ x -> x >! force
 
 --e3 :: forall a b. Lift (a ⊸ (a ⊸ b) ⊸ b)
 apply = Suspend . λ$ \x -> λ$ \y -> y `app` x
@@ -41,17 +41,25 @@ app2 = Suspend . λ$ \z -> λ$ \x -> λ$ \y ->
 
 idid = suspend $ force idL `app` force idL
 
--- idid' = Suspend $ (λ $ \x -> x) `app` force idL
+idid' = Suspend $ app @'[] @'[] (force idL) (λ $ \x -> x) 
 
 pairPut :: Lift (Lower String ⊗ Lower String)
 pairPut = suspend $ put "hi" ⊗ put "bye"
 
 swapPairPut = suspend @'[ 'Unused, 'Unused ] $ 
-                force pairPut `letPair` \ (x,y) -> x ⊗ y
+                force pairPut `letPair` \ (x,y) -> y ⊗ x
 
--- uncurry :: Lift ((a ⊸ b ⊸ c) ⊸ (a ⊗ b ⊸ c))
--- uncurry = Suspend . λ$ \f -> λ$ \z ->
---             letPair z $ \(x,y) -> f `app` x `app` y
 
--- curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
+uncurry :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ (a ⊗ b ⊸ c))
+uncurry = suspend @'[ 'Unused, 'Unused, 'Unused, 'Unused ] $ λ$ \f -> λ$ \z -> 
+    letPair z $ \ (x,y) -> f `app` x `app` y
+
+
+curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 curry = Suspend $ λ$ \f -> λ$ \x -> λ$ \y -> f `app` (x ⊗ y)
+
+
+-- use Dict to to unit tests on type families
+data Dict c where
+  Dict :: c => Dict c
+

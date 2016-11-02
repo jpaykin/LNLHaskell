@@ -3,7 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables, FlexibleContexts,
-             EmptyCase
+             EmptyCase, RankNTypes
 #-}
 
 module Interface where
@@ -18,17 +18,17 @@ import Classes
 import Lang
 import Subst
 
+type SExp x s = LExp (FSingletonCtx x s) s
+
 var :: forall x g t. 
-       SIdent x -> LExp (FSingletonCtx x t) t
+       SIdent x -> SExp x t
 var x = Var $ fSingletonCtx x
 
-
-λ :: forall s t g g'. (KnownCtx g, CAddCtx (Fresh g) s g g')
-  => (LExp (FSingletonCtx (Fresh g) s) s 
-      -> LExp g' t)
+λ :: forall s t g g'. KnownCtx g
+  => (SExp (Fresh g) s -> LExp (FAddCtx (Fresh g) s g) t)
   -> LExp g (s ⊸ t)
 λ f = Abs pfA (f varx) where
-  pfA  = addCtx @(Fresh g) @s @g @g'
+  pfA  = addFAdd ctx
   varx = var $ addToSIdent pfA
 
 app :: CMerge g1 g2 g3 
@@ -56,18 +56,15 @@ letPair :: forall g s1 s2 t g1 g2.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
            ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g)
         => LExp g1 (s1 ⊗ s2)
-        -> (  (LExp (FSingletonCtx (Fresh g) s1) s1, LExp (FSingletonCtx (Fresh2 g) s2) s2)
-           -> LExp g2 t)
+        -> ( (SExp (Fresh g) s1, SExp (Fresh2 g) s2) -> LExp g2 t)
         -> LExp g t
 letPair = undefined
 
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t
 
-
 data Lin a where
   Lin :: Lift (Lower a) -> Lin a
-
 
 coerce :: CEmptyCtx g => LExp g t -> LExp '[] t
 coerce e = transportDown emptyCtx e

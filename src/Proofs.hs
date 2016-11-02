@@ -133,6 +133,11 @@ addSingleton (AddELater pfA) = AddLaterS $ addSingleton pfA
 addToSIdent :: AddCtx x s g g' -> SIdent x
 addToSIdent = undefined
 
+addFAdd :: SCtx g -> AddCtx (Fresh g) s g (FAddCtx (Fresh g) s g) 
+addFAdd SNil = AddEHere
+addFAdd (SCons SUnused g) = AddHere g
+addFAdd (SCons SUsed   g) = AddLater $ addFAdd g
+
 -- Singleton Context ------------------------------------------
 
 singletonEmpty :: SingletonCtx x s g

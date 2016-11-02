@@ -23,7 +23,7 @@ type family Fresh g :: Ident where
 type family Fresh2 g :: Ident where
   Fresh2 '[] = 'S 'Z
   Fresh2 ('Unused ': g) = 'S (Fresh g)
-  Fresh2 ('Used s ': g) = Fresh2 g
+  Fresh2 ('Used s ': g) = 'S (Fresh2 g)
 
 -- Shift -----------------------------------------------------
 
