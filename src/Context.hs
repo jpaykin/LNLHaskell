@@ -64,7 +64,9 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
   AddLaterS :: SingletonCtx x s g
             -> SingletonCtx ('S x) s ('Unused ': g)
 
-
+type family FSingletonCtx x t :: Ctx where
+  FSingletonCtx 'Z t = '[ 'Used t ]
+  FSingletonCtx ('S x) t = 'Unused ': FSingletonCtx x t
 
 -- Merge ----------------------------------------------------
 

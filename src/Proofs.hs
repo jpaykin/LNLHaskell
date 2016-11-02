@@ -13,6 +13,13 @@ import Data.Constraint
 import Types
 import Context
 
+-- Freshness
+
+type family Fresh g :: Ident where
+  Fresh '[] = 'Z
+  Fresh ('Unused ': g) = 'Z
+  Fresh ('Used s ': g) = 'S (Fresh g)
+
 -- Shift ---------------------------------------------------
 
 shiftEmpty :: Shift n g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
@@ -127,12 +134,19 @@ addSingleton :: AddCtx x s '[] g' -> SingletonCtx x s g'
 addSingleton AddEHere        = AddHereS
 addSingleton (AddELater pfA) = AddLaterS $ addSingleton pfA
 
+addToSIdent :: AddCtx x s g g' -> SIdent x
+addToSIdent = undefined
+
 -- Singleton Context ------------------------------------------
 
 singletonEmpty :: SingletonCtx x s g
                -> EmptyCtx (Remove x g)
 singletonEmpty AddHereS        = EmptyCons EmptyNil
 singletonEmpty (AddLaterS pfS) = EmptyCons $ singletonEmpty pfS
+
+fSingletonCtx :: SIdent x -> SingletonCtx x s (FSingletonCtx x s)
+fSingletonCtx SZ = AddHereS
+fSingletonCtx (SS x) = AddLaterS $ fSingletonCtx x
 
 -- Merge ----------------------------------------------------
 

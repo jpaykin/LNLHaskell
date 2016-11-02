@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, FlexibleContexts,
              EmptyCase
 #-}
 
@@ -13,19 +13,23 @@ import Data.Constraint
 
 import Types
 import Context
+import Proofs
 import Classes
 import Lang
 import Subst
 
-var :: forall x g t. CSingletonCtx x t g 
-    => SIdent x -> LExp g t
-var _ = Var (singletonCtx @x @t)
+var :: forall x g t. 
+       SIdent x -> LExp (FSingletonCtx x t) t
+var x = Var $ fSingletonCtx x
 
 
-λ :: forall x s t g g'. CIn x s g
-  => LExp g' t 
+λ :: forall s t g g'. (KnownCtx g, CAddCtx (Fresh g) s g g')
+  => (LExp (FSingletonCtx (Fresh g) s) s 
+      -> LExp g' t)
   -> LExp g (s ⊸ t)
-λ t = Abs (addCtx @x) t
+λ f = Abs pfA (f varx) where
+  pfA  = addCtx @(Fresh g) @s @g @g'
+  varx = var $ addToSIdent pfA
 
 app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)
@@ -50,25 +54,6 @@ data Lift :: LType -> * where
 data Lin a where
   Lin :: Lift (Lower a) -> Lin a
 
-
--- fmapLExp :: forall f g a b. EmptyCtx f g -> (a -> b) -> 
---                             LExp g (Lower a) -> LExp g (Lower b)
--- fmapLExp pfEmpty g e = LetBang (mergeEmpty3 pfEmpty) e $ \x -> Put pfEmpty (g x)
-
--- fmapLift :: forall f a b. (a -> b) -> Lift f (Lower a) -> Lift f (Lower b)
--- fmapLift g (Suspend e) = Suspend $ fmapLExp (emptyCtx @f) g e
-
--- appLExp :: forall f g g' a b. EmptyCtx f g 
---         -> LExp g (Lower (a -> b))
---         -> LExp g (Lower a)
---         -> LExp g (Lower b)
--- appLExp pfEmpty e1 e2 = LetBang (mergeEmpty3 pfEmpty) e1 (\g -> fmapLExp pfEmpty g e2)
-
--- appLift :: forall f a b. Lift f (Lower (a -> b)) -> Lift f (Lower a) -> Lift f (Lower b)
--- appLift (Suspend e1) (Suspend e2) = Suspend $ appLExp (emptyCtx @f) e1 (coerce @f e2)
-
---coerce :: forall g1 g2 t. (CEmptyCtx g1, CEmptyCtx g2) => LExp g1 t -> LExp g2 t
---coerce e = transport e (emptyCtx @g1) (emptyCtx @g2)
 
 coerce :: CEmptyCtx g => LExp g t -> LExp '[] t
 coerce e = transportDown emptyCtx e
