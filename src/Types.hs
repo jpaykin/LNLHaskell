@@ -12,14 +12,10 @@ import Data.Constraint
 
 
 data LType where
-  One   :: LType
-  Tensor :: LType -> LType -> LType
   Lolli :: LType -> LType -> LType
   Lower :: * -> LType
 type s ⊸ t = Lolli s t
 infixr 0 ⊸
-type s ⊗ t = Tensor s t
-infixr 3 ⊗
 
 
 type Ident = Nat
@@ -40,25 +36,8 @@ data SSUsage where
 data SSCtx where
    SSCtx :: SCtx g -> SSCtx
 
-{-
-toSSUsage (Used s) = SSUsage SUsed
-toSSUsage Unused   = SSUsage SUnused
-
-toSSCtx :: Ctx -> SSCtx
-toSSCtx []    = SSCtx SNil
-toSSCtx (u:g) = 
-  case (toSSCtx g, toSSUsage u) of
-    (SSCtx g',SSUsage u') -> SSCtx $ SCons u' g'
--}
-
-
-
--- a frame is a list of all identifiers (free and bound) in a term.
 
 -- Nats ---------------------------------------------------------
 
 data Nat = Z | S Nat deriving (Eq, Ord)
 
-type family Plus m n :: Nat where
-  Plus 'Z n = n
-  Plus ('S m) n = 'S (Plus m n)

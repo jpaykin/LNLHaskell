@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib, Types, Context, Classes, Lang, Subst, Interface, Examples
+  exposed-modules:     Lib, Types, Context, Proofs, Classes, Lang, Subst, Interface, Examples
   build-depends:       base >= 4.7 && < 5
                      , template-haskell == 2.11.*
                      , constraints >= 0.8
