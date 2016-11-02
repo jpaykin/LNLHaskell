@@ -15,10 +15,6 @@ import Context
 
 -- Freshness
 
-type family Fresh g :: Ident where
-  Fresh '[] = 'Z
-  Fresh ('Unused ': g) = 'Z
-  Fresh ('Used s ': g) = 'S (Fresh g)
 
 -- Shift ---------------------------------------------------
 

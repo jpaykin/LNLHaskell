@@ -25,6 +25,8 @@ subst :: In x s g
 subst pfI s (Var pfS)           = substVar     pfI s pfS
 subst pfI s (Abs pfA e')        = substAbs     pfI s pfA e'
 subst pfI s (App pfM e1 e2)     = substApp     pfI s pfM e1 e2
+subst pfI s (Pair pfM e1 e2)    = undefined
+subst pfI s (LetPair pfM pfA pfA' e1 e2) = undefined
 subst pfI s (Put pfE a)         = substPut     pfI s pfE a
 subst pfI s (LetBang pfM e f)   = substLetBang pfI s pfM e f
 subst pfI s (Shift pfS e)       = substShift   pfI s pfS e
@@ -125,6 +127,8 @@ eval' pfE (App pfMerge e1 e2) =
 -- pfS :: Shift g1 g2
 -- e   :: LExp g1 t
 -- (Shift pfS e) :: LExp g2 s
+eval' pfE (Pair pfM e1 e2) = undefined
+eval' pfE (LetPair pfM pfA1 pfA2 e1 e2) = undefined
 eval' pfE             (Shift pfS e)   = eval' (unshiftEmpty pfS pfE) e
 -- pfE :: EmptyCtx g1
 -- pfS :: Shift g1 g2

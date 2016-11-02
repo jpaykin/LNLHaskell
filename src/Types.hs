@@ -12,10 +12,15 @@ import Data.Constraint
 
 
 data LType where
-  Lolli :: LType -> LType -> LType
-  Lower :: * -> LType
+  Lolli  :: LType -> LType -> LType
+  Lower  :: * -> LType
+  Tensor :: LType -> LType -> LType
+
 type s ⊸ t = Lolli s t
 infixr 0 ⊸
+
+type s ⊗ t = Tensor s t
+infixr 3 ⊗
 
 
 type Ident = Nat

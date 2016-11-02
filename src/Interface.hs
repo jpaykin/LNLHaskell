@@ -46,6 +46,20 @@ put a = Put EmptyNil a
      -> LExp g3 t
 (>!) = LetBang merge
 
+(⊗) :: CMerge g1 g2 g3
+    => LExp g1 t1
+    -> LExp g2 t2
+    -> LExp g3 (t1 ⊗ t2)
+e1 ⊗ e2 = Pair merge e1 e2
+
+letPair :: forall g s1 s2 t g1 g2.
+           (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
+           ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g)
+        => LExp g1 (s1 ⊗ s2)
+        -> (  (LExp (FSingletonCtx (Fresh g) s1) s1, LExp (FSingletonCtx (Fresh2 g) s2) s2)
+           -> LExp g2 t)
+        -> LExp g t
+letPair = undefined
 
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t
@@ -88,8 +102,8 @@ force (Suspend e) = coerce $ eval emptyCtx e
 forceL :: Lin a -> LExp '[] (Lower a)
 forceL (Lin e) = force e
 
-suspend :: LExp '[] a -> Lift a
-suspend = Suspend 
+suspend :: CEmptyCtx g => LExp g a -> Lift a
+suspend e = Suspend $ transportDown emptyCtx e
 
 suspendL :: LExp '[] (Lower a) -> Lin a
 suspendL = Lin . Suspend 

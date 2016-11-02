@@ -15,7 +15,15 @@ import Types
 
 -- Fresh variable ------------------------------------------
 
+type family Fresh g :: Ident where
+  Fresh '[] = 'Z
+  Fresh ('Unused ': g) = 'Z
+  Fresh ('Used s ': g) = 'S (Fresh g)
 
+type family Fresh2 g :: Ident where
+  Fresh2 '[] = 'S 'Z
+  Fresh2 ('Unused ': g) = 'S (Fresh g)
+  Fresh2 ('Used s ': g) = Fresh2 g
 
 -- Shift -----------------------------------------------------
 
@@ -55,6 +63,11 @@ data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
   AddELater  :: AddCtx x s '[] g -> AddCtx ('S x) s '[] ('Unused ': g)
   AddLater   :: AddCtx x s g g'  -> AddCtx ('S x) s (u ': g) (u ': g')
 
+type family FAddCtx x s g :: Ctx where
+  FAddCtx x      s '[]            = FSingletonCtx x s
+  FAddCtx 'Z     s ('Unused ': g) = 'Used s ': g
+  FAddCtx ('S x) s (u ': g)       = u ': FAddCtx x s g
+
 
 -- Singleton Context ------------------------------------------
 
@@ -65,8 +78,9 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
             -> SingletonCtx ('S x) s ('Unused ': g)
 
 type family FSingletonCtx x t :: Ctx where
-  FSingletonCtx 'Z t = '[ 'Used t ]
+  FSingletonCtx 'Z     t = '[ 'Used t ]
   FSingletonCtx ('S x) t = 'Unused ': FSingletonCtx x t
+
 
 -- Merge ----------------------------------------------------
 
