@@ -20,7 +20,7 @@ data Pattern where
   PTuple:: [Pattern] -> Pattern
 
 data SPat :: Pattern -> * where
-  MkVar   :: forall x. SPat ('PVar x)
+  MkVar   :: NatS x -> SPat ('PVar x)
   MkTuple :: SPats ps -> SPat (PTuple ps)
 
 data SPats :: [Pattern] -> * where
@@ -31,6 +31,7 @@ type family FreshCtx g :: Nat where
   FreshCtx '[] = 'Z
   FreshCtx ('Unused ': g) = 'Z
   FreshCtx ('Used _ ': g) = 'S (FreshCtx g)
+
   
 -- Shift -----------------------------------------------------
 
@@ -82,6 +83,15 @@ data AddPats  :: [Pattern] -> [LType] -> Ctx -> Ctx -> * where
   AddPatsNil  :: SCtx g -> AddPats '[] '[] g g
   AddPatsCons :: AddPat p t g1 g2 -> AddPats ps ts g2 g3 -> AddPats (p ': ps) (t ': ts) g1 g3
 
+data AddLType :: LType -> Ctx -> Ctx -> * where
+  AddLNil     :: AddLType t '[] '[ 'Used t ]
+  AddLUnused  :: AddLType t ('Unused ': g) ('Used t ': g)
+  AddLUsed    :: AddLType t g g' -> AddLType t ('Used s ': g) ('Used s ': g')
+
+data AddLTypes :: [LType] -> Ctx -> Ctx -> * where
+  AddLsNil     :: AddLTypes '[] g g 
+  AddLsCons    :: AddLType t g g' -> AddLTypes ts g' g'' -> AddLTypes (t ': ts) g g''
+
 -- Singleton Context ------------------------------------------
 
 data SingletonCtx :: Nat -> LType -> Ctx -> * where
@@ -90,9 +100,29 @@ data SingletonCtx :: Nat -> LType -> Ctx -> * where
             -> SingletonCtx ('S x) s ('Unused ': g)
 deriving instance Lift (SingletonCtx x s g)
 
+data SingletonPat :: Pattern -> LType -> Ctx -> * where
+  SingletonVar :: SingletonCtx x s g -> SingletonPat (PVar x) s g
+  SingletonTup :: SingletonPats ps ts g -> SingletonPat (PTuple ps) (Tuple ts) g
+
+data SingletonPats :: [Pattern] -> [LType] -> Ctx -> * where
+  SingletonNil  :: SingletonPats '[] '[] '[]
+  SingletonCons :: Merge g1 g2 g3
+                -> SingletonPat p t g1
+                -> SingletonPats ps ts g2
+                -> SingletonPats (p ': ps) (t ': ts) g3
+
 type family Sing x s :: Ctx where
   Sing 'Z s = '[ 'Used s ]
   Sing ('S x) s = 'Unused ': Sing x s
+
+type family SingPat p t :: Ctx where
+  SingPat (PVar x) t = Sing x t
+  SingPat (PTuple ps) (Tuple ts) = SingPats ps ts
+
+type family SingPats ps ts :: Ctx where
+  SingPats '[] '[] = '[]
+  SingPats (p ': ps) (t ': ts) = AddPatFun p t (SingPats ps ts)
+
 
 -- Disjoint Patterns ------------------------------------
 
@@ -187,6 +217,14 @@ type family AddFun x s g :: Ctx where
   AddFun x      s '[]            = Sing x s
   AddFun 'Z     s ('Unused ': g) = 'Used s ': g
   AddFun ('S x) s (u ': g)       = u ': AddFun x s g
+
+type family AddPatFun p t g :: Ctx where
+  AddPatFun ('PVar x)    t           g = AddFun x t g
+  AddPatFun ('PTuple ps) ('Tuple ts) g = AddPatsFun ps ts g
+
+type family AddPatsFun ps ts g :: Ctx where
+  AddPatsFun '[] '[] g = g
+  AddPatsFun (p ': ps) (t ': ts) g = AddPatFun p t (AddPatsFun ps ts g)
 
 -- Relation between In and Shift
 

@@ -105,7 +105,11 @@ instance CAddCtxRev x s g g' => CAddCtxRev ('S x) s (u ': g) (u ': g') where
 class CAddPat p t g g' | p t g -> g' where
   addPat :: AddPat p t g g'
 
+class CAddLType s g g' | s g -> g' where
+  addLType :: AddLType s g g'
 
+class CAddLTypes ts g g' | ts g -> g' where
+  addLTypes :: AddLTypes ts g g'
 
 -- Singleton Context ------------------------------------------
 
@@ -117,6 +121,26 @@ instance CSingletonCtx 'Z s '[ 'Used s ] where
 instance CSingletonCtx x s g 
       => CSingletonCtx ('S x) s ('Unused ': g) where
   singletonCtx = AddLaterS singletonCtx
+
+class CSingletonPat p t g | p t -> g where
+  singletonPat :: SingletonPat p t g
+
+instance CSingletonCtx x s g => CSingletonPat (PVar x) s g where
+  singletonPat = SingletonVar singletonCtx
+instance CSingletonPats ps ts g => CSingletonPat (PTuple ps) (Tuple ts) g where
+  singletonPat = SingletonTup singletonPats
+
+class CSingletonPats ps ts g | ps ts -> g where
+  singletonPats :: SingletonPats ps ts g
+
+instance CSingletonPats '[] '[] '[] where
+  singletonPats = SingletonNil
+instance (CMerge g1 g2 g3,CSingletonPat p t g1, CSingletonPats ps ts g2)
+      => CSingletonPats (p ': ps) (t ': ts) g3 where
+  singletonPats = SingletonCons merge singletonPat singletonPats
+
+class CSingletonLTypes ts g | ts -> g where
+  singletonLTypes :: AddLTypes ts '[] g
 
 -- Merge ----------------------------------------------------
 
