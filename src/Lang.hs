@@ -39,6 +39,14 @@ data LExp :: Ctx -> LType -> * where
        -> LExp g2'' r
        -> LExp g3   r
 
+  Prod :: LExp g t1
+       -> LExp g t2
+       -> LExp g (t1 & t2)
+  Fst  :: LExp g (t1 & t2)
+       -> LExp g t1
+  Snd  :: LExp g (t1 & t2)
+       -> LExp g t2
+
   Put     :: EmptyCtx g -> a -> LExp g (Lower a)
   LetBang :: Merge g1 g2 g3
       -> LExp g1 (Lower a)
@@ -64,11 +72,13 @@ data LVal :: LType -> * where
       -> LVal (s ⊸ t)
   VPut :: a -> LVal (Lower a)
   VPair :: LVal t1 -> LVal t2 -> LVal (t1 ⊗ t2)
+  VProd :: LVal t1 -> LVal t2 -> LVal (t1 & t2)
 
 valToExp :: LVal t -> LExp '[] t
 valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
 valToExp (VPut a) = Put EmptyNil a
 valToExp (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
+valToExp (VProd v1 v2) = Prod (valToExp v1) (valToExp v2)
 
 
 -- transport --------------------------------------------

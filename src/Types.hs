@@ -15,12 +15,16 @@ data LType where
   Lolli  :: LType -> LType -> LType
   Lower  :: * -> LType
   Tensor :: LType -> LType -> LType
+  With   :: LType -> LType -> LType
 
 type s ⊸ t = Lolli s t
 infixr 0 ⊸
 
 type s ⊗ t = Tensor s t
 infixr 3 ⊗
+
+type s & t = With s t
+infixr 3 &
 
 
 type Ident = Nat

@@ -27,6 +27,9 @@ subst pfI s (Abs pfA e')                 = substAbs     pfI s pfA e'
 subst pfI s (App pfM e1 e2)              = substApp     pfI s pfM e1 e2
 subst pfI s (Pair pfM e1 e2)             = substPair    pfI s pfM e1 e2
 subst pfI s (LetPair pfM pfA pfA' e1 e2) = substLetPair pfI s pfM pfA pfA' e1 e2
+subst pfI s (Prod e1 e2)                 = Prod (subst pfI s e1) (subst pfI s e2)
+subst pfI s (Fst e)                      = Fst $ subst pfI s e
+subst pfI s (Snd e)                      = Snd $ subst pfI s e
 subst pfI s (Put pfE a)                  = substPut     pfI s pfE a
 subst pfI s (LetBang pfM e f)            = substLetBang pfI s pfM e f
 subst pfI s (Shift pfS e)                = substShift   pfI s pfS e
@@ -166,6 +169,11 @@ eval' pfE (Pair pfM e1 e2)              = VPair (eval' pfE1 e1) (eval' pfE2 e2)
   where
     (pfE1,pfE2) = mergeEmpty pfM pfE
 eval' pfE (LetPair pfM pfA1 pfA2 e1 e2) = evalPair pfE pfM pfA1 pfA2 e1 e2
+eval' pfE (Prod e1 e2)                  = VProd (eval' pfE e1) (eval' pfE e2)
+eval' pfE (Fst e)                       = 
+  case eval' pfE e of VProd v1 v2 -> v1
+eval' pfE (Snd e)                       =
+  case eval' pfE e of VProd v1 v2 -> v2
 eval' pfE             (Shift pfS e)     = eval' (unshiftEmpty pfS pfE) e
 eval' pfE             (Unshift pfS e)   = eval' (shiftEmpty pfS pfE) e
 
