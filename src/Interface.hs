@@ -60,6 +60,9 @@ e1 ⊗ e2 = Pair merge e1 e2
     -> LExp g (t1 & t2)
 (&) = Prod
 
+letUnit :: CMerge g1 g2 g
+        => LExp g1 One -> LExp g2 t -> LExp g t
+letUnit = LetUnit merge
 
 letPair :: forall g s1 s2 t g1 g2.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2

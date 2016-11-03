@@ -26,6 +26,12 @@ data LExp :: Ctx -> LType -> * where
       -> LExp g2 s
       -> LExp g3 t
 
+  Unit :: LExp '[] One
+  LetUnit :: Merge g1 g2 g3
+          -> LExp g1 One
+          -> LExp g2 t
+          -> LExp g3 t
+
   Pair :: Merge g1 g2 g3
        -> LExp g1 t1
        -> LExp g2 t2
@@ -75,6 +81,7 @@ unshift1 :: LExp ('Unused ': g) t -> LExp g t
 unshift1 = Unshift ShiftHere
 
 data LVal :: LType -> * where
+  VUnit :: LVal One
   VAbs :: forall x s t g g'.
          EmptyCtx g 
       -> AddCtx x s g g'
@@ -87,10 +94,13 @@ data LVal :: LType -> * where
   VInr  :: LVal t2 -> LVal (t1 ⊕ t2)
 
 valToExp :: LVal t -> LExp '[] t
+valToExp VUnit = Unit
 valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
 valToExp (VPut a) = Put EmptyNil a
 valToExp (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
 valToExp (VProd v1 v2) = Prod (valToExp v1) (valToExp v2)
+valToExp (VInl v)      = Inl $ valToExp v
+valToExp (VInr v)      = Inr $ valToExp v
 
 
 -- transport --------------------------------------------

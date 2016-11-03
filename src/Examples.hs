@@ -23,6 +23,10 @@ idL ∷ forall a. Lift (a ⊸ a)
 idL = Suspend $ λ$ \x -> x
 
 
+compose :: Lift ((a ⊸ b) ⊸ (b ⊸ c) ⊸ a ⊸ c)
+compose = Suspend $ λ$ \f -> λ$ \g ->
+            λ$ \a -> g `app` (f `app` a)
+
 counit :: forall a. Lift (Lower (Lift a) ⊸ a)
 counit = Suspend $ λ$ \ x -> x >! force
 
@@ -61,9 +65,6 @@ uncurry = suspend @'[ 'Unused, 'Unused, 'Unused, 'Unused ] $ λ$ \f -> λ$ \z ->
 curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 curry = Suspend $ λ$ \f -> λ$ \x -> λ$ \y -> f `app` (x ⊗ y)
 
-dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
-dupTensor = Suspend $ λ$ \a -> 
-    a >! \a' -> put a' ⊗ put a'
 
 -- Plus
 
@@ -88,6 +89,16 @@ isoPlus2 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
 
 coret :: LExp '[] a -> LExp '[] (Bang a)
 coret = put . Suspend
+
+dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
+dupTensor = Suspend $ λ$ \a -> 
+    a >! \a' -> put a' ⊗ put a'
+
+drop :: Lift (Bang a ⊸ One)
+drop = Suspend . λ$ \a -> a >! \_ -> Unit
+
+oneDuplicable :: Lift (One ⊸ Bang One)
+oneDuplicable = Suspend . λ$ \x -> x `letUnit` coret Unit
 
 -- With
 

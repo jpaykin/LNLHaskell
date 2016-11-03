@@ -25,6 +25,7 @@ subst :: In x s g
 subst pfI s (Var pfS)                       = substVar     pfI s pfS
 subst pfI s (Abs pfA e')                    = substAbs     pfI s pfA e'
 subst pfI s (App pfM e1 e2)                 = substApp     pfI s pfM e1 e2
+subst pfI s (LetUnit pfM e1 e2)             = substLetUnit pfI s pfM e1 e2
 subst pfI s (Pair pfM e1 e2)                = substPair    pfI s pfM e1 e2
 subst pfI s (LetPair pfM pfA pfA' e1 e2)    = substLetPair pfI s pfM pfA pfA' e1 e2
 subst pfI s (Prod e1 e2)                    = Prod (subst pfI s e1) (subst pfI s e2)
@@ -75,6 +76,17 @@ substApp pfI s pfM e1 e2 =
   case mergeInSplit pfM pfI of
     Left  pfI1 -> App (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
     Right pfI2 -> App (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
+
+substLetUnit :: In x s g
+             -> LExp '[] s
+             -> Merge g1 g2 g
+             -> LExp g1 One
+             -> LExp g2 t
+             -> LExp (Remove x g) t
+substLetUnit pfI s pfM e1 e2 = 
+  case mergeInSplit pfM pfI of
+    Left  pfI1 -> LetUnit (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
+    Right pfI2 -> LetUnit (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
 
 substPair :: In x s g
           -> LExp '[] s
@@ -198,6 +210,8 @@ eval' pfE (App pfMerge e1 e2) =
         e' = transportDown (emptyRemove pfE pfA) $ subst (addIn pfA) e2' e1'
   where
     (pfE1,pfE2)  = mergeEmpty pfMerge pfE
+eval' pfE Unit                          = VUnit
+eval' pfE (LetUnit pfM e1 e2)           = evalLetUnit pfE pfM e1 e2
 eval' pfE (Pair pfM e1 e2)              = VPair (eval' pfE1 e1) (eval' pfE2 e2)
   where
     (pfE1,pfE2) = mergeEmpty pfM pfE
@@ -213,8 +227,15 @@ eval' pfE (Case pfM pfA1 pfA2 e e1 e2)  = evalCase pfE pfM pfA1 pfA2 e e1 e2
 eval' pfE             (Shift pfS e)     = eval' (unshiftEmpty pfS pfE) e
 eval' pfE             (Unshift pfS e)   = eval' (shiftEmpty pfS pfE) e
 
-
-
+evalLetUnit :: EmptyCtx g
+            -> Merge g1 g2 g
+            -> LExp g1 One
+            -> LExp g2 t
+            -> LVal t
+evalLetUnit pfE pfM e1 e2 =
+  case eval' pfE1 e1 of VUnit -> eval' pfE2 e2
+  where
+    (pfE1,pfE2) = mergeEmpty pfM pfE
 
 evalLetPair :: forall g g1 g2 x1 x2 t1 t2 g2' g2'' r. 
             EmptyCtx g 

@@ -12,6 +12,7 @@ import Data.Constraint
 
 
 data LType where
+  One    :: LType
   Lolli  :: LType -> LType -> LType
   Lower  :: * -> LType
   Tensor :: LType -> LType -> LType
