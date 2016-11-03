@@ -49,3 +49,23 @@ data Nat = Z | S Nat deriving (Eq, Ord)
 data SIdent :: Nat -> * where
   SZ :: SIdent 'Z
   SS :: SIdent x -> SIdent ('S x)
+
+instance Num Nat where
+  Z   + n   = n
+  S m + n   = S (m+n)
+  Z   - n   = Z
+  m   - Z   = m
+  S m - S n = m - n
+  Z   * n   = Z
+  S m * n   = m * n + n
+  abs e     = e
+  signum e  = S Z
+  fromInteger = undefined
+  negate e    = undefined
+
+toInt :: Nat -> Int
+toInt Z = 0
+toInt (S n) = toInt n + 1
+
+instance Show Nat where
+  show n = show $ toInt n
