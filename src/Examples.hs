@@ -22,7 +22,6 @@ type Z = 'S ('S 'Z)
 idL ∷ forall a. Lift (a ⊸ a)
 idL = Suspend $ λ$ \x -> x
 
-
 compose :: Lift ((a ⊸ b) ⊸ (b ⊸ c) ⊸ a ⊸ c)
 compose = Suspend $ λ$ \f -> λ$ \g ->
             λ$ \a -> g `app` (f `app` a)
@@ -100,13 +99,19 @@ drop = Suspend . λ$ \a -> a >! \_ -> Unit
 oneDuplicable :: Lift (One ⊸ Bang One)
 oneDuplicable = Suspend . λ$ \x -> x `letUnit` coret Unit
 
--- With
+-- lift and lower
+
+lowerbind :: Lift (Lower a ⊸ Lower b) -> a -> Lin b
+lowerbind f a = suspendL $ force f `app` put a
 
 liftMap :: Lift (a ⊸ b) -> Lift a -> Lift b
 liftMap f a = Suspend $ force f `app` force a
 
 liftMap2 :: Lift (a ⊸ b ⊸ c) -> Lift a -> Lift b -> Lift c
 liftMap2 f a b = liftMap (liftMap f a) b
+
+
+-- With
 
 dupWith :: Lift (a ⊸ a & a)
 dupWith = Suspend $ λ$ \a -> Prod a a
