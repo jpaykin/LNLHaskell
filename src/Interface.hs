@@ -76,6 +76,26 @@ letPair e f = LetPair merge pfA1 pfA2 e e'
     e' :: LExp g2 t
     e' = f (toSExp $ addToSIdent pfA1, toSExp $ addToSIdent pfA2)
 
+caseof :: forall g1 g s1 g21 s2 g22 t.
+          (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22,
+           Remove (Fresh g) g21 ~ Remove (Fresh g) g22
+          ,CMerge g1 (Remove (Fresh g) g21) g
+          ,KnownCtx g)
+       => LExp g1 (s1 ⊕ s2)
+       -> (SExp (Fresh g) s1 -> LExp g21 t)
+       -> (SExp (Fresh g) s2 -> LExp g22 t)
+       -> LExp g t
+caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
+  where
+    pfA1 :: AddCtx (Fresh g) s1 (Remove (Fresh g) g21) g21
+    pfA1 = inRemove inCtx
+    pfA2 :: AddCtx (Fresh g) s2 (Remove (Fresh g) g22) g22
+    pfA2 = inRemove inCtx
+    v1 :: SExp (Fresh g) s1
+    v1 = toSExp $ knownFresh (ctx @g)
+    v2 :: SExp (Fresh g) s2
+    v2 = toSExp $ knownFresh (ctx @g)
+
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t
 

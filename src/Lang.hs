@@ -13,8 +13,6 @@ import Data.Constraint
 
 import Types
 import Context
-
-
   
 data LExp :: Ctx -> LType -> * where
   Var :: forall x t f1 f2 g. SingletonCtx x t g -> LExp g t
@@ -47,6 +45,18 @@ data LExp :: Ctx -> LType -> * where
   Snd  :: LExp g (t1 & t2)
        -> LExp g t2
 
+  Inl  :: LExp g t1
+       -> LExp g (t1 ⊕ t2)
+  Inr  :: LExp g t2
+       -> LExp g (t1 ⊕ t2)
+  Case :: Merge g1 g2 g3
+       -> AddCtx x1 s1 g2 g21
+       -> AddCtx x2 s2 g2 g22
+       -> LExp g1 (s1 ⊕ s2)
+       -> LExp g21 t
+       -> LExp g22 t
+       -> LExp g3  t
+
   Put     :: EmptyCtx g -> a -> LExp g (Lower a)
   LetBang :: Merge g1 g2 g3
       -> LExp g1 (Lower a)
@@ -73,6 +83,8 @@ data LVal :: LType -> * where
   VPut :: a -> LVal (Lower a)
   VPair :: LVal t1 -> LVal t2 -> LVal (t1 ⊗ t2)
   VProd :: LVal t1 -> LVal t2 -> LVal (t1 & t2)
+  VInl  :: LVal t1 -> LVal (t1 ⊕ t2)
+  VInr  :: LVal t2 -> LVal (t1 ⊕ t2)
 
 valToExp :: LVal t -> LExp '[] t
 valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e

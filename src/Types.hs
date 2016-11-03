@@ -16,6 +16,7 @@ data LType where
   Lower  :: * -> LType
   Tensor :: LType -> LType -> LType
   With   :: LType -> LType -> LType
+  Plus   :: LType -> LType -> LType
 
 type s ⊸ t = Lolli s t
 infixr 0 ⊸
@@ -25,6 +26,9 @@ infixr 3 ⊗
 
 type s & t = With s t
 infixr 3 &
+
+type s ⊕ t = Plus s t
+infixr 3 ⊕
 
 
 type Ident = Nat

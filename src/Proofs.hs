@@ -32,6 +32,11 @@ equivSCtx (EquivCons pfEq) (SCons u g) = SCons u $ equivSCtx pfEq g
 
 -- Freshness ---------------------------------------------
 
+knownFresh :: SCtx g -> SIdent (Fresh g)
+knownFresh SNil = SZ
+knownFresh (SCons SUnused _) = SZ
+knownFresh (SCons SUsed   g) = SS $ knownFresh g
+
 freshDisjoint :: SCtx g -> Disjoint (Fresh g) (Fresh2 g)
 freshDisjoint SNil = DisjointZS
 freshDisjoint (SCons SUnused g) = DisjointZS
