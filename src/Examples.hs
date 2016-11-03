@@ -8,6 +8,7 @@
 
 module Examples where
 
+import Prelude hiding (fst, snd)
 import Types
 import Lang
 import Context
@@ -60,3 +61,41 @@ uncurry = suspend @'[ 'Unused, 'Unused, 'Unused, 'Unused ] $ λ$ \f -> λ$ \z ->
 curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 curry = Suspend $ λ$ \f -> λ$ \x -> λ$ \y -> f `app` (x ⊗ y)
 
+dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
+dupTensor = Suspend $ λ$ \a -> 
+    a >! \a' -> put a' ⊗ put a'
+
+-- Bang
+
+coret :: LExp '[] a -> LExp '[] (Bang a)
+coret = put . Suspend
+
+-- With
+
+liftMap :: Lift (a ⊸ b) -> Lift a -> Lift b
+liftMap f a = Suspend $ force f `app` force a
+
+liftMap2 :: Lift (a ⊸ b ⊸ c) -> Lift a -> Lift b -> Lift c
+liftMap2 f a b = liftMap (liftMap f a) b
+
+dupWith :: Lift (a ⊸ a & a)
+dupWith = Suspend $ λ$ \a -> Prod a a
+
+fst :: Lift (a & b ⊸ a)
+fst = Suspend . λ$ \p -> Fst p
+
+snd :: Lift (a & b ⊸ b)
+snd = Suspend . λ$ \p -> Snd p
+
+
+iso1 :: Lift (Bang (a & b) ⊸ Bang a ⊗ Bang b)
+iso1 = Suspend . λ$ \x ->
+     x >! \p -> 
+    (coret . Fst $ force p) ⊗ (coret . Snd $ force p)
+
+iso2 :: Lift (Bang a ⊗ Bang b ⊸ Bang (a & b))
+iso2 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
+    z `letPair` \(x,y) ->
+    x >! \a ->
+    y >! \b ->
+    coret $ force a & force b

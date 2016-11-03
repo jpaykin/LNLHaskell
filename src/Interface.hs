@@ -22,6 +22,7 @@ type SExp x s = LExp (FSingletonCtx x s) s
 toSExp :: SIdent x -> SExp x s
 toSExp x = Var $ fSingletonCtx x
 
+
 var :: forall x g t. 
        SIdent x -> SExp x t
 var x = Var $ fSingletonCtx x
@@ -54,6 +55,11 @@ put a = Put EmptyNil a
     -> LExp g3 (t1 ⊗ t2)
 e1 ⊗ e2 = Pair merge e1 e2
 
+(&) :: LExp g t1
+    -> LExp g t2
+    -> LExp g (t1 & t2)
+(&) = Prod
+
 letPair :: forall g s1 s2 t g1 g2.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
            ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g
@@ -79,6 +85,7 @@ letPair e f = LetPair merge pfA1 pfA2 e e'
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t
 
+type Bang a = Lower (Lift a)
 data Lin a where
   Lin :: Lift (Lower a) -> Lin a
 
@@ -134,3 +141,4 @@ evalVal (Lin (Suspend e)) = eval' EmptyNil e
 
 run :: Lin a -> a
 run e = case evalVal e of VPut a -> a
+
