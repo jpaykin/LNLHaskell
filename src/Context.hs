@@ -25,6 +25,13 @@ type family Fresh2 g :: Ident where
   Fresh2 ('Unused ': g) = 'S (Fresh g)
   Fresh2 ('Used s ': g) = 'S (Fresh2 g)
 
+-- Disjoint Identifiers
+
+data Disjoint :: Ident -> Ident -> * where
+  DisjointZS :: Disjoint 'Z ('S n) 
+  DisjointSZ :: Disjoint ('S n) 'Z
+  DisjointSS :: Disjoint m n -> Disjoint ('S m) ('S n)
+
 -- Shift -----------------------------------------------------
 
 data Shift :: Nat -> Ctx -> Ctx -> * where

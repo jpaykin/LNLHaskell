@@ -13,8 +13,37 @@ import Data.Constraint
 import Types
 import Context
 
--- Freshness
+-- SContexts ------------------------------------------------
 
+inSCtxRemove :: In x s g -> SCtx g -> SCtx (Remove x g)
+inSCtxRemove (InHere g') g = SCons SUnused g'
+inSCtxRemove (InLater pfI) (SCons u g') = SCons u $ inSCtxRemove pfI g'
+
+emptySCtx :: EmptyCtx g -> SCtx g
+emptySCtx EmptyNil = SNil
+emptySCtx (EmptyCons pfE) = SCons SUnused $ emptySCtx pfE
+
+equivSCtx :: Equiv g g' -> SCtx g -> SCtx g'
+equivSCtx EquivNil         _           = SNil
+equivSCtx (EquivEL pfE)    _           = emptySCtx pfE
+equivSCtx (EquivER _)      _           = SNil
+equivSCtx (EquivCons pfEq) (SCons u g) = SCons u $ equivSCtx pfEq g
+
+
+-- Freshness ---------------------------------------------
+
+freshDisjoint :: SCtx g -> Disjoint (Fresh g) (Fresh2 g)
+freshDisjoint SNil = DisjointZS
+freshDisjoint (SCons SUnused g) = DisjointZS
+freshDisjoint (SCons SUsed   g) = DisjointSS $ freshDisjoint g
+
+-- Disjointness --------------------------------------------
+
+disjointRemove :: Disjoint x y -> In x s g -> In y t g -> In x s (Remove y g)
+disjointRemove DisjointZS       (InHere g)      (InLater pfI)  = InHere $ inSCtxRemove pfI g 
+disjointRemove DisjointSZ       (InLater pfI)   (InHere g)     = InLater pfI
+disjointRemove (DisjointSS pfD) (InLater pfI1)  (InLater pfI2) = 
+    InLater $ disjointRemove pfD pfI1 pfI2
 
 -- Shift ---------------------------------------------------
 
@@ -89,9 +118,15 @@ equivEmpty EmptyNil        (EquivEL pfE)    = pfE
 equivEmpty _               (EquivER _)      = EmptyNil
 equivEmpty (EmptyCons pfE) (EquivCons pfEq) = EmptyCons $ equivEmpty pfE pfEq
 
-inSCtxRemove :: In x s g -> SCtx g -> SCtx (Remove x g)
-inSCtxRemove (InHere g') g = SCons SUnused g'
-inSCtxRemove (InLater pfI) (SCons u g') = SCons u $ inSCtxRemove pfI g'
+
+-- the proof of Equiv g g' must be EquivCons because neither g nor g' will ever be empty
+equivIn :: In x s g -> Equiv g g' -> In x s g'
+equivIn (InHere g)    (EquivCons pfEq) = InHere $ equivSCtx pfEq g
+equivIn (InLater pfI) (EquivCons pfEq) = InLater $ equivIn pfI pfEq
+
+equivRemove :: In x s g -> Equiv g g' -> Equiv (Remove x g) (Remove x g')
+equivRemove (InHere g)    (EquivCons pfEq) = EquivCons pfEq
+equivRemove (InLater pfI) (EquivCons pfEq) = EquivCons $ equivRemove pfI pfEq
 
 -- Empty Context ----------------------------------------------
 
@@ -131,7 +166,10 @@ addSingleton AddEHere        = AddHereS
 addSingleton (AddELater pfA) = AddLaterS $ addSingleton pfA
 
 addToSIdent :: AddCtx x s g g' -> SIdent x
-addToSIdent = undefined
+addToSIdent AddEHere        = SZ
+addToSIdent (AddHere _)     = SZ
+addToSIdent (AddELater pfA) = SS $ addToSIdent pfA
+addToSIdent (AddLater  pfA) = SS $ addToSIdent pfA
 
 addFAdd :: SCtx g -> AddCtx (Fresh g) s g (FAddCtx (Fresh g) s g) 
 addFAdd SNil = AddEHere

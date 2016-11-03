@@ -19,6 +19,8 @@ import Lang
 import Subst
 
 type SExp x s = LExp (FSingletonCtx x s) s
+toSExp :: SIdent x -> SExp x s
+toSExp x = Var $ fSingletonCtx x
 
 var :: forall x g t. 
        SIdent x -> SExp x t
@@ -54,11 +56,25 @@ e1 ⊗ e2 = Pair merge e1 e2
 
 letPair :: forall g s1 s2 t g1 g2.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
-           ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g)
+           ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g
+           ,KnownCtx g)
         => LExp g1 (s1 ⊗ s2)
         -> ( (SExp (Fresh g) s1, SExp (Fresh2 g) s2) -> LExp g2 t)
         -> LExp g t
-letPair = undefined
+letPair e f = LetPair merge pfA1 pfA2 e e'
+  where
+    pfI1 :: In (Fresh g) s1 g2
+    pfI1 = inCtx
+    pfI1' :: In (Fresh g) s1 (Remove (Fresh2 g) g2)
+    pfI1' = disjointRemove (freshDisjoint (ctx @g)) pfI1 pfI2
+    pfI2 :: In (Fresh2 g) s2 g2
+    pfI2 = inCtx
+    pfA1 :: AddCtx (Fresh g) s1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) (Remove (Fresh2 g) g2)
+    pfA1 = inRemove pfI1'
+    pfA2 :: AddCtx (Fresh2 g) s2 (Remove (Fresh2 g) g2) g2
+    pfA2 = inRemove pfI2
+    e' :: LExp g2 t
+    e' = f (toSExp $ addToSIdent pfA1, toSExp $ addToSIdent pfA2)
 
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t

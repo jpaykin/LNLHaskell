@@ -66,11 +66,6 @@ instance CAddCtx x s g g' => CAddCtx ('S x) s (u ': g) (u ': g') where
 instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
   addCtx = AddELater addCtx
 
-class CAddCtx2 x1 s1 x2 s2 g g' | x1 s1 x2 s2 g -> g' where
-  addCtx2 :: AddCtx x2 s2 (FAddCtx x1 s1 g) g'
-
-instance (CAddCtx x1 s1 g g0, CAddCtx x2 s2 g0 g') => CAddCtx2 x1 s1 x2 s2 g g' where
-  addCtx2 = undefined
 
 -- Singleton Context ------------------------------------------
 
