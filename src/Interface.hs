@@ -60,6 +60,7 @@ e1 ⊗ e2 = Pair merge e1 e2
     -> LExp g (t1 & t2)
 (&) = Prod
 
+
 letPair :: forall g s1 s2 t g1 g2.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
            ,CMerge g1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) g
@@ -82,10 +83,11 @@ letPair e f = LetPair merge pfA1 pfA2 e e'
     e' :: LExp g2 t
     e' = f (toSExp $ addToSIdent pfA1, toSExp $ addToSIdent pfA2)
 
-caseof :: forall g1 g s1 g21 s2 g22 t.
-          (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22,
-           Remove (Fresh g) g21 ~ Remove (Fresh g) g22
-          ,CMerge g1 (Remove (Fresh g) g21) g
+caseof :: forall g2 g g21 g22 g1 s1 s2 t.
+          (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22
+          ,CAddCtx (Fresh g) s1 g2 g21
+          ,CAddCtx (Fresh g) s2 g2 g22
+          ,CMerge g1 g2 g
           ,KnownCtx g)
        => LExp g1 (s1 ⊕ s2)
        -> (SExp (Fresh g) s1 -> LExp g21 t)
@@ -93,10 +95,10 @@ caseof :: forall g1 g s1 g21 s2 g22 t.
        -> LExp g t
 caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
   where
-    pfA1 :: AddCtx (Fresh g) s1 (Remove (Fresh g) g21) g21
-    pfA1 = inRemove inCtx
-    pfA2 :: AddCtx (Fresh g) s2 (Remove (Fresh g) g22) g22
-    pfA2 = inRemove inCtx
+    pfA1 :: AddCtx (Fresh g) s1 g2 g21
+    pfA1 = addCtx
+    pfA2 :: AddCtx (Fresh g) s2 g2 g22
+    pfA2 = addCtx
     v1 :: SExp (Fresh g) s1
     v1 = toSExp $ knownFresh (ctx @g)
     v2 :: SExp (Fresh g) s2

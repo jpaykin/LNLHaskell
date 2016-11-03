@@ -65,6 +65,25 @@ dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
 dupTensor = Suspend $ λ$ \a -> 
     a >! \a' -> put a' ⊗ put a'
 
+-- Plus
+
+eitherPlus :: Either (Lift a) (Lift b) -> Lift (a ⊕ b)
+eitherPlus (Left  a) = Suspend . Inl $ force a
+eitherPlus (Right b) = Suspend . Inr $ force b
+
+isoPlus1 :: Lift (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
+isoPlus1 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
+    z `letPair` \(a,z) ->
+    caseof @'[ 'Unused, 'Used _ ]
+           z ( \b -> Inl (a ⊗ b) )
+             ( \c -> Inr (a ⊗ c) )
+
+isoPlus2 :: Lift ( (a ⊗ b) ⊕ (a ⊗ c) ⊸ a ⊗ (b ⊕ c) )
+isoPlus2 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
+  caseof @'[ 'Unused, 'Unused, 'Unused ] z 
+    ( \p -> p `letPair` \(a,b) -> a ⊗ Inl b )
+    ( \p -> p `letPair` \(a,c) -> a ⊗ Inr c )
+
 -- Bang
 
 coret :: LExp '[] a -> LExp '[] (Bang a)
