@@ -27,12 +27,15 @@ var :: forall x g t.
        SIdent x -> SExp x t
 var x = Var $ fSingletonCtx x
 
+
 λ :: forall s t g g'. KnownCtx g
-  => (SExp (Fresh g) s -> LExp (FAddCtx (Fresh g) s g) t)
+  => (LExp (FSingletonCtx (Fresh g) s) s -> LExp (FAddCtx (Fresh g) s g) t)
   -> LExp g (s ⊸ t)
 λ f = Abs pfA (f varx) where
   pfA  = addFAdd ctx
   varx = var $ addToSIdent pfA
+
+
 
 app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)
@@ -107,8 +110,12 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     v2 :: SExp (Fresh g) s2
     v2 = toSExp $ knownFresh (ctx @g)
 
+
 data Lift :: LType -> * where
   Suspend :: forall t. LExp '[] t -> Lift t
+
+
+
 
 type Bang a = Lower (Lift a)
 data Lin a where
@@ -141,7 +148,7 @@ instance Monad Lin where
 -- force should also evaluate the expression
 force :: forall t. Lift t -> LExp '[] t
 -- e :: LExp g t
-force (Suspend e) = coerce $ eval emptyCtx e
+force (Suspend e) = eval emptyCtx e
 
 
 forceL :: Lin a -> LExp '[] (Lower a)

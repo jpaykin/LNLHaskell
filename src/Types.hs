@@ -19,7 +19,7 @@ data LType where
   With   :: LType -> LType -> LType
   Plus   :: LType -> LType -> LType
 
-type s ⊸ t = Lolli s t
+type (⊸) = Lolli
 infixr 0 ⊸
 
 type s ⊗ t = Tensor s t

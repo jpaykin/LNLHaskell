@@ -20,11 +20,14 @@ type Y = 'S 'Z
 type Z = 'S ('S 'Z)
 
 idL ∷ forall a. Lift (a ⊸ a)
-idL = Suspend $ λ$ \x -> x
+idL = Suspend $ λ $ \x -> x
+
+
 
 compose :: Lift ((a ⊸ b) ⊸ (b ⊸ c) ⊸ a ⊸ c)
 compose = Suspend $ λ$ \f -> λ$ \g ->
             λ$ \a -> g `app` (f `app` a)
+
 
 counit :: forall a. Lift (Lower (Lift a) ⊸ a)
 counit = Suspend $ λ$ \ x -> x >! force
@@ -45,9 +48,11 @@ fmap f = suspend . λ$ \x -> x >! \ a -> put (f a)
 app2 = Suspend . λ$ \z -> λ$ \x -> λ$ \y -> 
              z `app` x `app` y
 
-idid = suspend $ force idL `app` force idL
 
-idid' = Suspend $ app @_ @'[] (force idL) (λ $ \x -> x) 
+
+idid = Suspend $ force idL `app` force idL
+
+--idid' = Suspend $ app (force idL) (λ $ \x -> x) 
 
 pairPut :: Lift (Lower String ⊗ Lower String)
 pairPut = suspend $ put "hi" ⊗ put "bye"
