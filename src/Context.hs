@@ -12,7 +12,6 @@ import Data.Constraint
 
 import Types
 
-
 -- Fresh variable ------------------------------------------
 
 type family Fresh g :: Ident where
@@ -25,7 +24,7 @@ type family Fresh2 g :: Ident where
   Fresh2 ('Unused ': g) = 'S (Fresh g)
   Fresh2 ('Used s ': g) = 'S (Fresh2 g)
 
--- Disjoint Identifiers
+-- Disjoint Identifiers --------------------------------
 
 data Disjoint :: Ident -> Ident -> * where
   DisjointZS :: Disjoint 'Z ('S n) 
@@ -34,90 +33,65 @@ data Disjoint :: Ident -> Ident -> * where
 
 -- Shift -----------------------------------------------------
 
+data ShiftN :: Ident -> NCtx -> NCtx -> * where
+  ShiftHere  :: ShiftN 'Z g ('Cons 'Unused g)
+  ShiftLater :: ShiftN x g g' -> ShiftN ('S x) ('Cons u g) ('Cons u' g)
+
 data Shift :: Nat -> Ctx -> Ctx -> * where
-  ShiftHere  :: Shift 'Z g ('Unused ': g)
-  ShiftLater :: Shift n g g' -> Shift ('S n) (u ': g) (u ': g')
-
-
--- Equivalent Contexts ------------------------------------------
-
-data Equiv  :: Ctx -> Ctx -> * where
-  EquivNil  :: Equiv '[] '[]
-  EquivEL   :: EmptyCtx g -> Equiv '[] g
-  EquivER   :: EmptyCtx g -> Equiv g '[]
-  EquivCons :: Equiv g1 g2 -> Equiv (u ': g1) (u ': g2)
-
-data EquivEmpty  :: Ctx -> Ctx -> * where
-  EquivENil  :: EquivEmpty '[] '[]
-  EquivEEL   :: EmptyCtx g -> EquivEmpty '[] g
-  EquivEER   :: EmptyCtx g -> EquivEmpty g '[]
-  EquivECons :: EquivEmpty g1 g2 -> EquivEmpty ('Unused ': g1) ('Unused ': g2)
-
-
--- Empty Context ------------------------------------------------
-
-data EmptyCtx :: Ctx -> * where
-  EmptyNil  :: EmptyCtx '[]
-  EmptyCons :: forall x g. EmptyCtx g -> EmptyCtx ('Unused ': g)
+  Shift :: ShiftN x g g' -> Shift x ('N g) ('N g')
 
 
 -- Add To Context ----------------------------------------------
 
--- AddCtx x t f1 f2 g g' 
-data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
-  AddEHere   :: AddCtx 'Z s '[]            '[ 'Used s ]
-  AddHere    :: SCtx g -> AddCtx 'Z s ('Unused ': g) ('Used s ': g)
-  AddELater  :: AddCtx x s '[] g -> AddCtx ('S x) s '[] ('Unused ': g)
-  AddLater   :: AddCtx x s g g'  -> AddCtx ('S x) s (u ': g) (u ': g')
+data AddCtxN :: Ident -> LType -> Ctx -> NCtx -> * where
+  AddEHere   :: AddCtxN 'Z s 'Empty ('End s)
+  AddHere    :: AddCtxN 'Z s ('N ('Cons 'Unused g)) ('Cons ('Used s) g)
+  AddELater  :: AddCtxN x s 'Empty g  -> AddCtxN ('S x) s 'Empty ('Cons 'Unused g)
+  AddLater   :: AddCtxN x s ('N g) g' -> AddCtxN ('S x) s ('N ('Cons u g)) ('Cons u g')
 
-type family FAddCtx x s g :: Ctx where
-  FAddCtx x      s '[]            = FSingletonCtx x s
-  FAddCtx 'Z     s ('Unused ': g) = 'Used s ': g
-  FAddCtx ('S x) s (u ': g)       = u ': FAddCtx x s g
+data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
+  AddN :: AddCtxN x s g g' -> AddCtx x s g ('N g')
 
 
 -- Singleton Context ------------------------------------------
 
--- SingletonCtx x s f1 f2 g
-data SingletonCtx :: Nat -> LType -> Ctx -> * where
-  AddHereS  :: SingletonCtx 'Z s '[ 'Used s ]
-  AddLaterS :: SingletonCtx x s g
-            -> SingletonCtx ('S x) s ('Unused ': g)
+data SingletonNCtx :: Nat -> LType -> NCtx -> * where
+  AddHereS  :: SingletonNCtx 'Z s ('End s)
+  AddLaterS :: SingletonNCtx x s g -> SingletonNCtx ('S x) s ('Cons 'Unused g)
 
-type family FSingletonCtx x t :: Ctx where
-  FSingletonCtx 'Z     t = '[ 'Used t ]
-  FSingletonCtx ('S x) t = 'Unused ': FSingletonCtx x t
+data SingletonCtx :: Nat -> LType -> Ctx -> * where
+  SingN :: SingletonNCtx x s g -> SingletonCtx x s ('N g)
 
 
 -- Merge ----------------------------------------------------
 
--- merge g1 g2 g3
+data MergeU :: Usage -> Usage -> Usage -> * where
+  MergeUn :: MergeU 'Unused   'Unused   'Unused
+  MergeUL :: MergeU ('Used s) 'Unused   ('Used s)
+  MergeUR :: MergeU 'Unused   ('Used s) ('Used s)
+
 data Merge :: Ctx -> Ctx -> Ctx -> * where
-  MergeE  :: Merge '[] '[] '[]
-  MergeEL :: Merge '[] g g
-  MergeER :: Merge g '[] g
-  MergeL :: Merge g1 g2 g3 
-         -> Merge ('Used t ': g1) ('Unused ': g2) ('Used t ': g3)
-  MergeR :: Merge g1 g2 g3 
-         -> Merge ('Unused ': g1) ('Used t ': g2) ('Used t ': g3)
-  MergeU :: Merge g1 g2 g3 
-         -> Merge ('Unused ': g1) ('Unused ': g2) ('Unused ': g3)
+  MergeE  :: Merge 'Empty 'Empty 'Empty
+  MergeEL :: Merge 'Empty ('N g) ('N g)
+  MergeER :: Merge ('N g) 'Empty ('N g)
+  MergeN  :: MergeN g1 g2 g3 -> Merge ('N g1) ('N g2) ('N g3)
+
+data MergeN :: NCtx -> NCtx -> NCtx -> * where
+  MergeEndL :: MergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2)
+  MergeEndR :: MergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1)
+  MergeCons :: MergeU u1 u2 u3 -> MergeN g1 g2 g3 
+            -> MergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3)
 
 
 -- Remove ------------------------------------------
 
-type family Remove x g :: Ctx where
-  Remove 'Z     (_ ': g) = 'Unused ': g
-  Remove ('S x) (u ': g) = u ': Remove x g
-
 
 -- In -------------------------------
 
-data In :: Nat -> LType -> Ctx -> * where
-  InHere  :: SCtx g   -> In  'Z s ('Used s ': g)
-  InLater :: In x s g -> In ('S x) s (u ': g)
-
-
+data In :: Nat -> LType -> NCtx -> * where
+  InEnd   :: In 'Z s ('End s)
+  InHere  :: SNCtx g   -> In 'Z s ('Cons ('Used s) g)
+  InLater :: In x s g  -> In ('S x) s ('Cons u g)
 
 -- Relation between In and Shift
 
