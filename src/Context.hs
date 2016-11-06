@@ -14,15 +14,19 @@ import Types
 
 -- Fresh variable ------------------------------------------
 
-type family Fresh g :: Ident where
-  Fresh '[] = 'Z
-  Fresh ('Unused ': g) = 'Z
-  Fresh ('Used s ': g) = 'S (Fresh g)
+type family Fresh (g::Ctx) :: Ident where
+  Fresh 'Empty                   = 'Z
+  Fresh ('N ('End t))            = 'S 'Z
+  Fresh ('N ('Cons 'Unused g))   = 'Z
+  Fresh ('N ('Cons ('Used s) g)) = 'S (Fresh ('N g))
 
-type family Fresh2 g :: Ident where
-  Fresh2 '[] = 'S 'Z
-  Fresh2 ('Unused ': g) = 'S (Fresh g)
-  Fresh2 ('Used s ': g) = 'S (Fresh2 g)
+type family Fresh2 (g::Ctx) :: Ident where
+  Fresh2 'Empty                   = 'S 'Z
+  Fresh2 ('N ('End t))            = 'S ('S 'Z)
+  Fresh2 ('N ('Cons 'Unused g))   = 'S 'Z
+  Fresh2 ('N ('Cons ('Used s) g)) = 'S (Fresh2 ('N g))
+  
+
 
 -- Disjoint Identifiers --------------------------------
 
@@ -88,10 +92,13 @@ data MergeN :: NCtx -> NCtx -> NCtx -> * where
 
 -- In -------------------------------
 
-data In :: Nat -> LType -> NCtx -> * where
-  InEnd   :: In 'Z s ('End s)
-  InHere  :: SNCtx g   -> In 'Z s ('Cons ('Used s) g)
-  InLater :: In x s g  -> In ('S x) s ('Cons u g)
+data InN :: Nat -> LType -> NCtx -> * where
+  InEnd   :: InN 'Z s ('End s)
+  InHere  :: SNCtx g    -> InN 'Z s ('Cons ('Used s) g)
+  InLater :: InN x s g  -> InN ('S x) s ('Cons u g)
+
+data In :: Nat -> LType -> Ctx -> * where
+  In :: InN x s g -> In x s ('N g)
 
 -- Relation between In and Shift
 

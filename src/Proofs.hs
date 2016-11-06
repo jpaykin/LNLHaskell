@@ -15,41 +15,41 @@ import Context
 
 -- SContexts ------------------------------------------------
 
-inSCtxRemove :: In x s g -> SCtx g -> SCtx (Remove x g)
-inSCtxRemove (InHere g') g = SCons SUnused g'
-inSCtxRemove (InLater pfI) (SCons u g') = SCons u $ inSCtxRemove pfI g'
+inSCtxRemove :: InN x s g -> SNCtx g -> SCtx (RemoveN x g)
+inSCtxRemove InEnd         SEnd = SEmpty
+inSCtxRemove (InHere _)   (SCons u g') = SN $ SCons SUnused g'
+inSCtxRemove (InLater pfI) (SCons u g') = consN u $ inSCtxRemove pfI g'
 
-emptySCtx :: EmptyCtx g -> SCtx g
-emptySCtx EmptyNil = SNil
-emptySCtx (EmptyCons pfE) = SCons SUnused $ emptySCtx pfE
-
-equivSCtx :: Equiv g g' -> SCtx g -> SCtx g'
-equivSCtx EquivNil         _           = SNil
-equivSCtx (EquivEL pfE)    _           = emptySCtx pfE
-equivSCtx (EquivER _)      _           = SNil
-equivSCtx (EquivCons pfEq) (SCons u g) = SCons u $ equivSCtx pfEq g
 
 
 -- Freshness ---------------------------------------------
 
 knownFresh :: SCtx g -> SIdent (Fresh g)
-knownFresh SNil = SZ
-knownFresh (SCons SUnused _) = SZ
-knownFresh (SCons SUsed   g) = SS $ knownFresh g
+knownFresh SEmpty = SZ
+knownFresh (SN SEnd) = SS SZ
+knownFresh (SN (SCons SUnused _)) = SZ
+knownFresh (SN (SCons SUsed   g)) = SS $ knownFresh (SN g)
+
 
 freshDisjoint :: SCtx g -> Disjoint (Fresh g) (Fresh2 g)
-freshDisjoint SNil = DisjointZS
-freshDisjoint (SCons SUnused g) = DisjointZS
-freshDisjoint (SCons SUsed   g) = DisjointSS $ freshDisjoint g
+freshDisjoint SEmpty = DisjointZS
+freshDisjoint (SN SEnd) = DisjointSS $ DisjointZS
+freshDisjoint (SN (SCons SUnused _)) = DisjointZS
+freshDisjoint (SN (SCons SUsed   g)) = DisjointSS $ freshDisjoint (SN g)
+
 
 -- Disjointness --------------------------------------------
 
-disjointRemove :: Disjoint x y -> In x s g -> In y t g -> In x s (Remove y g)
-disjointRemove DisjointZS       (InHere g)      (InLater pfI)  = InHere $ inSCtxRemove pfI g 
-disjointRemove DisjointSZ       (InLater pfI)   (InHere g)     = InLater pfI
-disjointRemove (DisjointSS pfD) (InLater pfI1)  (InLater pfI2) = 
-    InLater $ disjointRemove pfD pfI1 pfI2
+disjointRemoveN :: Disjoint x y -> InN x s g -> InN y t g -> In x s (RemoveN y g)
+disjointRemoveN DisjointZS       (InHere g)     (InLater pfI)  = 
+  case inSCtxRemove pfI g of 
+    SEmpty -> In $ InEnd
+    SN g'  -> In $ InHere g'
+disjointRemoveN DisjointSZ       (InLater pfI)  (InHere g)     = In $ InLater pfI
+disjointRemoveN (DisjointSS pfD) (InLater pfI1) (InLater pfI2) = 
+  case disjointRemoveN pfD pfI1 pfI2 of In pfI -> In (InLater pfI)
 
+{-
 -- Shift ---------------------------------------------------
 
 shiftEmpty :: Shift n g1 g2 -> EmptyCtx g1 -> EmptyCtx g2
@@ -377,3 +377,4 @@ mergeIn2 (MergeU pfM) (InLater pfI2) (InLater pfI3) = MergeU $ mergeIn2 pfM pfI2
 
 
 
+-}

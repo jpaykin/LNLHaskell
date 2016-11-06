@@ -70,6 +70,15 @@ type family ConsN (u :: Usage) (g :: Ctx) :: Ctx where
   ConsN 'Unused   'Empty = 'Empty
   ConsN u         ('N g) = 'N ('Cons u g)
 
+type family ConsN_partial u g :: NCtx where
+  ConsN_partial ('Used s) 'Empty = 'End s
+  ConsN_partial u         ('N g) = 'Cons u g
+
+consN :: SUsage u -> SCtx g -> SCtx (ConsN u g) 
+consN SUsed   SEmpty = SN $ SEnd 
+consN SUnused SEmpty = SEmpty
+consN u       (SN g) = SN $ SCons u g
+
 type family SingletonN x s :: NCtx where
   SingletonN 'Z     s = 'End s
   SingletonN ('S x) s = 'Cons 'Unused (SingletonN x s)
@@ -93,9 +102,16 @@ type family MergeU12 u1 u2 :: Usage where
   MergeU12 'Unused   ('Used s) = 'Used s
 
 type family RemoveN (x :: Ident) (g :: NCtx) :: Ctx where
-  RemoveN 'Z ('End s) = 'Empty
-  RemoveN 'Z     ('Cons ('Used s) g) = 'N g
+  RemoveN 'Z     ('End s)            = 'Empty
+  RemoveN 'Z     ('Cons ('Used s) g) = 'N ('Cons 'Unused g)
   RemoveN ('S x) ('Cons u g)         = ConsN u (RemoveN x g)
+
+type family Remove (x :: Ident) (g :: Ctx) :: Ctx where
+  Remove x ('N g) = RemoveN x g
+
+type family RemoveNN (x :: Ident) (g :: NCtx) :: NCtx where
+  RemoveNN 'Z     ('Cons ('Used s) g) = 'Cons 'Unused g
+  RemoveNN ('S x) ('Cons u g)         = 'Cons u (RemoveNN x g)
 
 -- Nats ---------------------------------------------------------
 

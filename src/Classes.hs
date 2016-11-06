@@ -25,11 +25,18 @@ instance KnownUsage ('Used s) where
 
 class KnownCtx g where
   ctx :: SCtx g
+class KnownNCtx g where
+  nctx :: SNCtx g
 
-instance KnownCtx '[] where
-  ctx = SNil
-instance (KnownCtx g,KnownUsage u) => KnownCtx (u ': g) where
-  ctx = SCons usg ctx
+instance KnownCtx 'Empty where
+  ctx = SEmpty
+instance KnownNCtx g => KnownCtx ('N g) where
+  ctx = SN nctx
+
+instance KnownNCtx ('End t) where
+  nctx = SEnd
+instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
+  nctx = SCons usg nctx
 
 
 -- In Context ---------------------------------------------
@@ -37,66 +44,82 @@ instance (KnownCtx g,KnownUsage u) => KnownCtx (u ': g) where
 class CIn x s g where
   inCtx :: In x s g
 
-instance KnownCtx g => CIn 'Z s ('Used s ': g) where
-  inCtx = InHere ctx
-instance CIn x s g => CIn ('S x) s (u ': g) where
+instance CIn 'Z s ('End s) where
+  inCtx = InEnd
+instance KnownNCtx g => CIn 'Z s ('Cons ('Used s) g) where
+  inCtx = InHere nctx
+instance CIn x s g => CIn ('S x) s ('Cons u g) where
   inCtx = InLater inCtx
-
--- Empty Context ------------------------------------------------
-
-class CEmptyCtx g where
-  emptyCtx :: EmptyCtx g
-
-instance CEmptyCtx '[] where
-  emptyCtx = EmptyNil
-instance CEmptyCtx g => CEmptyCtx ('Unused ': g) where
-  emptyCtx = EmptyCons emptyCtx
 
 -- Add To Context ----------------------------------------------
 
 class CAddCtx x s g g' | x s g -> g' where
   addCtx :: AddCtx x s g g'
+class CAddCtxN x s g g' | x s g -> g' where
+  addCtxN :: AddCtxN x s g g'
 
-instance KnownCtx g => CAddCtx 'Z s ('Unused ': g) ('Used s ': g) where
-  addCtx = AddHere ctx
-instance CAddCtx 'Z s '[] '[ 'Used s ] where
-  addCtx = AddEHere
-instance CAddCtx x s g g' => CAddCtx ('S x) s (u ': g) (u ': g') where
-  addCtx = AddLater addCtx
-instance CAddCtx x s '[] g' => CAddCtx ('S x) s '[] ('Unused ': g') where
-  addCtx = AddELater addCtx
+instance CAddCtxN 'Z s 'Empty ('End s) where
+  addCtxN = AddEHere
+instance CAddCtxN 'Z s ('N ('Cons 'Unused g)) ('Cons ('Used s) g) where
+  addCtxN = AddHere
+instance CAddCtxN x s 'Empty g => CAddCtxN ('S x) s 'Empty ('Cons 'Unused g) where
+  addCtxN = AddELater addCtxN
+instance CAddCtxN x s ('N g) g' => CAddCtxN ('S x) s ('N ('Cons u g)) ('Cons u g') where
+  addCtxN = AddLater addCtxN
+
+instance CAddCtxN x s g g' => CAddCtx x s g ('N g') where
+  addCtx = AddN $ addCtxN
 
 
 -- Singleton Context ------------------------------------------
 
 class CSingletonCtx x s g | x s -> g where
   singletonCtx :: SingletonCtx x s g
+class CSingletonNCtx x s g | x s -> g where
+  singletonNCtx :: SingletonNCtx x s g
 
-instance CSingletonCtx 'Z s '[ 'Used s ] where
-  singletonCtx = AddHereS 
-instance CSingletonCtx x s g 
-      => CSingletonCtx ('S x) s ('Unused ': g) where
-  singletonCtx = AddLaterS singletonCtx
+instance CSingletonNCtx 'Z s ('End s) where
+  singletonNCtx = AddHereS
+instance CSingletonNCtx x s g => CSingletonNCtx ('S x) s ('Cons 'Unused g) where
+  singletonNCtx = AddLaterS singletonNCtx
+
+instance CSingletonNCtx x s g => CSingletonCtx x s ('N g) where
+  singletonCtx = SingN $ singletonNCtx
 
 
 -- Merge ----------------------------------------------------
 
+
+class CMergeU u1 u2 u3 | u1 u2 -> u3, u1 u3 -> u2, u2 u3 -> u1 where
+  mergeU :: MergeU u1 u2 u3
+
+instance CMergeU 'Unused 'Unused 'Unused where
+  mergeU = MergeUn
+instance CMergeU ('Used s) 'Unused ('Used s) where
+  mergeU = MergeUL
+instance CMergeU 'Unused ('Used s) ('Used s) where
+  mergeU = MergeUR
+
 class CMerge g1 g2 g3 | g1 g2 -> g3 where
   merge :: Merge g1 g2 g3
 
-instance CMerge '[] '[] '[] where
+instance CMerge 'Empty 'Empty 'Empty where
   merge = MergeE
-instance CMerge '[] (u ': g) (u ': g) where
+instance CMerge 'Empty ('N g) ('N g) where
   merge = MergeEL
-instance CMerge (u ': g) '[] (u ': g) where
+instance CMerge ('N g) 'Empty ('N g) where
   merge = MergeER
-instance CMerge g1 g2 g3 
-      => CMerge ('Used t ': g1) ('Unused ': g2) ('Used t ': g3) where
-  merge = MergeL merge
-instance CMerge g1 g2 g3 
-      => CMerge ('Unused ': g1) ('Used t ': g2) ('Used t ': g3) where
-  merge = MergeR merge
-instance CMerge g1 g2 g3 
-      => CMerge ('Unused ': g1) ('Unused ': g2) ('Unused ': g3) where
-  merge = MergeU merge
+instance CMergeN g1 g2 g3 => CMerge ('N g1) ('N g2) ('N g3) where
+  merge = MergeN mergeN
 
+-- still can't get the extra functional dependencies :(
+class CMergeN g1 g2 g3 | g1 g2 -> g3 where
+  mergeN :: MergeN g1 g2 g3
+
+instance CMergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2) where
+  mergeN = MergeEndL
+instance CMergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1) where
+  mergeN = MergeEndR
+instance (CMergeU u1 u2 u3, CMergeN g1 g2 g3) 
+      => CMergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
+  mergeN = MergeCons mergeU mergeN
