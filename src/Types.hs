@@ -62,8 +62,12 @@ type family Add (x :: Ident) (s :: LType) (g :: Ctx) :: Ctx where
 type family AddN (x :: Ident) (s :: LType) (g :: Ctx) :: NCtx where
   AddN 'Z     s 'Empty = 'End s
   AddN ('S x) s 'Empty = 'Cons 'Unused (AddN x s 'Empty)
-  AddN 'Z     s ('N ('Cons 'Unused g)) = 'Cons ('Used s) g
-  AddN ('S x) s ('N ('Cons u       g)) = 'Cons u (AddN x s ('N g))
+  AddN x      s ('N g) = AddNN x s g
+
+type family AddNN x s (g :: NCtx) :: NCtx where
+  AddNN ('S x) s ('End t)          = 'Cons ('Used t) (SingletonN x s)
+  AddNN 'Z     s ('Cons 'Unused g) = 'Cons ('Used s) g
+  AddNN ('S x) s ('Cons u       g) = 'Cons u (AddNN x s g)
 
 type family ConsN (u :: Usage) (g :: Ctx) :: Ctx where
   ConsN ('Used s) 'Empty = 'N ('End s)
@@ -109,9 +113,6 @@ type family RemoveN (x :: Ident) (g :: NCtx) :: Ctx where
 type family Remove (x :: Ident) (g :: Ctx) :: Ctx where
   Remove x ('N g) = RemoveN x g
 
-type family RemoveNN (x :: Ident) (g :: NCtx) :: NCtx where
-  RemoveNN 'Z     ('Cons ('Used s) g) = 'Cons 'Unused g
-  RemoveNN ('S x) ('Cons u g)         = 'Cons u (RemoveNN x g)
 
 -- Nats ---------------------------------------------------------
 

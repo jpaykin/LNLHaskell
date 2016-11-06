@@ -41,15 +41,22 @@ instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
 
 -- In Context ---------------------------------------------
 
+class CInN x s g where
+  inNCtx :: InN x s g
+
+instance CInN 'Z s ('End s) where
+  inNCtx = InEnd
+instance KnownNCtx g => CInN 'Z s ('Cons ('Used s) g) where
+  inNCtx = InHere nctx
+instance CInN x s g => CInN ('S x) s ('Cons u g) where
+  inNCtx = InLater inNCtx
+
 class CIn x s g where
   inCtx :: In x s g
 
-instance CIn 'Z s ('End s) where
-  inCtx = InEnd
-instance KnownNCtx g => CIn 'Z s ('Cons ('Used s) g) where
-  inCtx = InHere nctx
-instance CIn x s g => CIn ('S x) s ('Cons u g) where
-  inCtx = InLater inCtx
+instance CInN x s g => CIn x s ('N g) where
+  inCtx = In inNCtx
+  
 
 -- Add To Context ----------------------------------------------
 
@@ -57,19 +64,10 @@ class CAddCtx x s g g' | x s g -> g' where
   addCtx :: AddCtx x s g g'
 class CAddCtxN x s g g' | x s g -> g' where
   addCtxN :: AddCtxN x s g g'
+class CAddNCtxN x s g g' | x s g -> g' where
+  addNCtxN :: AddNCtxN x s g g'
 
-instance CAddCtxN 'Z s 'Empty ('End s) where
-  addCtxN = AddEHere
-instance CAddCtxN 'Z s ('N ('Cons 'Unused g)) ('Cons ('Used s) g) where
-  addCtxN = AddHere
-instance CAddCtxN x s 'Empty g => CAddCtxN ('S x) s 'Empty ('Cons 'Unused g) where
-  addCtxN = AddELater addCtxN
-instance CAddCtxN x s ('N g) g' => CAddCtxN ('S x) s ('N ('Cons u g)) ('Cons u g') where
-  addCtxN = AddLater addCtxN
-
-instance CAddCtxN x s g g' => CAddCtx x s g ('N g') where
-  addCtx = AddN $ addCtxN
-
+-- to do: add instances
 
 -- Singleton Context ------------------------------------------
 

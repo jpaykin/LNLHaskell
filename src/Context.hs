@@ -14,18 +14,24 @@ import Types
 
 -- Fresh variable ------------------------------------------
 
+type family FreshN (g :: NCtx) :: Ident where
+  FreshN ('End t)            = 'S 'Z
+  FreshN ('Cons 'Unused g)   = 'Z
+  FreshN ('Cons ('Used s) g) = 'S (FreshN g)
+
 type family Fresh (g::Ctx) :: Ident where
-  Fresh 'Empty                   = 'Z
-  Fresh ('N ('End t))            = 'S 'Z
-  Fresh ('N ('Cons 'Unused g))   = 'Z
-  Fresh ('N ('Cons ('Used s) g)) = 'S (Fresh ('N g))
+  Fresh 'Empty = 'Z
+  Fresh ('N g) = FreshN g
+
+type family FreshN2 g :: Ident where
+  FreshN2 ('End t)           = 'S ('S 'Z)
+  FreshN2 ('Cons 'Unused g)   = 'S 'Z
+  FreshN2 ('Cons ('Used s) g) = 'S (FreshN2 g)
+
 
 type family Fresh2 (g::Ctx) :: Ident where
-  Fresh2 'Empty                   = 'S 'Z
-  Fresh2 ('N ('End t))            = 'S ('S 'Z)
-  Fresh2 ('N ('Cons 'Unused g))   = 'S 'Z
-  Fresh2 ('N ('Cons ('Used s) g)) = 'S (Fresh2 ('N g))
-  
+  Fresh2 'Empty = 'S 'Z
+  Fresh2 ('N g) = FreshN2 g
 
 
 -- Disjoint Identifiers --------------------------------
@@ -37,21 +43,27 @@ data Disjoint :: Ident -> Ident -> * where
 
 -- Shift -----------------------------------------------------
 
-data ShiftN :: Ident -> NCtx -> NCtx -> * where
-  ShiftHere  :: ShiftN 'Z g ('Cons 'Unused g)
-  ShiftLater :: ShiftN x g g' -> ShiftN ('S x) ('Cons u g) ('Cons u' g)
+-- data ShiftN :: Ident -> NCtx -> NCtx -> * where
+--   ShiftHere  :: ShiftN 'Z g ('Cons 'Unused g)
+--   ShiftLater :: ShiftN x g g' -> ShiftN ('S x) ('Cons u g) ('Cons u' g)
 
-data Shift :: Nat -> Ctx -> Ctx -> * where
-  Shift :: ShiftN x g g' -> Shift x ('N g) ('N g')
+-- data Shift :: Nat -> Ctx -> Ctx -> * where
+--   Shift :: ShiftN x g g' -> Shift x ('N g) ('N g')
 
 
 -- Add To Context ----------------------------------------------
 
+-- changed defn of Add
+data AddNCtxN :: Ident -> LType -> NCtx -> NCtx -> * where
+  AddHere  :: SNCtx g -> AddNCtxN 'Z s ('Cons 'Unused g) ('Cons ('Used s) g)
+  AddEnd   :: SingletonNCtx x s g  -> AddNCtxN ('S x) s ('End t) ('Cons ('Used t) g)
+  AddLater :: SUsage u -> AddNCtxN x s g g'    -> AddNCtxN ('S x) s ('Cons u g) ('Cons u g')
+
+
 data AddCtxN :: Ident -> LType -> Ctx -> NCtx -> * where
   AddEHere   :: AddCtxN 'Z s 'Empty ('End s)
-  AddHere    :: AddCtxN 'Z s ('N ('Cons 'Unused g)) ('Cons ('Used s) g)
   AddELater  :: AddCtxN x s 'Empty g  -> AddCtxN ('S x) s 'Empty ('Cons 'Unused g)
-  AddLater   :: AddCtxN x s ('N g) g' -> AddCtxN ('S x) s ('N ('Cons u g)) ('Cons u g')
+  AddNN      :: AddNCtxN x s g g' -> AddCtxN x s ('N g) g'
 
 data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where
   AddN :: AddCtxN x s g g' -> AddCtx x s g ('N g')
@@ -95,16 +107,16 @@ data MergeN :: NCtx -> NCtx -> NCtx -> * where
 data InN :: Nat -> LType -> NCtx -> * where
   InEnd   :: InN 'Z s ('End s)
   InHere  :: SNCtx g    -> InN 'Z s ('Cons ('Used s) g)
-  InLater :: InN x s g  -> InN ('S x) s ('Cons u g)
+  InLater :: SUsage u   -> InN x s g  -> InN ('S x) s ('Cons u g)
 
 data In :: Nat -> LType -> Ctx -> * where
   In :: InN x s g -> In x s ('N g)
 
 -- Relation between In and Shift
 
-type family InShift x n :: Nat where
-  InShift ('S x) 'Z     = x
-  InShift 'Z     ('S n) = 'Z
-  InShift ('S x) ('S n) = 'S (InShift x n)
+-- type family InShift x n :: Nat where
+--   InShift ('S x) 'Z     = x
+--   InShift 'Z     ('S n) = 'Z
+--   InShift ('S x) ('S n) = 'S (InShift x n)
 
 
