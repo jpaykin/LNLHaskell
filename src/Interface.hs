@@ -19,12 +19,11 @@ import Lang
 import Subst
 
 type SExp x s = LExp (FSingletonCtx x s) s
+
 toSExp :: SIdent x -> SExp x s
 toSExp x = Var $ fSingletonCtx x
 
-
-var :: forall x g t. 
-       SIdent x -> SExp x t
+var :: SIdent x -> SExp x t
 var x = Var $ fSingletonCtx x
 
 
@@ -43,7 +42,7 @@ app :: CMerge g1 g2 g3
     -> LExp g3 t
 e1 `app` e2 = App merge e1 e2
 
-put :: a -> LExp '[] (Lower a)
+put :: a -> LExp  (Lower a)
 put a = Put EmptyNil a
 
 (>!) :: CMerge g1 g2 g3
@@ -83,9 +82,9 @@ letPair e f = LetPair merge pfA1 pfA2 e e'
     pfI2 :: In (Fresh2 g) s2 g2
     pfI2 = inCtx
     pfA1 :: AddCtx (Fresh g) s1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) (Remove (Fresh2 g) g2)
-    pfA1 = inRemove pfI1'
+    pfA1 = inAddRemove pfI1'
     pfA2 :: AddCtx (Fresh2 g) s2 (Remove (Fresh2 g) g2) g2
-    pfA2 = inRemove pfI2
+    pfA2 = inAddRemove pfI2
     e' :: LExp g2 t
     e' = f (toSExp $ addToSIdent pfA1, toSExp $ addToSIdent pfA2)
 

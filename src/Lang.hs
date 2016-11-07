@@ -15,7 +15,7 @@ import Types
 import Context
   
 data LExp :: Ctx -> LType -> * where
-  Var :: forall x t f1 f2 g. SingletonCtx x t g -> LExp g t
+  Var :: forall x t g. SingletonCtx x t g -> LExp g t
   
   Abs :: forall x s t g g'. 
          AddCtx x s g g' 
@@ -26,7 +26,7 @@ data LExp :: Ctx -> LType -> * where
       -> LExp g2 s
       -> LExp g3 t
 
-  Unit :: LExp '[] One
+  Unit :: LExp 'Empty One
   LetUnit :: Merge g1 g2 g3
           -> LExp g1 One
           -> LExp g2 t
@@ -63,28 +63,18 @@ data LExp :: Ctx -> LType -> * where
        -> LExp g22 t
        -> LExp g3  t
 
-  Put     :: EmptyCtx g -> a -> LExp g (Lower a)
+  Put     :: a -> LExp 'Empty (Lower a)
   LetBang :: Merge g1 g2 g3
       -> LExp g1 (Lower a)
       -> (a -> LExp g2 t)
       -> LExp g3 t
 
-  Shift   :: Shift i g1 g2 -> LExp g1 t -> LExp g2 t
-  Unshift :: Shift i g1 g2 -> LExp g2 t -> LExp g1 t
-
 -- values
-
-shift1 :: LExp g t -> LExp ('Unused ': g) t
-shift1 = Shift ShiftHere
-
-unshift1 :: LExp ('Unused ': g) t -> LExp g t
-unshift1 = Unshift ShiftHere
 
 data LVal :: LType -> * where
   VUnit :: LVal One
-  VAbs :: forall x s t g g'.
-         EmptyCtx g 
-      -> AddCtx x s g g'
+  VAbs :: forall x s t g'.
+         AddCtx x s 'Empty g'
       -> LExp g' t
       -> LVal (s ⊸ t)
   VPut :: a -> LVal (Lower a)
@@ -93,32 +83,14 @@ data LVal :: LType -> * where
   VInl  :: LVal t1 -> LVal (t1 ⊕ t2)
   VInr  :: LVal t2 -> LVal (t1 ⊕ t2)
 
-valToExp :: LVal t -> LExp '[] t
-valToExp VUnit = Unit
-valToExp (VAbs pfE pfAdd e) = transportDown pfE $ Abs pfAdd e
-valToExp (VPut a) = Put EmptyNil a
-valToExp (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
-valToExp (VProd v1 v2) = Prod (valToExp v1) (valToExp v2)
-valToExp (VInl v)      = Inl $ valToExp v
-valToExp (VInr v)      = Inr $ valToExp v
+valToExp :: LVal t -> LExp 'Empty t
+valToExp VUnit           = Unit
+valToExp (VAbs pfAdd e)  = Abs pfAdd e
+valToExp (VPut a)        = Put a
+valToExp (VPair v1 v2)   = Pair MergeE (valToExp v1) (valToExp v2)
+valToExp (VProd v1 v2)   = Prod (valToExp v1) (valToExp v2)
+valToExp (VInl v)        = Inl $ valToExp v
+valToExp (VInr v)        = Inr $ valToExp v
 
-
--- transport --------------------------------------------
-
-transport :: EquivEmpty g1 g2 -> LExp g1 t -> LExp g2 t
-transport EquivENil e = e
-transport (EquivEEL pfEmpty) e = transportUp pfEmpty e
-transport (EquivEER pfEmpty) e = transportDown pfEmpty e
-transport (EquivECons pfEquiv) e = 
-    shift1 $ transport pfEquiv $ unshift1 e
-
-transportDown :: EmptyCtx g -> LExp g t -> LExp '[] t
-transportDown EmptyNil       e = e
-transportDown (EmptyCons pf) e = transportDown pf $ unshift1 e
-
-    
-transportUp :: EmptyCtx g -> LExp '[] t -> LExp g t
-transportUp EmptyNil       e = e
-transportUp (EmptyCons pf) e = shift1 $ transportUp pf e
 
 

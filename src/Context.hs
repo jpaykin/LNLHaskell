@@ -99,8 +99,48 @@ data MergeN :: NCtx -> NCtx -> NCtx -> * where
             -> MergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3)
 
 
+-- Div -----------------------------------------------
+ 
+type family DivF g' g :: Ctx where
+  DivF g' 'Empty = g'
+  DivF ('N g') ('N g) = DivNF g' g
+
+type family DivNF g' g :: Ctx where
+  DivNF ('End s)             ('End s) = 'Empty
+  DivNF ('Cons ('Used s) g') ('End s) = 'N ('Cons 'Unused g')
+  DivNF ('Cons ('Used s) g') ('Cons ('Used s) g) = ConsN 'Unused (DivNF g' g)
+  DivNF ('Cons u g')         ('Cons 'Unused g)   = ConsN u (DivNF g' g)
+
+
+data Div :: Ctx -> Ctx -> Ctx -> * where
+  DivEmpty :: Div g 'Empty g
+  DivN     :: DivN g1 g2 g3 -> Div ('N g1) ('N g2) g3
+
+data DivN       :: NCtx -> NCtx -> Ctx -> * where
+  DivEndEnd     :: DivN ('End s) ('End s) 'Empty
+  DivConsEnd    :: DivN ('Cons ('Used s) g') ('End s) ('N ('Cons 'Unused g'))
+  DivConsCons   :: DivN g1 g2 g3 
+                -> MergeU u3 u2 u1
+                -> DivN ('Cons u1 g1) ('Cons u2 g2) (ConsN u3 g3)
+
 -- Remove ------------------------------------------
 
+data RemoveCtx :: Nat -> Ctx -> Ctx -> * where
+  RemoveN :: RemoveNCtx x g g' -> RemoveCtx x ('N g) g'
+
+data RemoveNCtx :: Nat -> NCtx -> Ctx -> * where
+  RemoveEnd   :: RemoveNCtx 'Z ('End s) 'Empty
+  RemoveHere  :: RemoveNCtx 'Z ('Cons ('Used s) g) ('N ('Cons 'Unused g))
+  RemoveLater :: RemoveNCtx x g g'
+              -> ShiftCtx u g' g''
+              -> RemoveNCtx ('S x) ('Cons u g) g''
+
+-- Shift ----------------------------------------
+
+data ShiftCtx :: Usage -> Ctx -> Ctx -> * where
+  ShiftEmptyUsed   :: ShiftCtx ('Used s) 'Empty ('N (End s))
+  ShiftEmptyUnused :: ShiftCtx 'Unused 'Empty 'Empty
+  ShiftN           :: ShiftCtx u ('N g) ('N ('Cons u g))
 
 -- In -------------------------------
 

@@ -127,16 +127,16 @@ inAdd :: In x s g -> AddCtx y t g g' -> In x s g'
 inAdd pfI (AddN pfA) = In $ inAddN pfI pfA
 
 
-inAddRemove :: In x s g -> AddCtx y t g g' -> AddCtx y t (Remove x g) (Remove x g')
-inAddRemove pfI (AddN pfA) = inAddRemoveN pfI pfA
+inAddRemoveLater :: In x s g -> AddCtx y t g g' -> AddCtx y t (Remove x g) (Remove x g')
+inAddRemoveLater pfI (AddN pfA) = inAddRemoveLaterN pfI pfA
 
-inAddRemoveN :: In x s g -> AddCtxN y t g g' -> AddCtx y t (Remove x g) (RemoveN x g')
-inAddRemoveN (In pfI) (AddNN pfA) = inNAddRemoveN pfI pfA
+inAddRemoveLaterN :: In x s g -> AddCtxN y t g g' -> AddCtx y t (Remove x g) (RemoveN x g')
+inAddRemoveLaterN (In pfI) (AddNN pfA) = inNAddRemoveLaterN pfI pfA
 
-inNAddRemoveN :: InN x s g -> AddNCtxN y t g g' -> AddCtx y t (RemoveN x g) (RemoveN x g')
-inNAddRemoveN InEnd          (AddEnd pfS)     = AddN $ AddELater $ singletonAddN pfS
-inNAddRemoveN (InHere g)     (AddLater u pfS) = AddN . AddNN . AddLater SUnused $ pfS
-inNAddRemoveN (InLater _ pfI)  (AddHere g0)   = 
+inNAddRemoveLaterN :: InN x s g -> AddNCtxN y t g g' -> AddCtx y t (RemoveN x g) (RemoveN x g')
+inNAddRemoveLaterN InEnd          (AddEnd pfS)     = AddN $ AddELater $ singletonAddN pfS
+inNAddRemoveLaterN (InHere g)     (AddLater u pfS) = AddN . AddNN . AddLater SUnused $ pfS
+inNAddRemoveLaterN (InLater _ pfI)  (AddHere g0)   = 
   case inSCtxRemove pfI g0 of
     SEmpty -> AddN AddEHere
     SN g'  -> AddN . AddNN . AddHere $ g'
@@ -184,6 +184,15 @@ singletonNFresh (SS x) = AddLaterS $ singletonNFresh x
 
 -- Remove ------------------------------------------
 
+singletonRemove :: SingletonCtx x s g -> RemoveCtx x g g' -> Dict (g' ~ 'Empty)
+singletonRemove = undefined
+
+removeAdd :: RemoveCtx x g g' -> AddCtx y t g g0 -> (RemoveCtx x g0 (Remove x g0), AddCtx y t g' (Remove x g0))
+removeAdd = undefined
+
+inRemove :: In x s g -> RemoveCtx x g (Remove x g)
+inRemove = undefined
+
 -- In -------------------------------
 singletonInN :: SingletonNCtx x s g -> InN x s g
 singletonInN AddHereS        = InEnd
@@ -215,15 +224,15 @@ singletonInNInv (InLater _ pfI) (AddLaterS pfS) =
   case singletonInNInv pfI pfS of Dict -> Dict
 
 
-inRemoveN :: InN x s g -> AddCtxN x s (RemoveN x g) g
-inRemoveN InEnd           = AddEHere
-inRemoveN (InHere g)      = AddNN $ AddHere g
-inRemoveN (InLater u pfI) = addConsN u z $ inRemoveN pfI 
+inAddRemoveN :: InN x s g -> AddCtxN x s (RemoveN x g) g
+inAddRemoveN InEnd           = AddEHere
+inAddRemoveN (InHere g)      = AddNN $ AddHere g
+inAddRemoveN (InLater u pfI) = addConsN u z $ inAddRemoveN pfI 
   where
     z = inSCtxRemove pfI $ inSNCtx pfI
 
-inRemove :: In x s g -> AddCtx x s (Remove x g) g
-inRemove (In pfI) = AddN $ inRemoveN pfI
+inAddRemove :: In x s g -> AddCtx x s (Remove x g) g
+inAddRemove (In pfI) = AddN $ inAddRemoveN pfI
 
 addConsN :: SUsage u -> SCtx g -> AddCtxN x s g g' -> AddCtxN ('S x) s (ConsN u g) ('Cons u g')
 addConsN SUsed   SEmpty    pfA         = AddNN . AddEnd $ addNSingleton pfA
@@ -355,6 +364,11 @@ mergeIn1 :: Merge g1 g2 g3 -> In x s g1 -> In x s g3 -> Merge (Remove x g1) g2 (
 mergeIn1 MergeER _ _ = undefined -- MergeER
 mergeIn1 (MergeN pfM) (In pfI1) (In pfI2) = mergeNIn1 pfM pfI1 pfI2
 
+mergeIn2 :: Merge g1 g2 g3 -> In x s g2 -> In x s g3 -> Merge g1 (Remove x g2) (Remove x g3) 
+mergeIn2 = undefined
+
+mergeEmpty :: Merge g1 g2 'Empty -> Dict (g1 ~ 'Empty, g2 ~ 'Empty)
+mergeEmpty = undefined
 
 {-
 
@@ -382,3 +396,11 @@ mergeIn2 (MergeU pfM) (InLater pfI2) (InLater pfI3) = MergeU $ mergeIn2 pfM pfI2
 
 
 -}
+
+-- Div -------------------------------------------------------
+
+divMerge :: Div g3 g2 g1 -> Merge g1 g2 g3
+divMerge = undefined
+
+divSymm :: Div g3 g2 g1 -> Div g3 g1 g2
+divSymm = undefined

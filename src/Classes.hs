@@ -9,9 +9,11 @@ module Classes where
 
 import Data.Kind
 import Data.Constraint
+import Prelude hiding (div)
 
 import Types
 import Context
+import Proofs
 
 -- Singleton instance
 
@@ -48,8 +50,8 @@ instance CInN 'Z s ('End s) where
   inNCtx = InEnd
 instance KnownNCtx g => CInN 'Z s ('Cons ('Used s) g) where
   inNCtx = InHere nctx
-instance CInN x s g => CInN ('S x) s ('Cons u g) where
-  inNCtx = InLater inNCtx
+instance (KnownUsage u, CInN x s g) => CInN ('S x) s ('Cons u g) where
+  inNCtx = InLater usg inNCtx
 
 class CIn x s g where
   inCtx :: In x s g
@@ -67,13 +69,35 @@ class CAddCtxN x s g g' | x s g -> g' where
 class CAddNCtxN x s g g' | x s g -> g' where
   addNCtxN :: AddNCtxN x s g g'
 
--- to do: add instances
+instance KnownNCtx g => CAddNCtxN 'Z s ('Cons 'Unused g) ('Cons ('Used s) g) where
+  addNCtxN = AddHere nctx
+-- instance CAddCtxN x s 'Empty g => CAddNCtxN ('S x) s ('End t) ('Cons ('Used t) g) where
+--   addNCtxN = AddEnd $ addNSingleton addCtxN
+-- instance (KnownUsage u, CAddCtxN x s ('N g) g') 
+--       => CAddNCtxN ('S x) s ('Cons u g) ('Cons u g') where
+--   addNCtxN = case addCtxN @x @s @('N g) @g' of AddNN pfA -> AddLater usg pfA
+
+instance CSingletonNCtx x s g => CAddNCtxN ('S x) s ('End t) ('Cons ('Used t) g) where
+  addNCtxN = AddEnd singletonNCtx
+instance (KnownUsage u, CAddNCtxN x s g g') => CAddNCtxN ('S x) s ('Cons u g) ('Cons u g') where
+  addNCtxN = AddLater usg addNCtxN
+  
+
+instance CAddCtxN 'Z s 'Empty ('End s) where
+  addCtxN = AddEHere
+instance CAddCtxN x s 'Empty g => CAddCtxN ('S x) s 'Empty ('Cons 'Unused g) where
+  addCtxN = AddELater addCtxN
+instance CAddNCtxN x s g g' => CAddCtxN x s ('N g) g' where
+  addCtxN = AddNN addNCtxN
+
+instance CAddCtxN x s g g' => CAddCtx x s g ('N g') where
+  addCtx = AddN addCtxN
 
 -- Singleton Context ------------------------------------------
 
-class CSingletonCtx x s g | x s -> g where
+class CSingletonCtx x s g | x s -> g, g -> x s where
   singletonCtx :: SingletonCtx x s g
-class CSingletonNCtx x s g | x s -> g where
+class CSingletonNCtx x s g | x s -> g, g -> x s where
   singletonNCtx :: SingletonNCtx x s g
 
 instance CSingletonNCtx 'Z s ('End s) where
@@ -98,26 +122,32 @@ instance CMergeU ('Used s) 'Unused ('Used s) where
 instance CMergeU 'Unused ('Used s) ('Used s) where
   mergeU = MergeUR
 
-class CMerge g1 g2 g3 | g1 g2 -> g3 where
+class CMerge g1 g2 g3 | g1 g3 -> g2, g2 g3 -> g1 where
   merge :: Merge g1 g2 g3
 
-instance CMerge 'Empty 'Empty 'Empty where
-  merge = MergeE
-instance CMerge 'Empty ('N g) ('N g) where
-  merge = MergeEL
-instance CMerge ('N g) 'Empty ('N g) where
-  merge = MergeER
-instance CMergeN g1 g2 g3 => CMerge ('N g1) ('N g2) ('N g3) where
-  merge = MergeN mergeN
+instance (CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 where
+  merge = divMerge div
+  
 
--- still can't get the extra functional dependencies :(
-class CMergeN g1 g2 g3 | g1 g2 -> g3 where
-  mergeN :: MergeN g1 g2 g3
+-- Div ---------------------------------------
 
-instance CMergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2) where
-  mergeN = MergeEndL
-instance CMergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1) where
-  mergeN = MergeEndR
-instance (CMergeU u1 u2 u3, CMergeN g1 g2 g3) 
-      => CMergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
-  mergeN = MergeCons mergeU mergeN
+class CDiv g1 g2 g3 | g1 g2 -> g3 where
+  div :: Div g1 g2 g3
+
+instance CDiv g 'Empty g where
+  div = DivEmpty
+instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
+  div = DivN divN
+
+class CDivN g1 g2 g3 | g1 g2 -> g3 where
+  divN :: DivN g1 g2 g3
+
+instance CDivN ('End s) ('End s) 'Empty where
+  divN = DivEndEnd
+instance CDivN ('Cons ('Used s) g') ('End s) ('N ('Cons 'Unused g')) where
+  divN = DivConsEnd
+instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
+      => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where
+  divN = DivConsCons divN mergeU
+
+
