@@ -184,7 +184,7 @@ singletonNFresh (SS x) = AddLaterS $ singletonNFresh x
 
 -- Remove ------------------------------------------
 
-singletonRemove :: SingletonCtx x s g -> RemoveCtx x g g' -> Dict (g' ~ 'Empty)
+singletonRemove :: SingletonCtx x s g -> Dict (Remove x g ~ 'Empty)
 singletonRemove = undefined
 
 removeAdd :: RemoveCtx x g g' -> AddCtx y t g g0 -> (RemoveCtx x g0 (Remove x g0), AddCtx y t g' (Remove x g0))
