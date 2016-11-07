@@ -84,6 +84,9 @@ freshDisjoint (SN (SCons SUsed   g)) = DisjointSS $ freshDisjoint (SN g)
 
 -- Disjointness --------------------------------------------
 
+disjointRemove :: Disjoint x y -> In x s g -> In y t g -> In x s (Remove y g)
+disjointRemove = undefined
+
 disjointRemoveN :: Disjoint x y -> InN x s g -> InN y t g -> In x s (RemoveN y g)
 disjointRemoveN DisjointZS       (InHere g)       (InLater _ pfI)  = 
   case inSCtxRemove pfI g of 
@@ -93,22 +96,11 @@ disjointRemoveN DisjointSZ       (InLater _ pfI)  (InHere g)     = In $ InLater 
 disjointRemoveN (DisjointSS pfD) (InLater u pfI1) (InLater _ pfI2) = 
   case disjointRemoveN pfD pfI1 pfI2 of In pfI -> In (InLater u pfI)
 
--- Shift ---------------------------------------------------
 
--- shiftSCtxN :: ShiftN i g g' -> SNCtx g -> SNCtx g'
--- shiftSCtxN ShiftHere g = SCons SUnused g
--- shiftSCtxN (ShiftLater pfS) 
+-- Equivalence of contexts ------------------------------------
 
--- shiftSCtx :: Shift i g g' ->  SCtx g -> SCtx g'
--- shiftSCtx (Shift ShiftHere)         g = SCons SUnused g
--- shiftSCtx (Shift (ShiftLater pfSh)) (SCons u g) = SCons u $ shiftSCtx pfSh g
-
--- unshiftSCtx :: Shift i g g' -> SCtx g' -> SCtx g
--- unshiftSCtx ShiftHere (SCons SUnused g0') = g0'
--- unshiftSCtx (ShiftLater pfS) (SCons u g0') = SCons u $ unshiftSCtx pfS g0'
-
-
--- Empty Context ----------------------------------------------
+addRemoveEquiv :: AddCtx x s g g' -> Dict (g ~ Remove x g')
+addRemoveEquiv = undefined
 
 -- Add To Context ----------------------------------------------
 

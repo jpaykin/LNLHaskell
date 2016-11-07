@@ -34,7 +34,7 @@ subst pfI s (Snd e)                         = Snd $ subst pfI s e
 subst pfI s (Inl e)                         = Inl $ subst pfI s e
 subst pfI s (Inr e)                         = Inr $ subst pfI s e
 subst pfI s (Case pfM pfA1 pfA2 e1 e21 e22) = substCase pfI s pfM pfA1 pfA2 e1 e21 e22
-subst pfI s (Put pfE a)                     = case pfI of 
+subst pfI s (Put a)                         = case pfI of 
 subst pfI s (LetBang pfM e f)               = substLetBang pfI s pfM e f
 
 
@@ -143,9 +143,9 @@ substCase pfI s pfM pfA1 pfA2 e e1 e2 =
         pfM' :: Merge g1 (Remove x g2) (Remove x g)
         pfM' = mergeIn2 pfM pfI2 pfI
         pfA1' :: AddCtx x1 s1 (Remove x g2) (Remove x g21)
-        pfA1' = inAddRemove pfI2 pfA1
+        pfA1' = inAddRemoveLater pfI2 pfA1
         pfA2' :: AddCtx x2 s2 (Remove x g2) (Remove x g22)
-        pfA2' = inAddRemove pfI2 pfA2
+        pfA2' = inAddRemoveLater pfI2 pfA2
         pfI21 :: In x s g21
         pfI21 = inAdd pfI2 pfA1
         pfI22 :: In x s g22
@@ -174,7 +174,8 @@ eval' (Abs pfA e)       = VAbs pfA e
 eval' (App pfM e1 e2) = 
   case mergeEmpty pfM of {Dict ->
   case (eval' e1, eval e2) of
-    (VAbs pfA e1', e2') -> eval' $ subst (addIn pfA) e2' e1'
+    (VAbs pfA e1', e2') -> 
+      case addRemoveEquiv pfA of Dict -> eval' $ subst (addIn pfA) e2' e1'
   }
 eval' Unit                          = VUnit
 eval' (LetUnit pfM e1 e2)           = evalLetUnit pfM e1 e2
@@ -209,18 +210,24 @@ evalLetPair :: forall g1 g2 x1 x2 t1 t2 g2' g2'' r.
 evalLetPair pfM pfA1 pfA2 e1 e2 = 
   case mergeEmpty pfM of {Dict ->
   case eval' e1 of 
-    VPair v1 v2 -> eval' e2''
+    VPair v1 v2 -> 
+      case addRemoveEquiv pfA1 of {Dict ->
+      case addRemoveEquiv pfA2 of {Dict -> eval' e2''}}
       where
         e2' :: LExp (Remove x2 g2'') r
         e2' = substVal pfI2 v2 e2
         e2'' :: LExp (Remove x1 (Remove x2 g2'')) r
-        e2'' = substVal pfI1' v1 e2'
+        e2'' = substVal pfI1'' v1 e2'
   }
   where
+    pfD :: Disjoint x1 x2
+    pfD = undefined
     pfI1 :: In x1 t1 g2'
     pfI1 = addIn pfA1
-    pfI1' :: In x1 t1 (Remove x2 g2'')
-    pfI1' = equivIn pfI1 pfEq2
+    pfI1' :: In x1 t1 g2''
+    pfI1' = inAdd pfI1 pfA2
+    pfI1'' :: In x1 t1 (Remove x2 g2'')
+    pfI1'' = disjointRemove pfD pfI1' pfI2
     pfI2 :: In x2 t2 g2''
     pfI2 = addIn pfA2
 
@@ -233,11 +240,13 @@ evalCase :: forall g g1 g2 x1 s1 g21 x2 s2 g22 t.
          -> LExp g22 t
          -> LVal t
 evalCase pfM pfA1 pfA2 e e1 e2 = 
-  case mergeEmpty pfM of {Dict -> 
+  case mergeEmpty pfM      of {Dict -> 
+  case addRemoveEquiv pfA1 of {Dict ->
+  case addRemoveEquiv pfA2 of {Dict -> 
   case eval' e of
     VInl v1 -> eval' (substVal pfI1 v1 e1)
     VInr v2 -> eval' (substVal pfI2 v2 e2)
-  }
+  }}}
   where
     pfI1 :: In x1 s1 g21
     pfI1 = addIn pfA1
