@@ -41,29 +41,27 @@ ret a = suspendL $ force idL `app` put a
 
 
 -- fmap :: (a -> b) -> Lift (Lower a ⊸ Lower b)
--- Note, fmap actually leaves the ctx unspecified?
 fmap f = suspend . λ$ \x -> x >! \ a -> put (f a)
 
--- forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 app2 = Suspend . λ$ \z -> λ$ \x -> λ$ \y -> 
-             z `app` x `app` y
+                 z `app` x `app` y
 
 
 
 idid = Suspend $ force idL `app` force idL
 
---idid' = Suspend $ app (force idL) (λ $ \x -> x) 
+idid' = Suspend $ app (force idL) (λ $ \x -> x) 
+
+-- We're still losing out on idid'
+-- idid'' = suspend $ app (λ$ \x -> x) (λ$ \y -> y)
 
 pairPut :: Lift (Lower String ⊗ Lower String)
 pairPut = suspend $ put "hi" ⊗ put "bye"
 
-swapPairPut = suspend @'[ 'Unused, 'Unused ] $ 
-                force pairPut `letPair` \ (x,y) -> y ⊗ x
+swapPairPut = Suspend $ force pairPut `letPair` \(x,y) -> y ⊗ x
 
-
-uncurry :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ (a ⊗ b ⊸ c))
-uncurry = suspend @'[ 'Unused, 'Unused, 'Unused, 'Unused ] $ λ$ \f -> λ$ \z -> 
-    z `letPair` \ (x,y) -> f `app` x `app` y
+uncurry = Suspend $ λ$ \f -> λ$ \z ->
+    z `letPair` \(x,y) -> f `app` x `app` y
 
 
 curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
@@ -76,22 +74,30 @@ eitherPlus :: Either (Lift a) (Lift b) -> Lift (a ⊕ b)
 eitherPlus (Left  a) = Suspend . Inl $ force a
 eitherPlus (Right b) = Suspend . Inr $ force b
 
-isoPlus1 :: Lift (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
-isoPlus1 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
-    z `letPair` \(a,z) ->
-    caseof @'[ 'Unused, 'Used _ ]
-           z ( \b -> Inl (a ⊗ b) )
-             ( \c -> Inr (a ⊗ c) )
 
+-- the problem with these seem to be the use of Remove;
+-- maybe move Remove to a type class so that we can have backwards functional dependencies?
+-- e.g. type class CRemove x g g' | x g -> g', x g' -> g
+{-
+isoPlus1 :: Lift (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
+isoPlus1 = Suspend . λ$ \z ->
+    z `letPair` \(a,z) ->
+    caseof z (\b -> Inl $ a ⊗ b)
+             (\c -> Inr $ a ⊗ c)
+-}
+
+{-
 isoPlus2 :: Lift ( (a ⊗ b) ⊕ (a ⊗ c) ⊸ a ⊗ (b ⊕ c) )
-isoPlus2 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
-  caseof @'[ 'Unused, 'Unused, 'Unused ] z 
-    ( \p -> p `letPair` \(a,b) -> a ⊗ Inl b )
-    ( \p -> p `letPair` \(a,c) -> a ⊗ Inr c )
+isoPlus2 = Suspend . λ$ \z ->
+  z `caseof` case1 case2
+  where
+    case1 p = p `letPair` \(a,b) -> a ⊗ Inl b
+    case2 p = p `letPair` \(a,c) -> a ⊗ Inr c
+-}
 
 -- Bang
 
-coret :: LExp '[] a -> LExp '[] (Bang a)
+coret :: LExp 'Empty a -> LExp 'Empty (Bang a)
 coret = put . Suspend
 
 dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
@@ -127,15 +133,14 @@ fst = Suspend . λ$ \p -> Fst p
 snd :: Lift (a & b ⊸ b)
 snd = Suspend . λ$ \p -> Snd p
 
-
 iso1 :: Lift (Bang (a & b) ⊸ Bang a ⊗ Bang b)
-iso1 = Suspend . λ$ \x ->
-     x >! \p -> 
-    (coret . Fst $ force p) ⊗ (coret . Snd $ force p)
+iso1 = suspend . λ$ \x ->
+    x >! \p -> (coret . Fst $ force p) ⊗ (coret . Snd $ force p)
 
 iso2 :: Lift (Bang a ⊗ Bang b ⊸ Bang (a & b))
-iso2 = suspend @'[ 'Unused, 'Unused, 'Unused ] . λ$ \z ->
-    z `letPair` \(x,y) ->
+iso2 = suspend . λ$ \z -> 
+    z `letPair` \(x,y) -> 
     x >! \a ->
     y >! \b ->
     coret $ force a & force b
+

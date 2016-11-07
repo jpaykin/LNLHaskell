@@ -171,6 +171,9 @@ singletonNFresh :: SIdent x -> SingletonNCtx x s (SingletonN x s)
 singletonNFresh SZ     = AddHereS
 singletonNFresh (SS x) = AddLaterS $ singletonNFresh x
 
+singletonMergeAdd :: SingletonCtx x s g1 -> Merge g1 g2 g3 -> AddCtx x s g2 g3
+singletonMergeAdd = undefined
+
 
 -- Merge ----------------------------------------------------
 

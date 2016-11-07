@@ -18,20 +18,20 @@ import Classes
 import Lang
 import Subst
 
-type SExp x s = LExp (FSingletonCtx x s) s
+type SExp x s = LExp (Singleton x s) s
 
 toSExp :: SIdent x -> SExp x s
-toSExp x = Var $ fSingletonCtx x
+toSExp x = Var $ singletonFresh x
 
 var :: SIdent x -> SExp x t
-var x = Var $ fSingletonCtx x
+var x = Var $ singletonFresh x
 
 
 λ :: forall s t g g'. KnownCtx g
-  => (LExp (FSingletonCtx (Fresh g) s) s -> LExp (FAddCtx (Fresh g) s g) t)
+  => (LExp (Singleton (Fresh g) s) s -> LExp (Add (Fresh g) s g) t)
   -> LExp g (s ⊸ t)
 λ f = Abs pfA (f varx) where
-  pfA  = addFAdd ctx
+  pfA  = addFresh ctx
   varx = var $ addToSIdent pfA
 
 
@@ -42,8 +42,8 @@ app :: CMerge g1 g2 g3
     -> LExp g3 t
 e1 `app` e2 = App merge e1 e2
 
-put :: a -> LExp  (Lower a)
-put a = Put EmptyNil a
+put :: a -> LExp 'Empty (Lower a)
+put = Put
 
 (>!) :: CMerge g1 g2 g3
      => LExp g1 (Lower a)
@@ -111,7 +111,7 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
 
 
 data Lift :: LType -> * where
-  Suspend :: forall t. LExp '[] t -> Lift t
+  Suspend :: forall t. LExp 'Empty t -> Lift t
 
 
 
@@ -120,8 +120,6 @@ type Bang a = Lower (Lift a)
 data Lin a where
   Lin :: Lift (Lower a) -> Lin a
 
-coerce :: CEmptyCtx g => LExp g t -> LExp '[] t
-coerce e = transportDown emptyCtx e
 
 
 -- We've got some problems here.
@@ -145,30 +143,26 @@ instance Monad Lin where
   Lin (Suspend e) >>= f  = Lin . Suspend $ e >! \ x -> forceL (f x)
 
 -- force should also evaluate the expression
-force :: forall t. Lift t -> LExp '[] t
--- e :: LExp g t
-force (Suspend e) = eval emptyCtx e
+force :: forall t. Lift t -> LExp 'Empty t
+force (Suspend e) = eval e
 
 
-forceL :: Lin a -> LExp '[] (Lower a)
+forceL :: Lin a -> LExp 'Empty (Lower a)
 forceL (Lin e) = force e
 
-suspend :: CEmptyCtx g => LExp g a -> Lift a
-suspend e = Suspend $ transportDown emptyCtx e
+suspend :: LExp 'Empty a -> Lift a
+suspend = Suspend
 
-suspendL :: LExp '[] (Lower a) -> Lin a
+suspendL :: LExp 'Empty (Lower a) -> Lin a
 suspendL = Lin . Suspend 
-
-evalC :: CEmptyCtx g => LExp g a -> LExp '[] a
-evalC e = eval emptyCtx e
 
 evalL :: Lin a -> Lin a
 evalL (Lin e) = Lin $ evalL' e where
   evalL' :: forall a. Lift (Lower a) -> Lift (Lower a)
-  evalL' (Suspend e) = Suspend $ eval (emptyCtx) e
+  evalL' (Suspend e) = Suspend $ eval e
 
 evalVal :: Lin a -> LVal (Lower a) 
-evalVal (Lin (Suspend e)) = eval' EmptyNil e
+evalVal (Lin (Suspend e)) = eval' e
 
 run :: Lin a -> a
 run e = case evalVal e of VPut a -> a
