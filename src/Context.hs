@@ -123,18 +123,6 @@ data DivN       :: NCtx -> NCtx -> Ctx -> * where
                 -> MergeU u3 u2 u1
                 -> DivN ('Cons u1 g1) ('Cons u2 g2) (ConsN u3 g3)
 
--- Remove ------------------------------------------
-
-data RemoveCtx :: Nat -> LType -> Ctx -> Ctx -> * where
-  RemoveN :: RemoveNCtx x s g g' -> RemoveCtx x s ('N g) g'
-
-data RemoveNCtx :: Nat -> LType -> NCtx -> Ctx -> * where
-  RemoveEnd   :: RemoveNCtx 'Z s ('End s) 'Empty
-  RemoveHere  :: RemoveNCtx 'Z s ('Cons ('Used s) g) ('N ('Cons 'Unused g))
-  RemoveLater :: RemoveNCtx x s g g'
-              -> ShiftCtx u g' g''
-              -> RemoveNCtx ('S x) s ('Cons u g) g''
-
 -- Shift ----------------------------------------
 
 data ShiftCtx :: Usage -> Ctx -> Ctx -> * where

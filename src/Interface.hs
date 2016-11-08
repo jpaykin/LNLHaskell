@@ -67,14 +67,15 @@ letUnit = LetUnit merge
 letPair :: forall g s1 s2 t g1 g2 g2' g2''.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
            ,CRemoveCtx (Fresh2 g) s2 g2 g2', CRemoveCtx (Fresh g) s1 g2' g2''
-           ,CMerge g1 g2'' g -- (Remove (Fresh g) (Remove (Fresh2 g) g2)) g
-           ,KnownCtx g)
+           ,CMerge g1 g2'' g
+           ,KnownCtx g
+           )
         => LExp g1 (s1 ⊗ s2)
         -> ( (Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
         -> LExp g t
 letPair e f = 
-    case removeInv (removeCtx @(Fresh2 g) @s2 @g2 @g2') of {Dict ->
-    case removeInv (removeCtx @(Fresh g) @s1 @g2' @g2'') of {Dict ->
+    case addRemoveEquiv (removeCtx @(Fresh2 g) @s2 @g2 @g2') of {Dict ->
+    case addRemoveEquiv (removeCtx @(Fresh g) @s1 @g2' @g2'') of {Dict ->
     LetPair (merge @g1 @g2'' @g) pfA1 pfA2 e e'
     }}
   where

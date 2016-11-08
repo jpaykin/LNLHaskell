@@ -24,8 +24,6 @@ inSNCtx (InLater u pfI) = SCons u $ inSNCtx pfI
 inSCtx :: In x s g -> SCtx g
 inSCtx (In pfI) = SN $ inSNCtx pfI
 
-
-
 inSIdent :: In x s g -> SIdent x
 inSIdent (In pfI) = inNSIdent pfI
 
@@ -96,12 +94,6 @@ disjointRemoveN DisjointSZ       (InLater _ pfI)  (InHere g)     = In $ InLater 
 disjointRemoveN (DisjointSS pfD) (InLater u pfI1) (InLater _ pfI2) = 
   case disjointRemoveN pfD pfI1 pfI2 of In pfI -> In (InLater u pfI)
 
-removeInv :: RemoveCtx x s g g' -> Dict (g' ~ Remove x g)
-removeInv = undefined
-
-addRemove :: AddCtx x s g' g -> RemoveCtx x s g g' 
-addRemove = undefined
-
 
 -- Equivalence of contexts ------------------------------------
 
@@ -153,7 +145,6 @@ addNSingleton :: AddCtxN x s 'Empty g -> SingletonNCtx x s g
 addNSingleton AddEHere = AddHereS
 addNSingleton (AddELater pfA) = AddLaterS $ addNSingleton pfA
 
--- previously called addFAdd
 addFresh :: SCtx g -> AddCtx (Fresh g) s g (Add (Fresh g) s g)
 addFresh g = AddN $ addFreshN g
 
@@ -168,8 +159,6 @@ addNFreshN (SCons SUsed   g) = AddLater SUsed $ addNFreshN g
 
 -- Singleton Context ------------------------------------------
 
-
--- previously called fSingletonCtx
 singletonFresh :: SIdent x -> SingletonCtx x s (Singleton x s)
 singletonFresh x = SingN $ singletonNFresh x
 
@@ -187,15 +176,6 @@ singletonMergeAdd = undefined
 
 singletonRemove :: SingletonCtx x s g -> Dict (Remove x g ~ 'Empty)
 singletonRemove = undefined
-
-{-
-removeAdd :: RemoveCtx x s g g' -> AddCtx y t g g0 -> 
-    (RemoveCtx x g0 (Remove x g0), AddCtx y t g' (Remove x g0))
-removeAdd = undefined
--}
-
-inRemove :: In x s g -> RemoveCtx x s g (Remove x g)
-inRemove = undefined
 
 -- In -------------------------------
 singletonInN :: SingletonNCtx x s g -> InN x s g

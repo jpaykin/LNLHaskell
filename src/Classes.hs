@@ -111,10 +111,10 @@ instance CSingletonNCtx x s g => CSingletonCtx x s ('N g) where
 -- Remove Context ------------------------------------------
 
 class CRemoveCtx x s g g' | x s g -> g', x s g' -> g where
-  removeCtx :: RemoveCtx x s g g'
+  removeCtx :: AddCtx x s g' g
 
 instance CAddCtx x s g' g => CRemoveCtx x s g g' where
-  removeCtx = addRemove addCtx
+  removeCtx = addCtx
 
 
 -- Shift ----------------------------------------------------
