@@ -108,6 +108,27 @@ instance CSingletonNCtx x s g => CSingletonCtx x s ('N g) where
   singletonCtx = SingN $ singletonNCtx
 
 
+-- Remove Context ------------------------------------------
+
+class CRemoveCtx x s g g' | x s g -> g', x s g' -> g where
+  removeCtx :: RemoveCtx x s g g'
+
+instance CAddCtx x s g' g => CRemoveCtx x s g g' where
+  removeCtx = addRemove addCtx
+
+
+-- Shift ----------------------------------------------------
+
+class CShiftCtx u g g' | u g -> g', u g' -> g where
+  shiftCtx :: ShiftCtx u g g'
+
+instance CShiftCtx ('Used s) 'Empty ('N ('End s)) where
+  shiftCtx = ShiftEmptyUsed
+instance CShiftCtx 'Unused 'Empty 'Empty where
+  shiftCtx = ShiftEmptyUnused
+instance CShiftCtx u ('N g) ('N ('Cons u g)) where
+  shiftCtx = ShiftN
+
 -- Merge ----------------------------------------------------
 
 

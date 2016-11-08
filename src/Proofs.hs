@@ -96,6 +96,12 @@ disjointRemoveN DisjointSZ       (InLater _ pfI)  (InHere g)     = In $ InLater 
 disjointRemoveN (DisjointSS pfD) (InLater u pfI1) (InLater _ pfI2) = 
   case disjointRemoveN pfD pfI1 pfI2 of In pfI -> In (InLater u pfI)
 
+removeInv :: RemoveCtx x s g g' -> Dict (g' ~ Remove x g)
+removeInv = undefined
+
+addRemove :: AddCtx x s g' g -> RemoveCtx x s g g' 
+addRemove = undefined
+
 
 -- Equivalence of contexts ------------------------------------
 
@@ -182,10 +188,13 @@ singletonMergeAdd = undefined
 singletonRemove :: SingletonCtx x s g -> Dict (Remove x g ~ 'Empty)
 singletonRemove = undefined
 
-removeAdd :: RemoveCtx x g g' -> AddCtx y t g g0 -> (RemoveCtx x g0 (Remove x g0), AddCtx y t g' (Remove x g0))
+{-
+removeAdd :: RemoveCtx x s g g' -> AddCtx y t g g0 -> 
+    (RemoveCtx x g0 (Remove x g0), AddCtx y t g' (Remove x g0))
 removeAdd = undefined
+-}
 
-inRemove :: In x s g -> RemoveCtx x g (Remove x g)
+inRemove :: In x s g -> RemoveCtx x s g (Remove x g)
 inRemove = undefined
 
 -- In -------------------------------

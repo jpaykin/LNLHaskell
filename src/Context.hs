@@ -125,15 +125,15 @@ data DivN       :: NCtx -> NCtx -> Ctx -> * where
 
 -- Remove ------------------------------------------
 
-data RemoveCtx :: Nat -> Ctx -> Ctx -> * where
-  RemoveN :: RemoveNCtx x g g' -> RemoveCtx x ('N g) g'
+data RemoveCtx :: Nat -> LType -> Ctx -> Ctx -> * where
+  RemoveN :: RemoveNCtx x s g g' -> RemoveCtx x s ('N g) g'
 
-data RemoveNCtx :: Nat -> NCtx -> Ctx -> * where
-  RemoveEnd   :: RemoveNCtx 'Z ('End s) 'Empty
-  RemoveHere  :: RemoveNCtx 'Z ('Cons ('Used s) g) ('N ('Cons 'Unused g))
-  RemoveLater :: RemoveNCtx x g g'
+data RemoveNCtx :: Nat -> LType -> NCtx -> Ctx -> * where
+  RemoveEnd   :: RemoveNCtx 'Z s ('End s) 'Empty
+  RemoveHere  :: RemoveNCtx 'Z s ('Cons ('Used s) g) ('N ('Cons 'Unused g))
+  RemoveLater :: RemoveNCtx x s g g'
               -> ShiftCtx u g' g''
-              -> RemoveNCtx ('S x) ('Cons u g) g''
+              -> RemoveNCtx ('S x) s ('Cons u g) g''
 
 -- Shift ----------------------------------------
 

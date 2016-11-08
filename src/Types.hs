@@ -34,7 +34,6 @@ infixr 3 ⊕
 
 type Ident = Nat
 data Usage = Used LType | Unused
-type Var = (Ident,Usage)
 
 data Ctx  = Empty | N NCtx
 data NCtx = End LType | Cons Usage NCtx

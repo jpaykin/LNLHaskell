@@ -41,7 +41,7 @@ ret a = suspendL $ force idL `app` put a
 
 
 -- fmap :: (a -> b) -> Lift (Lower a ⊸ Lower b)
-fmap f = suspend . λ$ \x -> x >! \ a -> put (f a)
+fmap f = Suspend . λ$ \x -> x >! \ a -> put (f a)
 
 app2 = Suspend . λ$ \z -> λ$ \x -> λ$ \y -> 
                  z `app` x `app` y
@@ -56,7 +56,7 @@ idid' = Suspend $ app (force idL) (λ $ \x -> x)
 -- idid'' = suspend $ app (λ$ \x -> x) (λ$ \y -> y)
 
 pairPut :: Lift (Lower String ⊗ Lower String)
-pairPut = suspend $ put "hi" ⊗ put "bye"
+pairPut = Suspend $ put "hi" ⊗ put "bye"
 
 swapPairPut = Suspend $ force pairPut `letPair` \(x,y) -> y ⊗ x
 
@@ -75,25 +75,18 @@ eitherPlus (Left  a) = Suspend . Inl $ force a
 eitherPlus (Right b) = Suspend . Inr $ force b
 
 
--- the problem with these seem to be the use of Remove;
--- maybe move Remove to a type class so that we can have backwards functional dependencies?
--- e.g. type class CRemove x g g' | x g -> g', x g' -> g
-{-
 isoPlus1 :: Lift (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
 isoPlus1 = Suspend . λ$ \z ->
-    z `letPair` \(a,z) ->
+    letPair z $ \(a,z) ->
     caseof z (\b -> Inl $ a ⊗ b)
              (\c -> Inr $ a ⊗ c)
--}
 
-{-
 isoPlus2 :: Lift ( (a ⊗ b) ⊕ (a ⊗ c) ⊸ a ⊗ (b ⊕ c) )
 isoPlus2 = Suspend . λ$ \z ->
-  z `caseof` case1 case2
+  caseof z case1 case2
   where
     case1 p = p `letPair` \(a,b) -> a ⊗ Inl b
     case2 p = p `letPair` \(a,c) -> a ⊗ Inr c
--}
 
 -- Bang
 
@@ -134,11 +127,11 @@ snd :: Lift (a & b ⊸ b)
 snd = Suspend . λ$ \p -> Snd p
 
 iso1 :: Lift (Bang (a & b) ⊸ Bang a ⊗ Bang b)
-iso1 = suspend . λ$ \x ->
+iso1 = Suspend . λ$ \x ->
     x >! \p -> (coret . Fst $ force p) ⊗ (coret . Snd $ force p)
 
 iso2 :: Lift (Bang a ⊗ Bang b ⊸ Bang (a & b))
-iso2 = suspend . λ$ \z -> 
+iso2 = Suspend . λ$ \z -> 
     z `letPair` \(x,y) -> 
     x >! \a ->
     y >! \b ->
