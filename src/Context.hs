@@ -88,16 +88,26 @@ data MergeU :: Usage -> Usage -> Usage -> * where
 
 data Merge :: Ctx -> Ctx -> Ctx -> * where
   MergeE  :: Merge 'Empty 'Empty 'Empty
-  MergeEL :: Merge 'Empty ('N g) ('N g)
-  MergeER :: Merge ('N g) 'Empty ('N g)
+  MergeEL :: SNCtx g -> Merge 'Empty ('N g) ('N g)
+  MergeER :: SNCtx g -> Merge ('N g) 'Empty ('N g)
   MergeN  :: MergeN g1 g2 g3 -> Merge ('N g1) ('N g2) ('N g3)
 
 data MergeN :: NCtx -> NCtx -> NCtx -> * where
-  MergeEndL :: MergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2)
-  MergeEndR :: MergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1)
+  MergeEndL :: SNCtx g2 -> MergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2)
+  MergeEndR :: SNCtx g1 -> MergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1)
   MergeCons :: MergeU u1 u2 u3 -> MergeN g1 g2 g3 
             -> MergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3)
 
+
+-- In -------------------------------
+
+data InN :: Nat -> LType -> NCtx -> * where
+  InEnd   :: InN 'Z s ('End s)
+  InHere  :: SNCtx g    -> InN 'Z s ('Cons ('Used s) g)
+  InLater :: SUsage u   -> InN x s g  -> InN ('S x) s ('Cons u g)
+
+data In :: Nat -> LType -> Ctx -> * where
+  In :: InN x s g -> In x s ('N g)
 
 -- Div -----------------------------------------------
  
@@ -113,12 +123,12 @@ type family DivNF g' g :: Ctx where
 
 
 data Div :: Ctx -> Ctx -> Ctx -> * where
-  DivEmpty :: Div g 'Empty g
+  DivEmpty :: SCtx g -> Div g 'Empty g
   DivN     :: DivN g1 g2 g3 -> Div ('N g1) ('N g2) g3
 
 data DivN       :: NCtx -> NCtx -> Ctx -> * where
   DivEndEnd     :: DivN ('End s) ('End s) 'Empty
-  DivConsEnd    :: DivN ('Cons ('Used s) g') ('End s) ('N ('Cons 'Unused g'))
+  DivConsEnd    :: SNCtx g -> DivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g))
   DivConsCons   :: DivN g1 g2 g3 
                 -> MergeU u3 u2 u1
                 -> DivN ('Cons u1 g1) ('Cons u2 g2) (ConsN u3 g3)
@@ -130,15 +140,6 @@ data ShiftCtx :: Usage -> Ctx -> Ctx -> * where
   ShiftEmptyUnused :: ShiftCtx 'Unused 'Empty 'Empty
   ShiftN           :: ShiftCtx u ('N g) ('N ('Cons u g))
 
--- In -------------------------------
-
-data InN :: Nat -> LType -> NCtx -> * where
-  InEnd   :: InN 'Z s ('End s)
-  InHere  :: SNCtx g    -> InN 'Z s ('Cons ('Used s) g)
-  InLater :: SUsage u   -> InN x s g  -> InN ('S x) s ('Cons u g)
-
-data In :: Nat -> LType -> Ctx -> * where
-  In :: InN x s g -> In x s ('N g)
 
 -- Relation between In and Shift
 

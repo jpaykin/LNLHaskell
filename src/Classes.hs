@@ -66,31 +66,8 @@ class CAddCtx x s g g' | x s g -> g', x s g' -> g where
   addCtx :: AddCtx x s g g'
 
 instance (CSingletonCtx x s gx, CMerge gx g g') => CAddCtx x s g g' where
-  addCtx = singletonMergeAdd (singletonCtx @x @s @gx)  merge
+  addCtx = singletonMergeAdd (singletonCtx @x @s @gx) merge
 
-
--- class CAddCtxN x s g g' | x s g -> g' where
---   addCtxN :: AddCtxN x s g g'
--- class CAddNCtxN x s g g' | x s g -> g', x g' -> s g where
---   addNCtxN :: AddNCtxN x s g g'
-
---instance KnownNCtx g => CAddNCtxN 'Z s ('Cons 'Unused g) ('Cons ('Used s) g) where
---  addNCtxN = AddHere nctx
-
--- instance CSingletonNCtx x s g => CAddNCtxN ('S x) s ('End t) ('Cons ('Used t) g) where
---   addNCtxN = AddEnd singletonNCtx
--- instance (KnownUsage u, CAddNCtxN x s g g') => CAddNCtxN ('S x) s ('Cons u g) ('Cons u g') where
---   addNCtxN = AddLater usg addNCtxN
-
--- instance CAddCtxN 'Z s 'Empty ('End s) where
---   addCtxN = AddEHere
--- instance CAddCtxN x s 'Empty g => CAddCtxN ('S x) s 'Empty ('Cons 'Unused g) where
---   addCtxN = AddELater addCtxN
--- instance CAddNCtxN x s g g' => CAddCtxN x s ('N g) g' where
---   addCtxN = AddNN addNCtxN
-
--- instance CAddCtxN x s g g' => CAddCtx x s g ('N g') where
---   addCtx = AddN addCtxN
 
 -- Singleton Context ------------------------------------------
 
@@ -155,17 +132,17 @@ class CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
 
 instance CMergeForward 'Empty 'Empty 'Empty where
   mergeF = MergeE
-instance CMergeForward 'Empty ('N g) ('N g) where
-  mergeF = MergeEL
-instance CMergeForward ('N g) 'Empty ('N g) where
-  mergeF = MergeER
+instance KnownNCtx g => CMergeForward 'Empty ('N g) ('N g) where
+  mergeF = MergeEL nctx
+instance KnownNCtx g => CMergeForward ('N g) 'Empty ('N g) where
+  mergeF = MergeER nctx
 instance CMergeNForward g1 g2 g3 => CMergeForward ('N g1) ('N g2) ('N g3) where
   mergeF = MergeN mergeNF
 
-instance CMergeNForward ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2) where
-  mergeNF = MergeEndL
-instance CMergeNForward ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1) where
-  mergeNF = MergeEndR
+instance KnownNCtx g2 => CMergeNForward ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2) where
+  mergeNF = MergeEndL nctx
+instance KnownNCtx g1 => CMergeNForward ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1) where
+  mergeNF = MergeEndR (nctx @g1)
 instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
       => CMergeNForward ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
   mergeNF = MergeCons mergeU mergeNF
@@ -176,8 +153,8 @@ instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
 class CDiv g1 g2 g3 | g1 g2 -> g3 where
   div :: Div g1 g2 g3
 
-instance CDiv g 'Empty g where
-  div = DivEmpty
+instance KnownCtx g => CDiv g 'Empty g where
+  div = DivEmpty ctx
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
   div = DivN divN
 
@@ -186,8 +163,8 @@ class CDivN g1 g2 g3 | g1 g2 -> g3 where
 
 instance CDivN ('End s) ('End s) 'Empty where
   divN = DivEndEnd
-instance CDivN ('Cons ('Used s) g') ('End s) ('N ('Cons 'Unused g')) where
-  divN = DivConsEnd
+instance KnownNCtx g => CDivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g)) where
+  divN = DivConsEnd nctx
 instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
       => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where
   divN = DivConsCons divN mergeU

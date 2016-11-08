@@ -71,8 +71,8 @@ substApp  :: In x s g
           -> LExp (Remove x g) t2
 substApp pfI s pfM e1 e2 = 
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> App (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
-    Right pfI2 -> App (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
+    Left  pfI1 -> App (mergeIn1 pfM pfI1) (subst pfI1 s e1) e2
+    Right pfI2 -> App (mergeIn2 pfM pfI2) e1 (subst pfI2 s e2)
 
 substLetUnit :: In x s g
              -> LExp 'Empty s
@@ -82,8 +82,8 @@ substLetUnit :: In x s g
              -> LExp (Remove x g) t
 substLetUnit pfI s pfM e1 e2 = 
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> LetUnit (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
-    Right pfI2 -> LetUnit (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
+    Left  pfI1 -> LetUnit (mergeIn1 pfM pfI1) (subst pfI1 s e1) e2
+    Right pfI2 -> LetUnit (mergeIn2 pfM pfI2) e1 (subst pfI2 s e2)
 
 substPair :: In x s g
           -> LExp 'Empty s
@@ -93,8 +93,8 @@ substPair :: In x s g
           -> LExp (Remove x g) (t1 ⊗ t2)
 substPair pfI s pfM e1 e2 = 
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> Pair (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e1) e2
-    Right pfI2 -> Pair (mergeIn2 pfM pfI2 pfI) e1 (subst pfI2 s e2)
+    Left  pfI1 -> Pair (mergeIn1 pfM pfI1) (subst pfI1 s e1) e2
+    Right pfI2 -> Pair (mergeIn2 pfM pfI2) e1 (subst pfI2 s e2)
 
 substLetPair :: forall x s t g1 g2 g x1 x2 s1 s2 g2' g2''.
                 In x s g
@@ -107,7 +107,7 @@ substLetPair :: forall x s t g1 g2 g x1 x2 s1 s2 g2' g2''.
              -> LExp (Remove x g) t
 substLetPair pfI s pfM pfA1 pfA2 e e' =
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> LetPair (mergeIn1 pfM pfI1 pfI) pfA1 pfA2 (subst pfI1 s e) e'
+    Left  pfI1 -> LetPair (mergeIn1 pfM pfI1) pfA1 pfA2 (subst pfI1 s e) e'
     Right pfI2 -> LetPair pfM' pfA1' pfA2' e e''
       where
      -- pfI2 :: In x s g2
@@ -116,7 +116,7 @@ substLetPair pfI s pfM pfA1 pfA2 e e' =
         pfI2'' :: In x s g2''
         pfI2'' = inAdd pfI2' pfA2
         pfM' :: Merge g1 (Remove x g2) (Remove x g)
-        pfM' = mergeIn2 pfM pfI2 pfI
+        pfM' = mergeIn2 pfM pfI2
         pfA1' :: AddCtx x1 s1 (Remove x g2) (Remove x g2')
         pfA1' = inAddRemoveLater pfI2 pfA1
         pfA2' :: AddCtx x2 s2 (Remove x g2') (Remove x g2'')
@@ -137,11 +137,11 @@ substCase :: forall x s g g1 g2 x1 s1 g21 x2 s2 g22 t.
           -> LExp (Remove x g) t
 substCase pfI s pfM pfA1 pfA2 e e1 e2 = 
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> Case (mergeIn1 pfM pfI1 pfI) pfA1 pfA2 (subst pfI1 s e) e1 e2
+    Left  pfI1 -> Case (mergeIn1 pfM pfI1) pfA1 pfA2 (subst pfI1 s e) e1 e2
     Right pfI2 -> Case pfM' pfA1' pfA2' e e1' e2'
       where
         pfM' :: Merge g1 (Remove x g2) (Remove x g)
-        pfM' = mergeIn2 pfM pfI2 pfI
+        pfM' = mergeIn2 pfM pfI2
         pfA1' :: AddCtx x1 s1 (Remove x g2) (Remove x g21)
         pfA1' = inAddRemoveLater pfI2 pfA1
         pfA2' :: AddCtx x2 s2 (Remove x g2) (Remove x g22)
@@ -164,8 +164,8 @@ substLetBang :: In x s g
              -> LExp (Remove x g) t
 substLetBang pfI s pfM e f = 
   case mergeInSplit pfM pfI of
-    Left  pfI1 -> LetBang (mergeIn1 pfM pfI1 pfI) (subst pfI1 s e) f
-    Right pfI2 -> LetBang (mergeIn2 pfM pfI2 pfI) e (\x -> subst pfI2 s (f x))
+    Left  pfI1 -> LetBang (mergeIn1 pfM pfI1) (subst pfI1 s e) f
+    Right pfI2 -> LetBang (mergeIn2 pfM pfI2) e (\x -> subst pfI2 s (f x))
 
 -- Evaluation --------------------------------------------
 
