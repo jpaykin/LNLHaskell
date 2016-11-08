@@ -32,10 +32,10 @@ inNSIdent InEnd           = SZ
 inNSIdent (InHere _)      = SZ
 inNSIdent (InLater _ pfI) = SS $ inNSIdent pfI
 
-inSCtxRemove :: InN x s g -> SNCtx g -> SCtx (RemoveN x g)
-inSCtxRemove InEnd            SEnd        = SEmpty
-inSCtxRemove (InHere _)      (SCons u g') = SN $ SCons SUnused g'
-inSCtxRemove (InLater _ pfI) (SCons u g') = consN u $ inSCtxRemove pfI g'
+inSCtxRemove :: InN x s g ->  SCtx (RemoveN x g)
+inSCtxRemove InEnd           = SEmpty
+inSCtxRemove (InHere g')      = SN $ SCons SUnused g'
+inSCtxRemove (InLater u pfI) = consN u $ inSCtxRemove pfI
 
 
 sCtxNAddN :: SNCtx g -> AddNCtxN x s g g' -> SNCtx g'
@@ -97,8 +97,7 @@ disjointRemoveN (DisjointSS pfD) (InLater u pfI1) (InLater _ pfI2) =
 
 -- Equivalence of contexts ------------------------------------
 
-addRemoveEquiv :: AddCtx x s g g' -> Dict (g ~ Remove x g')
-addRemoveEquiv = undefined
+
 
 -- Add To Context ----------------------------------------------
 
@@ -170,12 +169,35 @@ singletonMergeAdd :: SingletonCtx x s g1 -> Merge g1 g2 g3 -> AddCtx x s g2 g3
 singletonMergeAdd = undefined
 
 
+
 -- Merge ----------------------------------------------------
 
 -- Remove ------------------------------------------
 
+addRemoveEquiv :: AddCtx x s g g' -> Dict (g ~ Remove x g')
+addRemoveEquiv (AddN pfA) = case addRemoveNEquiv pfA of Dict -> Dict
+
+addRemoveNEquiv :: AddCtxN x s g g' -> Dict (g ~ RemoveN x g')
+addRemoveNEquiv AddEHere = Dict
+addRemoveNEquiv (AddELater pfA) = case addRemoveNEquiv pfA of Dict -> Dict
+addRemoveNEquiv (AddNN pfA) = case addNRemoveNEquiv pfA of Dict -> Dict
+
+addNRemoveNEquiv :: AddNCtxN x s g g' -> Dict ('N g ~ RemoveN x g')
+addNRemoveNEquiv (AddHere _)  = Dict
+addNRemoveNEquiv (AddEnd pfS) =
+  case singletonRemoveN pfS of Dict -> Dict
+addNRemoveNEquiv (AddLater _ pfA) = 
+  case addNRemoveNEquiv pfA of Dict -> Dict
+
+
+
 singletonRemove :: SingletonCtx x s g -> Dict (Remove x g ~ 'Empty)
-singletonRemove = undefined
+singletonRemove (SingN pfS) = singletonRemoveN pfS
+
+singletonRemoveN :: SingletonNCtx x s g -> Dict (RemoveN x g ~ 'Empty)
+singletonRemoveN AddHereS = Dict
+singletonRemoveN (AddLaterS pfS) = case singletonRemoveN pfS of Dict -> Dict
+
 
 -- In -------------------------------
 singletonInN :: SingletonNCtx x s g -> InN x s g
@@ -338,48 +360,54 @@ mergeInSplit (MergeN pfM) (In pfI) =
 mergeNIn1 :: MergeN g1 g2 g3 -> InN x s g1 -> InN x s g3 
           -> Merge (RemoveN x g1) ('N g2) (RemoveN x g3)
 mergeNIn1 MergeEndL               InEnd            (InHere _)       = MergeEL
-mergeNIn1 MergeEndR               (InLater _ pfI1) (InLater _ pfI3) = undefined 
+mergeNIn1 MergeEndR               (InLater _ pfI1) (InLater _ pfI3) =
+    mergeCons MergeUR $ mergeReflR (inSCtxRemove pfI1)
 mergeNIn1 (MergeCons MergeUL pfM) (InHere _)       (InHere _)       = 
     MergeN $ MergeCons MergeUn pfM
-mergeNIn1 (MergeCons pfU pfM)     (InLater _ pfI1) (InLater _ pfI3) = undefined
---    MergeN $ MergeCons pfU $ mergeNIn1 pfM pfI1 pfI3
+mergeNIn1 (MergeCons pfU pfM)     (InLater _ pfI1) (InLater _ pfI3) = 
+    mergeCons pfU $ mergeNIn1 pfM pfI1 pfI3
 
 mergeIn1 :: Merge g1 g2 g3 -> In x s g1 -> In x s g3 -> Merge (Remove x g1) g2 (Remove x g3)
-mergeIn1 MergeER _ _ = undefined -- MergeER
+mergeIn1 MergeER      (In pfI1)  _        = mergeReflR $ inSCtxRemove pfI1
 mergeIn1 (MergeN pfM) (In pfI1) (In pfI2) = mergeNIn1 pfM pfI1 pfI2
 
 mergeIn2 :: Merge g1 g2 g3 -> In x s g2 -> In x s g3 -> Merge g1 (Remove x g2) (Remove x g3) 
 mergeIn2 = undefined
 
 mergeEmpty :: Merge g1 g2 'Empty -> Dict (g1 ~ 'Empty, g2 ~ 'Empty)
-mergeEmpty = undefined
+mergeEmpty MergeE = Dict
 
-{-
+mergeReflR :: SCtx g -> Merge g 'Empty g
+mergeReflR SEmpty = MergeE
+mergeReflR (SN _) = MergeER
+
+mergeReflL :: SCtx g -> Merge 'Empty g g
+mergeReflL SEmpty = MergeE
+mergeReflL (SN _) = MergeEL
+
+mergeUCons :: MergeU u1 u2 u3 -> Merge (ConsN u1 'Empty) (ConsN u2 'Empty) (ConsN u3 'Empty)
+mergeUCons MergeUn = MergeE
+mergeUCons MergeUL = MergeER
+mergeUCons MergeUR = MergeEL
+
+mergeUConsL :: MergeU u1 u2 u3 -> Merge (ConsN u1 'Empty) ('N ('Cons u2 g)) ('N ('Cons u3 g))
+mergeUConsL MergeUn = MergeEL
+mergeUConsL MergeUL = MergeN MergeEndL
+mergeUConsL MergeUR = MergeEL
+
+mergeUConsR :: MergeU u1 u2 u3 -> Merge ('N ('Cons u1 g)) (ConsN u2 'Empty) ('N ('Cons u3 g))
+mergeUConsR MergeUn = MergeER
+mergeUConsR MergeUL = MergeER
+mergeUConsR MergeUR = MergeN MergeEndR
 
 
-mergeIn1 :: Merge g1 g2 g3
-         -> In x s g1
-         -> In x s g3
-         -> Merge (Remove x g1) g2 (Remove x g3)
-mergeIn1 MergeER _ _ = MergeER
-mergeIn1 (MergeL pfM) (InHere g2)    (InHere g3)    = MergeU pfM
-mergeIn1 (MergeL pfM) (InLater pfI1) (InLater pfI3) = MergeL $ mergeIn1 pfM pfI1 pfI3
-mergeIn1 (MergeR pfM) (InLater pfI1) (InLater pfI3) = MergeR $ mergeIn1 pfM pfI1 pfI3
-mergeIn1 (MergeU pfM) (InLater pfI1) (InLater pfI3) = MergeU $ mergeIn1 pfM pfI1 pfI3
-
-mergeIn2 :: Merge g1 g2 g3
-         -> In x s g2
-         -> In x s g3
-         -> Merge g1 (Remove x g2) (Remove x g3)
-mergeIn2 MergeEL _ _ = MergeEL
-mergeIn2 (MergeR pfM) (InHere g2')   (InHere g3')   = MergeU pfM
-mergeIn2 (MergeL pfM) (InLater pfI2) (InLater pfI3) = MergeL $ mergeIn2 pfM pfI2 pfI3
-mergeIn2 (MergeR pfM) (InLater pfI2) (InLater pfI3) = MergeR $ mergeIn2 pfM pfI2 pfI3
-mergeIn2 (MergeU pfM) (InLater pfI2) (InLater pfI3) = MergeU $ mergeIn2 pfM pfI2 pfI3
+mergeCons :: MergeU u1 u2 u3 -> Merge g1 g2 g3 -> Merge (ConsN u1 g1) (ConsN u2 g2) (ConsN u3 g3)
+mergeCons pfU MergeE  = mergeUCons pfU
+mergeCons pfU MergeEL = mergeUConsL pfU
+mergeCons pfU MergeER = mergeUConsR pfU
+mergeCons pfU (MergeN pfM) = MergeN $ MergeCons pfU pfM
 
 
-
--}
 
 -- Div -------------------------------------------------------
 
