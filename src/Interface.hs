@@ -22,17 +22,17 @@ type Var x s = LExp (Singleton x s) s
 
 
 var :: SIdent x -> Var x t
-var x = undefined -- Var $ singletonFresh x
+var x = Var $ singletonFresh x
 
 
-λ :: forall s t g g'. KnownCtx g
-  => (Var (Fresh g) s -> LExp (Add (Fresh g) s g) t)
+λ :: forall s t g g'. CAddCtx (Fresh g) s g g'
+  => (Var (Fresh g) s -> LExp g' t)
   -> LExp g (s ⊸ t)
-λ f = Abs pfA (f varx) where
-  pfA  = addFresh ctx
-  varx = var $ addToSIdent pfA
-
-
+λ f = Abs pfA (f $ var x) where
+  pfA :: AddCtx (Fresh g) s g g'
+  pfA  = addCtx
+  x   :: SIdent (Fresh g)
+  x    = addToSIdent pfA
 
 app :: CMerge g1 g2 g3 
     => LExp g1 (s ⊸ t)

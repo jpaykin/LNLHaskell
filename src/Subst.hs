@@ -190,6 +190,8 @@ eval' (Snd e)                       =
 eval' (Inl e)                       = VInl $ eval' e
 eval' (Inr e)                       = VInr $ eval' e
 eval' (Case pfM pfA1 pfA2 e e1 e2)  = evalCase pfM pfA1 pfA2 e e1 e2
+eval' (Put a)                       = VPut a
+eval' (LetBang pfM e f)             = evalLetBang pfM e f
 
 evalLetUnit :: Merge g1 g2 'Empty
             -> LExp g1 One
@@ -251,6 +253,18 @@ evalCase pfM pfA1 pfA2 e e1 e2 =
     pfI1 :: In x1 s1 g21
     pfI1 = addIn pfA1
     pfI2 = addIn pfA2
+    
+
+evalLetBang :: forall g1 g2 a t.
+               Merge g1 g2 'Empty
+            -> LExp g1 (Lower a)
+            -> (a -> LExp g2 t)
+            -> LVal t
+evalLetBang pfM e f = 
+  case mergeEmpty pfM of {Dict -> -- g1,g2 = Empty
+  case eval' e        of {VPut a -> 
+    eval' $ f a
+  }}
     
 
 eval :: LExp 'Empty s -> LExp 'Empty s
