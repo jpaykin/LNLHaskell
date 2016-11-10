@@ -107,8 +107,6 @@ disjointInN (InLater _ pfI) (AddLater u pfA) = DisjointSS $ disjointInN pfI pfA
 
 -- Add To Context ----------------------------------------------
 
-
-
 inNAddN :: InN x s g -> AddNCtxN y t g g' -> InN x s g'
 inNAddN InEnd           (AddEnd pfS)     = InHere $ singletonSCtxN pfS
 inNAddN (InHere g)      (AddLater _ pfS) = InHere $ sCtxNAddN g pfS
