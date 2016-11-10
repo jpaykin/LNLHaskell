@@ -223,7 +223,7 @@ evalLetPair pfM pfA1 pfA2 e1 e2 =
   }
   where
     pfD :: Disjoint x1 x2
-    pfD = undefined
+    pfD = disjointIn pfI1 pfA2
     pfI1 :: In x1 t1 g2'
     pfI1 = addIn pfA1
     pfI1' :: In x1 t1 g2''

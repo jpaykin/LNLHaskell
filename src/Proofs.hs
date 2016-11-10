@@ -83,7 +83,7 @@ freshDisjoint (SN (SCons SUsed   g)) = DisjointSS $ freshDisjoint (SN g)
 -- Disjointness --------------------------------------------
 
 disjointRemove :: Disjoint x y -> In x s g -> In y t g -> In x s (Remove y g)
-disjointRemove = undefined
+disjointRemove pfD (In pfI) (In pfI') = disjointRemoveN pfD pfI pfI'
 
 disjointRemoveN :: Disjoint x y -> InN x s g -> InN y t g -> In x s (RemoveN y g)
 disjointRemoveN DisjointZS       (InHere g)       (InLater _ pfI)  = 
@@ -94,7 +94,15 @@ disjointRemoveN DisjointSZ       (InLater _ pfI)  (InHere g)     = In $ InLater 
 disjointRemoveN (DisjointSS pfD) (InLater u pfI1) (InLater _ pfI2) = 
   case disjointRemoveN pfD pfI1 pfI2 of In pfI -> In (InLater u pfI)
 
+-- this is the only possible case since g != Empty
+disjointIn :: In x s g -> AddCtx y t g g' -> Disjoint x y
+disjointIn (In pfI) (AddN (AddNN pfA)) = disjointInN pfI pfA
 
+disjointInN :: InN x s g -> AddNCtxN y t g g' -> Disjoint x y
+disjointInN InEnd           (AddEnd _)       = DisjointZS
+disjointInN (InHere _)      (AddLater _ _)   = DisjointZS
+disjointInN (InLater _ _)   (AddHere _)      = DisjointSZ
+disjointInN (InLater _ pfI) (AddLater u pfA) = DisjointSS $ disjointInN pfI pfA
 
 
 -- Add To Context ----------------------------------------------
@@ -436,14 +444,20 @@ mergeCons pfU (MergeN pfM) = MergeN $ MergeCons pfU pfM
 
 
 mergeUSymm :: MergeU u1 u2 u3 -> MergeU u2 u1 u3
-mergeUSymm = undefined
-
+mergeUSymm MergeUn = MergeUn
+mergeUSymm MergeUL = MergeUR
+mergeUSymm MergeUR = MergeUL
 
 mergeSymm :: Merge g1 g2 g3 -> Merge g2 g1 g3
-mergeSymm = undefined
+mergeSymm MergeE = MergeE
+mergeSymm (MergeEL g) = MergeER g
+mergeSymm (MergeER g) = MergeEL g
+mergeSymm (MergeN pfM) = MergeN $ mergeNSymm pfM
 
 mergeNSymm :: MergeN g1 g2 g3 -> MergeN g2 g1 g3
-mergeNSymm = undefined
+mergeNSymm (MergeEndL g) = MergeEndR g
+mergeNSymm (MergeEndR g) = MergeEndL g
+mergeNSymm (MergeCons pfU pfM) = MergeCons (mergeUSymm pfU) (mergeNSymm pfM)
 
 -- Div -------------------------------------------------------
 
@@ -457,28 +471,24 @@ divNMerge (DivConsEnd g) = MergeN $ MergeEndR g
 divNMerge (DivConsCons pfD pfU) = mergeCons pfU $ divNMerge pfD
 
 mergeDiv :: Merge g1 g2 g3 -> Div g3 g2 g1
-mergeDiv = undefined
+mergeDiv MergeE       = DivEmpty SEmpty
+mergeDiv (MergeEL g)  = divAll (SN g)
+mergeDiv (MergeER g)  = DivEmpty (SN g)
+mergeDiv (MergeN pfM) = DivN $ mergeNDiv pfM
 
 mergeNDiv :: MergeN g1 g2 g3 -> DivN g3 g2 ('N g1)
-mergeNDiv = undefined
-
-
-{-
-divSymm :: Div g3 g2 g1 -> Div g3 g1 g2
-divSymm (DivEmpty g) = divAll g
-divSymm (DivN pfD)   = divNSymm pfD
-
-divNSymm :: DivN g3 g2 g1 -> Div ('N g3) g1 ('N g2)
-divNSymm DivEndEnd    = DivEmpty $ SN SEnd
-divNSymm (DivConsEnd g) = undefined
-divNSymm (DivConsCons pfD pfU) = divConsCons pfD' pfU'
-  where
-    pfU' = mergeUSymm pfU
-    pfD' = divNSymm pfD
-
-divConsCons :: Div g1 g2 g3 -> MergeU u3 u2 u1 -> Div (ConsN u1 g1) (ConsN u2 g2) (ConsN u3 g3)
-divConsCons = undefined
--}
+mergeNDiv (MergeEndL g)       = DivConsCons (divNAll g) MergeUL
+mergeNDiv (MergeEndR g)       = DivConsEnd g
+mergeNDiv (MergeCons pfU pfM) = DivConsCons (mergeNDiv pfM) pfU
 
 divAll :: SCtx g -> Div g g 'Empty
-divAll = undefined
+divAll SEmpty = DivEmpty SEmpty
+divAll (SN g) = DivN $ divNAll g
+
+divNAll :: SNCtx g -> DivN g g 'Empty
+divNAll SEnd = DivEndEnd
+divNAll (SCons u g) = DivConsCons (divNAll g) (divUAll u)
+
+divUAll :: SUsage u -> MergeU 'Unused u u
+divUAll SUsed   = MergeUR
+divUAll SUnused = MergeUn
