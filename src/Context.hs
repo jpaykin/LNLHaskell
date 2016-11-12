@@ -25,7 +25,7 @@ type family Fresh (g::Ctx) :: Ident where
 
 type family FreshN2 g :: Ident where
   FreshN2 ('End t)           = 'S ('S 'Z)
-  FreshN2 ('Cons 'Unused g)   = 'S 'Z
+  FreshN2 ('Cons 'Unused g)   = 'S (FreshN g)
   FreshN2 ('Cons ('Used s) g) = 'S (FreshN2 g)
 
 

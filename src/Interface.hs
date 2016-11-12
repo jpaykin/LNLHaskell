@@ -72,37 +72,33 @@ letPair :: forall g s1 s2 t g1 g2 g2' g2''.
         => LExp g1 (s1 ⊗ s2)
         -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
         -> LExp g t
-letPair = undefined
-
-{-
-letPair :: forall g s1 s2 t g1 g2 g2' g2''.
-           (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
-           ,CRemoveCtx (Fresh2 g) s2 g2 g2', CRemoveCtx (Fresh g) s1 g2' g2''
-           ,CMerge g1 g2'' g
-           ,KnownCtx g
-           )
-        => LExp g1 (s1 ⊗ s2)
-        -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
-        -> LExp g t
 letPair e f = 
     case addRemoveEquiv (removeCtx @(Fresh2 g) @s2 @g2 @g2') of {Dict ->
     case addRemoveEquiv (removeCtx @(Fresh g) @s1 @g2' @g2'') of {Dict ->
     LetPair (merge @g1 @g2'' @g) pfA1 pfA2 e e'
     }}
   where
+    g    :: SCtx g
+    (_,_,g) = mergeSCtx (merge @g1 @g2'' @g)
+    x1   :: SIdent (Fresh g)
+    x1   = knownFresh g
+    x2   :: SIdent (Fresh2 g)
+    x2   = knownFresh2 g
+    pfI0 :: In (Fresh g) s1 g2'
+    pfI0 = addIn $ addCtx @(Fresh g) @s1 @g2'' @g2'
     pfI1 :: In (Fresh g) s1 g2
-    pfI1 = inCtx
+    pfI1 = inAdd pfI0 $ addCtx @(Fresh2 g) @s2 @g2' @g2
     pfI1' :: In (Fresh g) s1 (Remove (Fresh2 g) g2)
-    pfI1' = disjointRemove (freshDisjoint (ctx @g)) pfI1 pfI2
+    pfI1' = disjointRemove (freshDisjoint g) pfI1 pfI2
     pfI2 :: In (Fresh2 g) s2 g2
-    pfI2 = inCtx
+    pfI2 = addIn $ addCtx @(Fresh2 g) @s2 @g2' @g2
     pfA1 :: AddCtx (Fresh g) s1 (Remove (Fresh g) (Remove (Fresh2 g) g2)) (Remove (Fresh2 g) g2)
     pfA1 = inAddRemove pfI1'
     pfA2 :: AddCtx (Fresh2 g) s2 (Remove (Fresh2 g) g2) g2
     pfA2 = inAddRemove pfI2
     e' :: LExp g2 t
-    e' = f (addToSIdent pfA1, addToSIdent pfA2)
--}
+    e' = f (x1,x2)
+
 
 caseof :: forall g2 g g21 g22 g1 s1 s2 t.
           (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22

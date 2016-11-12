@@ -15,9 +15,6 @@ import Context
 import Interface
 import Data.Constraint -- Dict
 
-type X = 'Z
-type Y = 'S 'Z
-type Z = 'S ('S 'Z)
 
 idL ∷ forall a. Lift (a ⊸ a)
 idL = Suspend $ λ $ \x -> var x
@@ -53,7 +50,8 @@ idid = Suspend $ force idL `app` force idL
 idid' = Suspend $ app (force idL) (λ $ \x -> var x) 
 
 -- We're still losing out on idid'
--- idid'' = suspend $ app (λ$ \x -> x) (λ$ \y -> y)
+-- idid'' = Suspend $ λ$ \z -> 
+--    app (λ$ \x -> var z `app` var x) (λ$ \y -> var y)
 
 pairPut :: Lift (Lower String ⊗ Lower String)
 pairPut = Suspend $ put "hi" ⊗ put "bye"

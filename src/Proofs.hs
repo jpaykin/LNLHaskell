@@ -15,9 +15,6 @@ import Context
 
 -- SContexts ------------------------------------------------
 
-freshS :: SCtx g -> SIdent (Fresh g)
-freshS = undefined
-
 inSNCtx :: InN x s g -> SNCtx g
 inSNCtx InEnd = SEnd
 inSNCtx (InHere g) = SCons SUsed g
@@ -67,14 +64,26 @@ addToSIdent :: AddCtx x s g g' -> SIdent x
 addToSIdent pfA = inSIdent $ addIn pfA
 
 
+
 -- Freshness ---------------------------------------------
 
 knownFresh :: SCtx g -> SIdent (Fresh g)
 knownFresh SEmpty = SZ
-knownFresh (SN SEnd) = SS SZ
-knownFresh (SN (SCons SUnused _)) = SZ
-knownFresh (SN (SCons SUsed   g)) = SS $ knownFresh (SN g)
+knownFresh (SN g) = knownFreshN g
 
+knownFreshN :: SNCtx g -> SIdent (FreshN g)
+knownFreshN SEnd = SS SZ
+knownFreshN (SCons SUnused _) = SZ
+knownFreshN (SCons SUsed g)   = SS $ knownFreshN g
+
+knownFresh2 :: SCtx g -> SIdent (Fresh2 g)
+knownFresh2 SEmpty = SS SZ
+knownFresh2 (SN g) = knownFreshN2 g
+
+knownFreshN2 :: SNCtx g -> SIdent (FreshN2 g)
+knownFreshN2 SEnd = SS (SS SZ)
+knownFreshN2 (SCons SUnused g) = SS (knownFreshN g)
+knownFreshN2 (SCons SUsed   g) = SS $ knownFreshN2 g
 
 freshDisjoint :: SCtx g -> Disjoint (Fresh g) (Fresh2 g)
 freshDisjoint SEmpty = DisjointZS
@@ -155,7 +164,7 @@ addNSingleton (AddS pfS) = pfS
 
 
 addFresh :: SCtx g -> AddCtx (Fresh g) s g (Add (Fresh g) s g)
-addFresh g = addAdd g (freshS g)
+addFresh g = addAdd g $ knownFresh g
 
 
 {-
@@ -174,8 +183,13 @@ singletonAddEq :: SCtx g -> Dict (Add x s g ~ Singleton x s)
 ------------------------------------------------
 
 addAdd :: SCtx g -> SIdent x -> AddCtx x s g (Add x s g)
-addAdd = undefined
+addAdd SEmpty x = AddN . AddS $ singNSingN x
+addAdd (SN g) x = AddN . AddNN $ addNAddN g x
 
+addNAddN :: SNCtx g -> SIdent x -> AddNCtxN x s g (AddNN x s g)
+addNAddN SEnd              (SS x) = AddEnd $ singNSingN x
+addNAddN (SCons SUnused g) SZ     = AddHere g
+addNAddN (SCons u g)       (SS x) = AddLater u $ addNAddN g x
 
 singSing :: SIdent x -> SingletonCtx x s (Singleton x s)
 singSing x = SingN $ singNSingN x
@@ -270,8 +284,8 @@ singletonInNInv (InLater _ pfI) (AddLaterS pfS) =
 
 
 inAddRemoveN :: InN x s g -> AddCtxN x s (RemoveN x g) g
-inAddRemoveN InEnd           = undefined -- AddEHere
-inAddRemoveN (InHere g)      = undefined -- AddNN $ AddHere g
+inAddRemoveN InEnd           = AddS AddHereS
+inAddRemoveN (InHere g)      = AddNN $ AddHere g
 inAddRemoveN (InLater u pfI) = addConsN u z $ inAddRemoveN pfI 
   where
     z = inSCtxRemove pfI
@@ -279,13 +293,20 @@ inAddRemoveN (InLater u pfI) = addConsN u z $ inAddRemoveN pfI
 inAddRemove :: In x s g -> AddCtx x s (Remove x g) g
 inAddRemove (In pfI) = AddN $ inAddRemoveN pfI
 
+addELater :: AddCtxN x s 'Empty g -> AddCtxN ('S x) s 'Empty ('Cons 'Unused g)
+addELater (AddS pfS) = AddS $ AddLaterS pfS
+
+addEHere :: AddCtxN 'Z s 'Empty ('End s)
+addEHere = AddS AddHereS
+
 addConsN :: SUsage u -> SCtx g -> AddCtxN x s g g' -> AddCtxN ('S x) s (ConsN u g) ('Cons u g')
 addConsN SUsed   SEmpty    pfA         = AddNN . AddEnd $ addNSingleton pfA
-addConsN SUnused SEmpty    pfA         = undefined -- AddELater pfA
+addConsN SUnused SEmpty    pfA         = addELater pfA
 addConsN u       (SN g)    (AddNN pfA) = AddNN $ AddLater u pfA
 
 addHereConsN :: SCtx g -> AddCtx 'Z s (ConsN 'Unused g) (ConsN ('Used s) g)
-addHereConsN = undefined
+addHereConsN SEmpty  = AddN $ addEHere
+addHereConsN (SN g') = AddN . AddNN $ AddHere g'
 
 
 -- Relation between In and Merge
@@ -295,6 +316,7 @@ mergeSUsage MergeUn = (SUnused, SUnused, SUnused)
 mergeSUsage MergeUL = (SUsed,   SUnused, SUsed)
 mergeSUsage MergeUR = (SUnused, SUsed,   SUsed)
 
+{-
 mergeSNCtx :: MergeN g1 g2 g -> SNCtx g -> (SNCtx g1, SNCtx g2)
 mergeSNCtx (MergeEndL _)       (SCons SUsed g) = (SEnd, SCons SUnused g)
 mergeSNCtx (MergeEndR _)       (SCons SUsed g) = (SCons SUnused g, SEnd)
@@ -302,6 +324,21 @@ mergeSNCtx (MergeCons pfU pfM) (SCons _ g) =
   let (u1,u2,u) = mergeSUsage pfU 
       (g1,g2)   = mergeSNCtx pfM g
   in (SCons u1 g1, SCons u2 g2)
+-}
+
+mergeSNCtx :: MergeN g1 g2 g -> (SNCtx g1, SNCtx g2, SNCtx g)
+mergeSNCtx (MergeEndL g)       = (SEnd, SCons SUnused g, SCons SUsed g)
+mergeSNCtx (MergeEndR g)       = (SCons SUnused g, SEnd, SCons SUsed g)
+mergeSNCtx (MergeCons pfU pfM) = case (mergeSUsage pfU, mergeSNCtx pfM) of
+    ((u1,u2,u3),(g1,g2,g3)) -> (SCons u1 g1, SCons u2 g2, SCons u3 g3)
+
+mergeSCtx :: Merge g1 g2 g -> (SCtx g1, SCtx g2, SCtx g)
+mergeSCtx MergeE       = (SEmpty, SEmpty, SEmpty)
+mergeSCtx (MergeEL g)  = (SEmpty, SN g, SN g)
+mergeSCtx (MergeER g)  = (SN g, SEmpty, SN g)
+mergeSCtx (MergeN pfM) = case mergeSNCtx pfM of
+    (g1,g2,g3) -> (SN g1, SN g2, SN g3)
+
 
 mergeNInSplit :: MergeN g1 g2 g -> InN x s g -> Either (InN x s g1) (InN x s g2)
 mergeNInSplit (MergeEndL _)       (InHere _)      = Left  InEnd
@@ -309,7 +346,7 @@ mergeNInSplit (MergeEndL _)       (InLater _ pfI) = Right (InLater SUnused pfI)
 mergeNInSplit (MergeEndR _)       (InHere _)      = Right InEnd
 mergeNInSplit (MergeEndR _)       (InLater _ pfI) = Left  (InLater SUnused pfI)
 mergeNInSplit (MergeCons pfU pfM) (InHere g)      = 
-  let (g1,g2) = mergeSNCtx pfM g 
+  let (g1,g2,_) = mergeSNCtx pfM
   in case pfU of
     MergeUL -> Left  $ InHere g1
     MergeUR -> Right $ InHere g2

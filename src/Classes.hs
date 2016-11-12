@@ -218,8 +218,10 @@ instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
 class CDiv g1 g2 g3 | g1 g2 -> g3 where
   div :: Div g1 g2 g3
 
-instance KnownCtx g => CDiv g 'Empty g where
-  div = DivEmpty ctx
+instance CDiv 'Empty 'Empty 'Empty where
+  div = DivEmpty SEmpty
+instance KnownNCtx g => CDiv ('N g) 'Empty ('N g) where
+  div = undefined
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
   div = DivN divN
 
