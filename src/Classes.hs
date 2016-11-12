@@ -96,14 +96,6 @@ instance CAddNCtxN x s g g' => CAddNCtxFlag ('S x) s ('Cons ('Used t) g) ('Cons 
   addNCtxFlag = AddLater SUsed addNCtxN
 
 
-{-
-instance CAddTail x s u g g' (IsSingleton g') => CAddNCtxN ('S x) s g ('Cons u g') where
-  addNCtxN = undefined
-
--- what does this mean?
-class CAddTail x s u g g' | x s u g -> g', x g' -> s u g where
-  addTail :: AddNCtxN x s g g'
--}
 
 
 ---------------------
@@ -221,7 +213,7 @@ class CDiv g1 g2 g3 | g1 g2 -> g3 where
 instance CDiv 'Empty 'Empty 'Empty where
   div = DivEmpty SEmpty
 instance KnownNCtx g => CDiv ('N g) 'Empty ('N g) where
-  div = undefined
+  div = DivEmpty ctx
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
   div = DivN divN
 
