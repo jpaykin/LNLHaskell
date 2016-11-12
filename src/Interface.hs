@@ -18,17 +18,17 @@ import Classes
 import Lang
 import Subst
 
-type Var x s = LExp (Singleton x s) s
+-- type Var x s = LExp (Singleton x s) s
+type Var x s = SIdent x
 
-
-var :: SIdent x -> Var x t
-var x = Var $ singletonFresh x
+var :: Var x s -> LExp (Singleton x s) s
+var x = Var $ singSing x
 
 
 λ :: forall s t g g'. CAddCtx (Fresh g) s g g'
   => (Var (Fresh g) s -> LExp g' t)
   -> LExp g (s ⊸ t)
-λ f = Abs pfA (f $ var x) where
+λ f = Abs pfA (f x) where
   pfA :: AddCtx (Fresh g) s g g'
   pfA  = addCtx
   x   :: SIdent (Fresh g)
@@ -64,6 +64,17 @@ letUnit :: CMerge g1 g2 g
         => LExp g1 One -> LExp g2 t -> LExp g t
 letUnit = LetUnit merge
 
+
+letPair :: forall g s1 s2 t g1 g2 g2' g2''.
+           ( CAddCtx (Fresh g) s1 g2'' g2'
+           , CAddCtx (Fresh2 g) s2 g2' g2
+           , CMerge g1 g2'' g)
+        => LExp g1 (s1 ⊗ s2)
+        -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
+        -> LExp g t
+letPair = undefined
+
+{-
 letPair :: forall g s1 s2 t g1 g2 g2' g2''.
            (CIn (Fresh g) s1 g2, CIn (Fresh2 g) s2 g2
            ,CRemoveCtx (Fresh2 g) s2 g2 g2', CRemoveCtx (Fresh g) s1 g2' g2''
@@ -71,7 +82,7 @@ letPair :: forall g s1 s2 t g1 g2 g2' g2''.
            ,KnownCtx g
            )
         => LExp g1 (s1 ⊗ s2)
-        -> ( (Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
+        -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp g2 t)
         -> LExp g t
 letPair e f = 
     case addRemoveEquiv (removeCtx @(Fresh2 g) @s2 @g2 @g2') of {Dict ->
@@ -90,7 +101,8 @@ letPair e f =
     pfA2 :: AddCtx (Fresh2 g) s2 (Remove (Fresh2 g) g2) g2
     pfA2 = inAddRemove pfI2
     e' :: LExp g2 t
-    e' = f (var $ addToSIdent pfA1, var $ addToSIdent pfA2)
+    e' = f (addToSIdent pfA1, addToSIdent pfA2)
+-}
 
 caseof :: forall g2 g g21 g22 g1 s1 s2 t.
           (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22
@@ -109,9 +121,9 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     pfA2 :: AddCtx (Fresh g) s2 g2 g22
     pfA2 = addCtx
     v1 :: Var (Fresh g) s1
-    v1 = var $ knownFresh (ctx @g)
+    v1 = knownFresh (ctx @g)
     v2 :: Var (Fresh g) s2
-    v2 = var $ knownFresh (ctx @g)
+    v2 = knownFresh (ctx @g)
 
 -- Lift --------------------------------------------------------
 

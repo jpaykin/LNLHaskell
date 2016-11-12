@@ -62,12 +62,77 @@ instance CInN x s g => CIn x s ('N g) where
 
 -- Add To Context ----------------------------------------------
 
-class CAddCtx x s g g' | x s g -> g', x s g' -> g where
+class CAddCtx x s g g' | x s g -> g', x g' -> s g where
   addCtx :: AddCtx x s g g'
 
-instance (CSingletonCtx x s gx, CMerge gx g g') => CAddCtx x s g g' where
-  addCtx = singletonMergeAdd (singletonCtx @x @s @gx) merge
+instance CAddCtxN x s g g' (IsSingleton g') => CAddCtx x s g ('N g') where
+  addCtx = AddN $ addCtxN @x @s @g @g' @(IsSingleton g')
 
+class CAddCtxN x s g g' flag | x s g -> g' flag, x g' flag -> s g where
+  addCtxN :: AddCtxN x s g g'
+
+instance CSingletonNCtx x s g' => CAddCtxN x s 'Empty g' 'True  where
+  addCtxN = AddS singletonNCtx
+instance CAddNCtxN x s g g' => CAddCtxN x s ('N g) g' 'False where
+  addCtxN = AddNN addNCtxN
+
+class CAddNCtxN x s g g' | x s g -> g', x g' -> s g where
+  addNCtxN :: AddNCtxN x s g g'
+
+instance CAddNCtxFlag x s g g' (IsDouble g') => CAddNCtxN x s g g' where
+  addNCtxN = addNCtxFlag
+
+class CAddNCtxFlag x s g g' flag | x s g -> g' flag, x g' flag -> s g where
+  addNCtxFlag :: AddNCtxN x s g g'
+
+instance (KnownNCtx g, IsSingleton g ~ flag)
+    => CAddNCtxFlag 'Z s ('Cons 'Unused g) ('Cons ('Used s) g) flag where
+  addNCtxFlag = AddHere nctx
+instance CSingletonNCtx x s g => CAddNCtxFlag ('S x) s ('End t) ('Cons ('Used t) g) 'True where
+  addNCtxFlag = AddEnd singletonNCtx
+instance CAddNCtxFlag x s g g' 'True => CAddNCtxFlag ('S x) s ('Cons 'Unused g) ('Cons 'Unused g') 'True where
+  addNCtxFlag = AddLater SUnused addNCtxFlag
+instance CAddNCtxN x s g g' => CAddNCtxFlag ('S x) s ('Cons ('Used t) g) ('Cons ('Used t) g') 'False where
+  addNCtxFlag = AddLater SUsed addNCtxN
+
+
+{-
+instance CAddTail x s u g g' (IsSingleton g') => CAddNCtxN ('S x) s g ('Cons u g') where
+  addNCtxN = undefined
+
+-- what does this mean?
+class CAddTail x s u g g' | x s u g -> g', x g' -> s u g where
+  addTail :: AddNCtxN x s g g'
+-}
+
+
+---------------------
+
+-- outputs the number of variables used in the NCtx
+type family CountN g :: Nat where
+  CountN ('End _)            = 'S 'Z
+  CountN ('Cons ('Used _) g) = 'S (CountN g)
+  CountN ('Cons 'Unused g)   = CountN g
+
+type family IsSingleton  g :: Bool where
+  IsSingleton ('End s)            = 'True
+  IsSingleton ('Cons ('Used _) _) = 'False
+  IsSingleton ('Cons 'Unused   g) = IsSingleton g
+
+type family IsDouble g :: Bool where
+  IsDouble ('End s) = 'False
+  IsDouble ('Cons ('Used _) g) = IsSingleton g
+  IsDouble ('Cons 'Unused g)   = IsDouble g
+
+class CIsSingleton g flag | g -> flag where
+  isSingleton :: Dict (IsSingleton g ~ flag)
+
+instance CIsSingleton ('End s) 'True where
+  isSingleton = Dict
+instance CIsSingleton ('Cons ('Used s) g) 'False where
+  isSingleton = Dict
+instance CIsSingleton g b => CIsSingleton ('Cons 'Unused g) b where
+  isSingleton = case isSingleton @g of Dict -> Dict
 
 -- Singleton Context ------------------------------------------
 
@@ -161,7 +226,7 @@ instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
 class CDivN g1 g2 g3 | g1 g2 -> g3 where
   divN :: DivN g1 g2 g3
 
-instance CDivN ('End s) ('End s) 'Empty where
+instance s ~ t => CDivN ('End s) ('End t) 'Empty where
   divN = DivEndEnd
 instance KnownNCtx g => CDivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g)) where
   divN = DivConsEnd nctx

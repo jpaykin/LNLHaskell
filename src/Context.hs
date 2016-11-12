@@ -61,8 +61,9 @@ data AddNCtxN :: Ident -> LType -> NCtx -> NCtx -> * where
 
 
 data AddCtxN :: Ident -> LType -> Ctx -> NCtx -> * where
-  AddEHere   :: AddCtxN 'Z s 'Empty ('End s)
-  AddELater  :: AddCtxN x s 'Empty g  -> AddCtxN ('S x) s 'Empty ('Cons 'Unused g)
+  AddS       :: SingletonNCtx x s g -> AddCtxN x s 'Empty g
+--  AddEHere   :: AddCtxN 'Z s 'Empty ('End s)
+--  AddELater  :: AddCtxN x s 'Empty g  -> AddCtxN ('S x) s 'Empty ('Cons 'Unused g)
   AddNN      :: AddNCtxN x s g g' -> AddCtxN x s ('N g) g'
 
 data AddCtx  :: Nat -> LType -> Ctx -> Ctx -> * where

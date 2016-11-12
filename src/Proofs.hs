@@ -15,6 +15,8 @@ import Context
 
 -- SContexts ------------------------------------------------
 
+freshS :: SCtx g -> SIdent (Fresh g)
+freshS = undefined
 
 inSNCtx :: InN x s g -> SNCtx g
 inSNCtx InEnd = SEnd
@@ -44,8 +46,9 @@ sCtxNAddN SEnd        (AddEnd pfS)     = SCons SUsed $ singletonSCtxN pfS
 sCtxNAddN (SCons u g) (AddLater _ pfA) = SCons u $ sCtxNAddN g pfA
 
 sCtxAddN :: SCtx g -> AddCtxN x s g g' -> SNCtx g'
-sCtxAddN g      AddEHere        = SEnd
-sCtxAddN g      (AddELater pfA) = SCons SUnused $ sCtxAddN g pfA
+sCtxAddN SEmpty (AddS pfS)      = singletonSCtxN pfS
+-- sCtxAddN g      AddEHere        = SEnd
+-- sCtxAddN g      (AddELater pfA) = SCons SUnused $ sCtxAddN g pfA
 sCtxAddN (SN g) (AddNN pfA)     = sCtxNAddN g pfA
 
 sCtxAdd :: SCtx g -> AddCtx y t g g' -> SCtx g'
@@ -127,32 +130,37 @@ inAddRemoveLaterN :: In x s g -> AddCtxN y t g g' -> AddCtx y t (Remove x g) (Re
 inAddRemoveLaterN (In pfI) (AddNN pfA) = inNAddRemoveLaterN pfI pfA
 
 inNAddRemoveLaterN :: InN x s g -> AddNCtxN y t g g' -> AddCtx y t (RemoveN x g) (RemoveN x g')
-inNAddRemoveLaterN InEnd          (AddEnd pfS)     = AddN $ AddELater $ singletonAddN pfS
+inNAddRemoveLaterN InEnd          (AddEnd pfS)     = AddN . AddS $ AddLaterS pfS
 inNAddRemoveLaterN (InHere g)     (AddLater u pfS) = AddN . AddNN . AddLater SUnused $ pfS
-inNAddRemoveLaterN (InLater _ pfI)  (AddHere g0)   = 
-  case inSCtxRemove pfI of
-    SEmpty -> AddN AddEHere
-    SN g'  -> AddN . AddNN . AddHere $ g'
-
-singletonAddN :: SingletonNCtx x s g -> AddCtxN x s 'Empty g
-singletonAddN AddHereS        = AddEHere
-singletonAddN (AddLaterS pfS) = AddELater $ singletonAddN pfS
+inNAddRemoveLaterN (InLater _ pfI)  (AddHere g0)   = addHereConsN (inSCtxRemove pfI)
+-- x=S x'
+-- g=Unused:g0
+-- pfI :: InN x' g0
+-- y=0
+-- g'=Used t:g0
+-- RemoveN x g = ConsN Unused   (RemoveN x' g0)
+-- RemoveN x g'= ConsN (Used t) (RemoveN x' g0)
+-- want: AddCtx 0 t (ConsN Unused (RemoveN x' g0)) (ConsN Used (Removen x' g0))
 
 singletonAdd :: SingletonCtx x s g -> AddCtx x s 'Empty g
-singletonAdd (SingN pfS) = AddN $ singletonAddN pfS
+singletonAdd (SingN pfS) = AddN $ AddS pfS
 
 addSingleton :: AddCtx x s 'Empty g -> SingletonCtx x s g
 addSingleton (AddN pfA) = SingN $ addNSingleton pfA
 
 addNSingleton :: AddCtxN x s 'Empty g -> SingletonNCtx x s g
-addNSingleton AddEHere = AddHereS
-addNSingleton (AddELater pfA) = AddLaterS $ addNSingleton pfA
+addNSingleton (AddS pfS) = pfS
+--addNSingleton AddEHere = AddHereS
+--addNSingleton (AddELater pfA) = AddLaterS $ addNSingleton pfA
+
 
 addFresh :: SCtx g -> AddCtx (Fresh g) s g (Add (Fresh g) s g)
-addFresh g = AddN $ addFreshN g
+addFresh g = addAdd g (freshS g)
 
+
+{-
 addFreshN :: SCtx g -> AddCtxN (Fresh g) s g (AddN (Fresh g) s g)
-addFreshN SEmpty = AddEHere
+addFreshN SEmpty = case singletonAddEq of Dict -> AddS $ singletonFresh _
 addFreshN (SN g) = AddNN $ addNFreshN g
 
 addNFreshN :: SNCtx g -> AddNCtxN (FreshN g) s g (AddNN (FreshN g) s g)
@@ -160,14 +168,24 @@ addNFreshN SEnd              = AddEnd $ singletonNFresh $ SZ
 addNFreshN (SCons SUnused g) = AddHere g
 addNFreshN (SCons SUsed   g) = AddLater SUsed $ addNFreshN g
 
+
+singletonAddEq :: SCtx g -> Dict (Add x s g ~ Singleton x s)
+-}
+------------------------------------------------
+
+addAdd :: SCtx g -> SIdent x -> AddCtx x s g (Add x s g)
+addAdd = undefined
+
+
+singSing :: SIdent x -> SingletonCtx x s (Singleton x s)
+singSing x = SingN $ singNSingN x
+
+singNSingN :: SIdent x -> SingletonNCtx x s (SingletonN x s)
+singNSingN SZ     = AddHereS
+singNSingN (SS x) = AddLaterS $ singNSingN x
+
 -- Singleton Context ------------------------------------------
 
-singletonFresh :: SIdent x -> SingletonCtx x s (Singleton x s)
-singletonFresh x = SingN $ singletonNFresh x
-
-singletonNFresh :: SIdent x -> SingletonNCtx x s (SingletonN x s)
-singletonNFresh SZ     = AddHereS
-singletonNFresh (SS x) = AddLaterS $ singletonNFresh x
 
 singletonMergeAdd :: SingletonCtx x s g1 -> Merge g1 g2 g3 -> AddCtx x s g2 g3
 singletonMergeAdd (SingN pfS) pfM = singletonNMergeAdd pfS pfM
@@ -197,8 +215,9 @@ addRemoveEquiv :: AddCtx x s g g' -> Dict (g ~ Remove x g')
 addRemoveEquiv (AddN pfA) = case addRemoveNEquiv pfA of Dict -> Dict
 
 addRemoveNEquiv :: AddCtxN x s g g' -> Dict (g ~ RemoveN x g')
-addRemoveNEquiv AddEHere = Dict
-addRemoveNEquiv (AddELater pfA) = case addRemoveNEquiv pfA of Dict -> Dict
+addRemoveNEquiv (AddS pfS) = case singletonRemoveN pfS of Dict -> Dict
+--addRemoveNEquiv AddEHere = Dict
+--addRemoveNEquiv (AddELater pfA) = case addRemoveNEquiv pfA of Dict -> Dict
 addRemoveNEquiv (AddNN pfA) = case addNRemoveNEquiv pfA of Dict -> Dict
 
 addNRemoveNEquiv :: AddNCtxN x s g g' -> Dict ('N g ~ RemoveN x g')
@@ -232,8 +251,9 @@ addNInN (AddEnd pfS)   = InLater SUsed $ singletonInN pfS
 addNInN (AddLater u pfA) = InLater u $ addNInN pfA
 
 addInN :: AddCtxN x s g g' -> InN x s g'
-addInN AddEHere        = InEnd
-addInN (AddELater pfE) = InLater SUnused $ addInN pfE
+addInN (AddS pfS) = singletonInN pfS
+--addInN AddEHere        = InEnd
+--addInN (AddELater pfE) = InLater SUnused $ addInN pfE
 addInN (AddNN pfA)     = addNInN pfA
 
 addIn :: AddCtx x s g g' -> In x s g'
@@ -250,8 +270,8 @@ singletonInNInv (InLater _ pfI) (AddLaterS pfS) =
 
 
 inAddRemoveN :: InN x s g -> AddCtxN x s (RemoveN x g) g
-inAddRemoveN InEnd           = AddEHere
-inAddRemoveN (InHere g)      = AddNN $ AddHere g
+inAddRemoveN InEnd           = undefined -- AddEHere
+inAddRemoveN (InHere g)      = undefined -- AddNN $ AddHere g
 inAddRemoveN (InLater u pfI) = addConsN u z $ inAddRemoveN pfI 
   where
     z = inSCtxRemove pfI
@@ -261,81 +281,12 @@ inAddRemove (In pfI) = AddN $ inAddRemoveN pfI
 
 addConsN :: SUsage u -> SCtx g -> AddCtxN x s g g' -> AddCtxN ('S x) s (ConsN u g) ('Cons u g')
 addConsN SUsed   SEmpty    pfA         = AddNN . AddEnd $ addNSingleton pfA
-addConsN SUnused SEmpty    pfA         = AddELater pfA
+addConsN SUnused SEmpty    pfA         = undefined -- AddELater pfA
 addConsN u       (SN g)    (AddNN pfA) = AddNN $ AddLater u pfA
 
+addHereConsN :: SCtx g -> AddCtx 'Z s (ConsN 'Unused g) (ConsN ('Used s) g)
+addHereConsN = undefined
 
-
-
-{-
-
--- Relation between In and Shift
-
-inShift :: In x s g
-        -> Shift i g' g
-        -> In (InShift x i) s g'
-inShift (InLater pfI) ShiftHere = pfI
-inShift (InHere g0)   (ShiftLater pfS) = InHere $ unshiftSCtx pfS g0
-inShift (InLater pfI) (ShiftLater pfS) = InLater $ inShift pfI pfS
-
-type family InUnshift x i :: Nat where
-  InUnshift x      'Z     = 'S x
-  InUnshift 'Z     ('S i) = 'Z
-  InUnshift ('S x) ('S i) = 'S (InUnshift x i)
-
-inUnshift :: In x s g
-          -> Shift i g g'
-          -> In (InUnshift x i) s g'
-inUnshift pfI           ShiftHere        = InLater pfI
-inUnshift (InHere g)    (ShiftLater pfS) = InHere $ shiftSCtx pfS g
-inUnshift (InLater pfI) (ShiftLater pfS) = InLater $ inUnshift pfI pfS
-
-
-shiftRemove :: Shift i g g'
-            -> In (InShift x i) s g
-            -> In x t g'
-            -> Shift i (Remove (InShift x i) g) (Remove x g')
--- i=Z
--- g'=Unused:g
--- x=S y
--- pfI' = In y t g
--- Remove y g' = Unused:Remove y g
--- InShift x i = y
--- Remove (InShift x i) g = Remove y g
-shiftRemove ShiftHere        pfI (InLater pfI') = ShiftHere
--- i=S j
--- g=Used s:g0
--- pfS :: Shift j g0 g0'
--- x=Z
--- g'=Used s:g0'
--- InShift x i = InShift Z (S j) = Z
--- Remove (InShift x i) g = Remove Z (Used s : g0) = Unused : g0
--- Remove x g' = Remove Z (Used s : g0') = Unused : g0'
-shiftRemove (ShiftLater pfS) pfI (InHere _)        = ShiftLater pfS
--- i=S j
--- g=u:g0
--- g'=u:g0'
--- pfS :: Shift j g0 g0'
--- x=S y
--- pfI' :: In y s g0'
--- InShift x i = InShift (S y) (S j) = S (InShift y j)
--- pfI :: In (InShift y j) g0
--- shiftREmove pfS pfI pfI' :: Shift j (Remove (InShift y j) g0) (Remove y g0')
--- want: Shift (S j) (Remove (S (InShift y j)) (u:g0)) (Remove (S y) (u:g0'))
---     = Shift (S j) (u:Remove (InShift y j) g0) (u:Remove y g0')
-shiftRemove (ShiftLater pfS) (InLater pfI) (InLater pfI') = 
-    ShiftLater $ shiftRemove pfS pfI pfI'
-
-unshiftRemove :: Shift i g g'
-              -> In x s g
-              -> In (InUnshift x i) t g'
-              -> Shift i (Remove x g) (Remove (InUnshift x i) g')
-unshiftRemove ShiftHere        (InLater pfI) pfI'           = ShiftHere
-unshiftRemove (ShiftLater pfS) (InHere g)    pfI'           = ShiftLater pfS
-unshiftRemove (ShiftLater pfS) (InLater pfI) (InLater pfI') = 
-    ShiftLater $ unshiftRemove pfS pfI pfI'
-
--}
 
 -- Relation between In and Merge
 
