@@ -63,7 +63,8 @@ singletonSCtx (SingN pfS) = SN $ singletonSCtxN pfS
 addToSIdent :: AddCtx x s g g' -> SIdent x
 addToSIdent pfA = inSIdent $ addIn pfA
 
-
+sCtxSing :: SIdent x -> SCtx (Singleton x s)
+sCtxSing = undefined
 
 -- Freshness ---------------------------------------------
 
@@ -197,6 +198,9 @@ singSing x = SingN $ singNSingN x
 singNSingN :: SIdent x -> SingletonNCtx x s (SingletonN x s)
 singNSingN SZ     = AddHereS
 singNSingN (SS x) = AddLaterS $ singNSingN x
+
+mergeMerge :: SCtx g1 -> SCtx g2 -> Merge g1 g2 (Merge12 g1 g2)
+mergeMerge = undefined
 
 -- Singleton Context ------------------------------------------
 

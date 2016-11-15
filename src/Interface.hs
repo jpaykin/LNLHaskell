@@ -24,7 +24,6 @@ type Var x s = SIdent x
 var :: Var x s -> LExp (Singleton x s) s
 var x = Var $ singSing x
 
-
 λ :: forall s t g g'. CAddCtx (Fresh g) s g g'
   => (Var (Fresh g) s -> LExp g' t)
   -> LExp g (s ⊸ t)
