@@ -17,6 +17,7 @@ import Proofs
 import Classes
 import Lang
 import Subst
+import Eval
 
 -- type Var x s = LExp (Singleton x s) s
 type Var x s = SIdent x
@@ -120,14 +121,6 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     v2 :: Var (Fresh g) s2
     v2 = knownFresh (ctx @g)
 
--- Lift --------------------------------------------------------
-
-data Lift :: LType -> * where
-  Suspend :: forall t. LExp 'Empty t -> Lift t
-
--- force should also evaluate the expression
-force :: forall t. Lift t -> LExp 'Empty t
-force (Suspend e) = eval e
 
 
 

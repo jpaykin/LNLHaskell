@@ -69,28 +69,12 @@ data LExp :: Ctx -> LType -> * where
       -> (a -> LExp g2 t)
       -> LExp g3 t
 
--- values
+-- Lift --------------------------------------------------------
 
-data LVal :: LType -> * where
-  VUnit :: LVal One
-  VAbs :: forall x s t g'.
-         AddCtx x s 'Empty g'
-      -> LExp g' t
-      -> LVal (s ⊸ t)
-  VPut :: a -> LVal (Lower a)
-  VPair :: LVal t1 -> LVal t2 -> LVal (t1 ⊗ t2)
-  VProd :: LVal t1 -> LVal t2 -> LVal (t1 & t2)
-  VInl  :: LVal t1 -> LVal (t1 ⊕ t2)
-  VInr  :: LVal t2 -> LVal (t1 ⊕ t2)
+data Lift :: LType -> * where
+  Suspend :: forall t. LExp 'Empty t -> Lift t
 
-valToExp :: LVal t -> LExp 'Empty t
-valToExp VUnit           = Unit
-valToExp (VAbs pfAdd e)  = Abs pfAdd e
-valToExp (VPut a)        = Put a
-valToExp (VPair v1 v2)   = Pair MergeE (valToExp v1) (valToExp v2)
-valToExp (VProd v1 v2)   = Prod (valToExp v1) (valToExp v2)
-valToExp (VInl v)        = Inl $ valToExp v
-valToExp (VInr v)        = Inr $ valToExp v
-
-
+-- force should also evaluate the expression
+force :: forall t. Lift t -> LExp 'Empty t
+force (Suspend e) = e
 
