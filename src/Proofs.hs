@@ -15,6 +15,25 @@ import Context
 
 -- SContexts ------------------------------------------------
 
+addSCtx :: AddCtx x s g g' -> (SCtx g, SCtx g')
+addSCtx (AddN pfA) = (g,SN g')
+  where
+    (g,g') = addSCtxN pfA
+
+addSCtxN :: AddCtxN x s g g' -> (SCtx g, SNCtx g')
+addSCtxN (AddS pfS)  = (SEmpty, singletonSCtxN pfS)
+addSCtxN (AddNN pfA) = (SN g, g') 
+  where
+    (g,g') = addSNCtxN pfA
+
+addSNCtxN :: AddNCtxN x s g g' -> (SNCtx g, SNCtx g')
+addSNCtxN (AddHere g) = (SCons SUnused g, SCons SUsed g)
+addSNCtxN (AddEnd pfS) = (SEnd, SCons SUsed $ singletonSCtxN pfS)
+addSNCtxN (AddLater u pfA) = (SCons u g, SCons u g') 
+  where
+    (g,g') = addSNCtxN pfA
+
+
 inSNCtx :: InN x s g -> SNCtx g
 inSNCtx InEnd = SEnd
 inSNCtx (InHere g) = SCons SUsed g
@@ -147,14 +166,7 @@ inNAddRemoveLaterN :: InN x s g -> AddNCtxN y t g g' -> AddCtx y t (RemoveN x g)
 inNAddRemoveLaterN InEnd          (AddEnd pfS)     = AddN . AddS $ AddLaterS pfS
 inNAddRemoveLaterN (InHere g)     (AddLater u pfS) = AddN . AddNN . AddLater SUnused $ pfS
 inNAddRemoveLaterN (InLater _ pfI)  (AddHere g0)   = addHereConsN (inSCtxRemove pfI)
--- x=S x'
--- g=Unused:g0
--- pfI :: InN x' g0
--- y=0
--- g'=Used t:g0
--- RemoveN x g = ConsN Unused   (RemoveN x' g0)
--- RemoveN x g'= ConsN (Used t) (RemoveN x' g0)
--- want: AddCtx 0 t (ConsN Unused (RemoveN x' g0)) (ConsN Used (Removen x' g0))
+inNAddRemoveLaterN (InLater _ pfI)(AddLater u pfS) = addCons u $ inNAddRemoveLaterN pfI pfS
 
 singletonAdd :: SingletonCtx x s g -> AddCtx x s 'Empty g
 singletonAdd (SingN pfS) = AddN $ AddS pfS
@@ -320,6 +332,11 @@ addELater (AddS pfS) = AddS $ AddLaterS pfS
 
 addEHere :: AddCtxN 'Z s 'Empty ('End s)
 addEHere = AddS AddHereS
+
+addCons :: SUsage u -> AddCtx x s g g' -> AddCtx ('S x) s (ConsN u g) (ConsN u g')
+addCons u (AddN pfA) = AddN $ addConsN u g pfA 
+  where
+    (g,_) = addSCtx (AddN pfA)
 
 addConsN :: SUsage u -> SCtx g -> AddCtxN x s g g' -> AddCtxN ('S x) s (ConsN u g) ('Cons u g')
 addConsN SUsed   SEmpty    pfA         = AddNN . AddEnd $ addNSingleton pfA
