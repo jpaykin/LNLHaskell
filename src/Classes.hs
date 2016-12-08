@@ -68,6 +68,8 @@ class CAddCtx x s g g' | x s g -> g', x g' -> s g where
 instance CAddCtxN x s g g' (IsSingleton g') => CAddCtx x s g ('N g') where
   addCtx = AddN $ addCtxN @x @s @g @g' @(IsSingleton g')
 
+-- If CAddCtxN x s g g' flag then 
+-- flag IFF g' is a singleton context IFF g is the empty context
 class CAddCtxN x s g g' flag | x s g -> g' flag, x g' flag -> s g where
   addCtxN :: AddCtxN x s g g'
 
@@ -82,6 +84,8 @@ class CAddNCtxN x s g g' | x s g -> g', x g' -> s g where
 instance CAddNCtxFlag x s g g' (IsDouble g') => CAddNCtxN x s g g' where
   addNCtxN = addNCtxFlag
 
+-- If CAddNCtxFlag x s g g' flag then
+-- flag IFF g is a singleton context iff g' is a double context
 class CAddNCtxFlag x s g g' flag | x s g -> g' flag, x g' flag -> s g where
   addNCtxFlag :: AddNCtxN x s g g'
 
@@ -90,12 +94,10 @@ instance (KnownNCtx g, IsSingleton g ~ flag)
   addNCtxFlag = AddHere nctx
 instance CSingletonNCtx x s g => CAddNCtxFlag ('S x) s ('End t) ('Cons ('Used t) g) 'True where
   addNCtxFlag = AddEnd singletonNCtx
-instance CAddNCtxFlag x s g g' 'True => CAddNCtxFlag ('S x) s ('Cons 'Unused g) ('Cons 'Unused g') 'True where
+instance CAddNCtxFlag x s g g' f => CAddNCtxFlag ('S x) s ('Cons 'Unused g) ('Cons 'Unused g') f where
   addNCtxFlag = AddLater SUnused addNCtxFlag
 instance CAddNCtxN x s g g' => CAddNCtxFlag ('S x) s ('Cons ('Used t) g) ('Cons ('Used t) g') 'False where
   addNCtxFlag = AddLater SUsed addNCtxN
-
-
 
 
 ---------------------
