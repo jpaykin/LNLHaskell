@@ -63,8 +63,12 @@ singletonSCtx (SingN pfS) = SN $ singletonSCtxN pfS
 addToSIdent :: AddCtx x s g g' -> SIdent x
 addToSIdent pfA = inSIdent $ addIn pfA
 
-sCtxSing :: SIdent x -> SCtx (Singleton x s)
-sCtxSing = undefined
+sCtxSing :: forall s x. SIdent x -> SCtx (Singleton x s)
+sCtxSing x = SN $ sNCtxSing @s x
+
+sNCtxSing :: forall s x. SIdent x -> SNCtx (SingletonN x s)
+sNCtxSing SZ = SEnd
+sNCtxSing (SS x) = SCons SUnused $ sNCtxSing @s x
 
 -- Freshness ---------------------------------------------
 
@@ -200,7 +204,21 @@ singNSingN SZ     = AddHereS
 singNSingN (SS x) = AddLaterS $ singNSingN x
 
 mergeMerge :: SCtx g1 -> SCtx g2 -> Merge g1 g2 (Merge12 g1 g2)
-mergeMerge = undefined
+mergeMerge SEmpty SEmpty = MergeE
+mergeMerge SEmpty (SN g) = MergeEL g
+mergeMerge (SN g) SEmpty = MergeER g
+mergeMerge (SN g1) (SN g2) = MergeN $ mergeMergeN g1 g2
+
+mergeMergeN :: SNCtx g1 -> SNCtx g2 -> MergeN g1 g2 (MergeN12 g1 g2)
+mergeMergeN SEnd (SCons SUnused g2) = MergeEndL g2
+mergeMergeN (SCons SUnused g1) SEnd = MergeEndR g1
+mergeMergeN (SCons u1 g1) (SCons u2 g2) = MergeCons (mergeMergeU u1 u2) $ mergeMergeN g1 g2
+
+mergeMergeU :: SUsage u1 -> SUsage u2 -> MergeU u1 u2 (MergeU12 u1 u2)
+mergeMergeU SUnused SUnused = MergeUn
+mergeMergeU SUsed   SUnused = MergeUL
+mergeMergeU SUnused SUsed   = MergeUR
+
 
 -- Singleton Context ------------------------------------------
 

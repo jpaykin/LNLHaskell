@@ -87,8 +87,8 @@ type family SingletonN x s :: NCtx where
 --  SingletonN 'Z     s = 'End s
 --  SingletonN ('S x) s = 'Cons 'Unused (SingletonN x s)
 type family Singleton x s :: Ctx where
-  Singleton x s = Add x s 'Empty
---  Singleton x s = 'N (SingletonN x s)
+--  Singleton x s = Add x s 'Empty
+  Singleton x s = 'N (SingletonN x s)
 
 type family Merge12 (g1 :: Ctx) (g2 :: Ctx) :: Ctx where
   Merge12 'Empty  'Empty  = 'Empty
