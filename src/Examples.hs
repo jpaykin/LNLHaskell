@@ -16,20 +16,20 @@ import Interface
 import Data.Constraint -- Dict
 
 
-idL ∷ forall a. Lift (a ⊸ a)
+idL ∷ Lift sig (a ⊸ a)
 idL = Suspend $ λ $ \x -> var x
 
 
 
-compose :: Lift ((a ⊸ b) ⊸ (b ⊸ c) ⊸ a ⊸ c)
+compose :: Lift sig ((a ⊸ b) ⊸ (b ⊸ c) ⊸ a ⊸ c)
 compose = Suspend $ λ$ \f -> λ$ \g ->
             λ$ \a -> var g `app` (var f `app` var a)
 
 
-counit :: forall a. Lift (Lower (Lift a) ⊸ a)
+counit :: Lift sig (Lower (Lift sig a) ⊸ a)
 counit = Suspend $ λ$ \ x -> var x >! force
 
-apply :: forall a b. Lift (a ⊸ (a ⊸ b) ⊸ b)
+apply :: Lift sig (a ⊸ (a ⊸ b) ⊸ b)
 apply = Suspend . λ$ \x -> λ$ \y -> var y `app` var x
 
 -- ret :: a -> Lin a 
@@ -53,35 +53,35 @@ idid' = Suspend $ app (force idL) (λ $ \x -> var x)
 -- idid'' = Suspend $ λ$ \z -> 
 --    app (λ$ \x -> var z `app` var x) (λ$ \y -> var y)
 
-pairPut :: Lift (Lower String ⊗ Lower String)
+pairPut :: Lift sig (Lower String ⊗ Lower String)
 pairPut = Suspend $ put "hi" ⊗ put "bye"
 
 swapPairPut = Suspend $ force pairPut `letPair` \(x,y) -> var y ⊗ var x
 
-uncurry :: forall a b c. Lift ((a ⊸ b ⊸ c) ⊸ a ⊗ b ⊸ c)
+uncurry :: Lift sig ((a ⊸ b ⊸ c) ⊸ a ⊗ b ⊸ c)
 uncurry = Suspend $ λ$ \f -> λ$ \z ->
     var z `letPair` \(x,y) -> var f `app` var x `app` var y
 
 
-curry :: Lift ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
+curry :: Lift sig ((a ⊗ b ⊸ c) ⊸ a ⊸ b ⊸ c)
 curry = Suspend $ λ$ \f -> λ$ \x -> λ$ \y -> var f `app` (var x ⊗ var y)
 
 
 -- Plus
 
-eitherPlus :: Either (Lift a) (Lift b) -> Lift (a ⊕ b)
+eitherPlus :: Either (Lift sig a) (Lift sig b) -> Lift sig (a ⊕ b)
 eitherPlus (Left  a) = Suspend . Inl $ force a
 eitherPlus (Right b) = Suspend . Inr $ force b
 
 
-isoPlus1 :: Lift (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
+isoPlus1 :: Lift sig (a ⊗ (b ⊕ c) ⊸ (a ⊗ b) ⊕ (a ⊗ c))
 isoPlus1 = Suspend . λ$ \z ->
     var z `letPair` \(a,z) ->
     caseof (var z)
       (\b -> Inl $ var a ⊗ var b)
       (\c -> Inr $ var a ⊗ var c)
 
-isoPlus2 :: Lift ( (a ⊗ b) ⊕ (a ⊗ c) ⊸ a ⊗ (b ⊕ c) )
+isoPlus2 :: Lift sig ( (a ⊗ b) ⊕ (a ⊗ c) ⊸ a ⊗ (b ⊕ c) )
 isoPlus2 = Suspend . λ$ \z ->
   caseof (var z) case1 case2
   where
@@ -90,47 +90,47 @@ isoPlus2 = Suspend . λ$ \z ->
 
 -- Bang
 
-coret :: LExp 'Empty a -> LExp 'Empty (Bang a)
+coret :: LExp sig 'Empty a -> LExp sig 'Empty (Bang sig a)
 coret = put . Suspend
 
-dupTensor :: Lift (Bang a ⊸ Bang a ⊗ Bang a)
+dupTensor :: Lift sig (Bang sig a ⊸ Bang sig a ⊗ Bang sig a)
 dupTensor = Suspend $ λ$ \x -> 
     var x >! \a -> put a ⊗ put a
 
-drop :: Lift (Bang a ⊸ One)
+drop :: Lift sig (Bang sig a ⊸ One)
 drop = Suspend . λ$ \a -> var a >! \_ -> Unit
 
-oneDuplicable :: Lift (One ⊸ Bang One)
+oneDuplicable :: Lift sig (One ⊸ Bang sig One)
 oneDuplicable = Suspend . λ$ \x -> var x `letUnit` coret Unit
 
 -- lift and lower
 
-lowerbind :: Lift (Lower a ⊸ Lower b) -> a -> Lin b
+lowerbind :: Lift sig (Lower a ⊸ Lower b) -> a -> Lin sig b
 lowerbind f a = suspendL $ force f `app` put a
 
-liftMap :: Lift (a ⊸ b) -> Lift a -> Lift b
+liftMap :: Lift sig (a ⊸ b) -> Lift sig a -> Lift sig b
 liftMap f a = Suspend $ force f `app` force a
 
-liftMap2 :: Lift (a ⊸ b ⊸ c) -> Lift a -> Lift b -> Lift c
+liftMap2 :: Lift sig (a ⊸ b ⊸ c) -> Lift sig a -> Lift sig b -> Lift sig c
 liftMap2 f a b = liftMap (liftMap f a) b
 
 
 -- With
 
-dupWith :: Lift (a ⊸ a & a)
+dupWith :: Lift sig (a ⊸ a & a)
 dupWith = Suspend $ λ$ \a -> Prod (var a) (var a)
 
-fst :: Lift (a & b ⊸ a)
+fst :: Lift sig (a & b ⊸ a)
 fst = Suspend . λ$ \p -> Fst $ var p
 
-snd :: Lift (a & b ⊸ b)
+snd :: Lift sig (a & b ⊸ b)
 snd = Suspend . λ$ \p -> Snd $ var p
 
-iso1 :: Lift (Bang (a & b) ⊸ Bang a ⊗ Bang b)
+iso1 :: Lift sig (Bang sig (a & b) ⊸ Bang sig a ⊗ Bang sig b)
 iso1 = Suspend . λ$ \x ->
     var x >! \p -> (coret . Fst $ force p) ⊗ (coret . Snd $ force p)
 
-iso2 :: Lift (Bang a ⊗ Bang b ⊸ Bang (a & b))
+iso2 :: Lift sig (Bang sig a ⊗ Bang sig b ⊸ Bang sig (a & b))
 iso2 = Suspend . λ$ \z -> 
     var z `letPair` \(x,y) -> 
     var x >! \a ->

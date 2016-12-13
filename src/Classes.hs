@@ -23,7 +23,7 @@ class KnownUsage u where
 instance KnownUsage 'Unused where
   usg = SUnused
 instance KnownUsage ('Used s) where
-  usg = SUsed @s
+  usg = SUsed @_ @s
 
 class KnownCtx g where
   ctx :: SCtx g
