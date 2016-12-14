@@ -60,6 +60,12 @@ e1 ⊗ e2 = Pair merge e1 e2
     -> LExp dom g (t1 & t2)
 (&) = Prod
 
+letin :: (CMerge g1 g2 g, CMergeForward g2 g1 g, CDiv g g1 g2, CDiv g g2 g1)
+      => LExp dom g1 s
+      -> LExp dom g2 (s ⊸ t)
+      -> LExp dom g t
+letin e f = f `app` e
+
 letUnit :: CMerge g1 g2 g
         => LExp dom g1 One -> LExp dom g2 t -> LExp dom g t
 letUnit = LetUnit merge
