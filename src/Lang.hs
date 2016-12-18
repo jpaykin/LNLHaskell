@@ -10,30 +10,43 @@ module Lang where
 
 import Data.Kind
 import Data.Constraint
+import Data.Proxy
 
 import Types
 import Context
   
-type PreDom sig = ( (Ctx sig -> LType sig -> *) -> Ctx sig -> LType sig -> *
-                  , (LType sig -> *) -> LType sig -> *)
-type Dom sig = (* -> *, PreDom sig)
-type family DomEffect (dom :: Dom sig) :: * -> * where
-  DomEffect '(m,_) = m
-type family DomExp (dom :: Dom sig) :: Ctx sig -> LType sig -> * where
-  DomExp '(m, '(exp,val)) = exp (LExp '(m, '(exp,val)))
-type family DomVal (dom :: Dom sig) :: LType sig -> * where
-  DomVal '(m, '(exp,val)) = val (LVal '(m, '(exp,val)))
+type ExpDom sig = (Ctx sig -> LType sig -> *) -> Ctx sig -> LType sig -> *
+type ValDom sig = (LType sig -> *) -> LType sig -> *
+type Dom sig = ValDom sig
+--type family DomExp (dom :: Dom sig) :: ExpDom sig where -- Ctx sig -> LType sig -> * where
+--  DomExp '(exp,val) = exp -- (LExp '(m, '(exp,val)))
+--type family DomVal (dom :: Dom sig) :: ValDom sig where -- LType sig -> * where
+--  DomVal '(exp,val) = val -- (LVal '(m, '(exp,val)))
 
-class Monad (DomEffect dom) => Domain dom where
-  toExpDomain :: DomVal dom s -> DomExp dom 'Empty s
+class HasExp (dom :: ValDom sig) (exp :: ExpDom sig)
+
+class Monad (SigEffect sig) => Domain (dom :: ValDom sig) (exp :: ExpDom sig) where
+--  type SigExp sig :: ExpDom sig
+--  type SigVal sig :: ValDom sig
+
+  valToExpDomain :: Proxy exp
+                 -> dom (LVal dom) s 
+                 -> exp (LExp dom) 'Empty s
+
   substDomain :: AddCtx x s g g' -> LExp dom 'Empty s 
-              -> DomExp dom g' t -> LExp dom g t
-  evalDomain  :: DomExp dom 'Empty s -> DomEffect dom (LVal dom s)
+              -> exp (LExp dom) g' t 
+              -> LExp dom g t
 
-  
+  evalDomain  :: Proxy exp 
+              -> exp (LExp dom) 'Empty s 
+              -> SigEffect sig (LVal dom s)
 
-data LExp :: Dom sig -> Ctx sig -> LType sig -> * where
-  Dom :: DomExp dom g t -> LExp dom g t
+
+data LExp :: forall sig. Dom sig -> Ctx sig -> LType sig -> * where
+  Dom :: Domain dom exp
+      => Proxy exp 
+      -> exp (LExp dom) g t 
+      -> LExp dom g t
 
   Var :: SingletonCtx x t g -> LExp dom g t
   
@@ -83,15 +96,16 @@ data LExp :: Dom sig -> Ctx sig -> LType sig -> * where
        -> LExp dom g3  t
 
   Put     :: a -> LExp dom 'Empty (Lower a)
-  LetBang :: Merge g1 g2 g3
+  LetBang :: Merge g1 g2 g
       -> LExp dom g1 (Lower a)
       -> (a -> LExp dom g2 t)
-      -> LExp dom g3 t
+      -> LExp dom g t
 
 -- Values -----------------------------------------------------
 
-data LVal :: Dom sig -> LType sig -> * where
-  VDom  :: DomVal dom s -> LVal dom s
+data LVal :: forall sig. Dom sig -> LType sig -> * where
+  VDom  :: Domain dom exp 
+        => Proxy exp -> dom (LVal dom) s -> LVal dom s
   VUnit :: LVal dom One
   VAbs  :: AddCtx x s 'Empty g'
         -> LExp dom g' t
@@ -102,22 +116,24 @@ data LVal :: Dom sig -> LType sig -> * where
   VInl  :: LVal dom t1 -> LVal dom (t1 ⊕ t2)
   VInr  :: LVal dom t2 -> LVal dom (t1 ⊕ t2)
 
-valToExp :: forall dom t. Domain dom => LVal dom t -> LExp dom 'Empty t
-valToExp (VDom v)        = Dom $ toExpDomain @dom v
-valToExp VUnit           = Unit
-valToExp (VAbs pfAdd e)  = Abs pfAdd e
-valToExp (VPut a)        = Put a
-valToExp (VPair v1 v2)   = Pair MergeE (valToExp v1) (valToExp v2)
-valToExp (VProd v1 v2)   = Prod (valToExp v1) (valToExp v2)
-valToExp (VInl v)        = Inl $ valToExp v
-valToExp (VInr v)        = Inr $ valToExp v
+
+valToExp :: forall sig (dom :: Dom sig) (t :: LType sig).
+            LVal dom t -> LExp dom 'Empty t
+valToExp (VDom p v) = Dom p $ valToExpDomain p v
+-- valToExp VUnit           = Unit
+-- valToExp (VAbs pfAdd e)  = Abs pfAdd e
+-- valToExp (VPut a)        = Put a
+-- valToExp (VPair v1 v2)   = Pair MergeE (valToExp v1) (valToExp v2)
+-- valToExp (VProd v1 v2)   = Prod (valToExp v1) (valToExp v2)
+-- valToExp (VInl v)        = Inl $ valToExp v
+-- valToExp (VInr v)        = Inr $ valToExp v
 
 
 -- Lift --------------------------------------------------------
 
-data Lift :: Dom sig -> LType sig -> * where
+data Lift (dom :: Dom sig) :: LType sig -> * where
   Suspend :: LExp dom 'Empty t -> Lift dom t
 
-force :: Lift dom t-> LExp dom 'Empty t
+force :: Lift dom t -> LExp dom 'Empty t
 force (Suspend e) = e
 

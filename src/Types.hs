@@ -10,16 +10,22 @@ module Types where
 import Data.Kind
 import Data.Constraint
 
+type EffectSig = * -> *
 type TypeSig = * -> *
+type Sig = (EffectSig, TypeSig)
+type family SigEffect (sig :: Sig) :: EffectSig where
+  SigEffect '(m,_) = m
+type family SigType (sig :: Sig) :: TypeSig where
+  SigType '(_,t) = t
 
-data LType (sig :: TypeSig) where
+data LType (sig :: Sig) where
   One    :: LType sig
   Lolli  :: LType sig -> LType sig -> LType sig
   Lower  :: * -> LType sig
   Tensor :: LType sig -> LType sig -> LType sig
   With   :: LType sig -> LType sig -> LType sig
   Plus   :: LType sig -> LType sig -> LType sig
-  Sig    :: sig (LType sig) -> LType sig
+  Sig    :: SigType sig (LType sig) -> LType sig
 
 type (⊸) = Lolli
 infixr 0 ⊸

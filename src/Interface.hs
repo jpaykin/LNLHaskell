@@ -22,12 +22,12 @@ import Eval
 -- type Var x s = LExp (Singleton x s) s
 type Var x s = SIdent x
 
-var :: Var x s -> LExp dom (Singleton x s) s
+var :: Var x s -> LExp sig (Singleton x s) s
 var x = Var $ singSing x
 
-λ :: forall dom s t g g'. CAddCtx (Fresh g) s g g'
-  => (Var (Fresh g) s -> LExp dom g' t)
-  -> LExp dom g (s ⊸ t)
+λ :: forall sig s t g g'. CAddCtx (Fresh g) s g g'
+  => (Var (Fresh g) s -> LExp sig g' t)
+  -> LExp sig g (s ⊸ t)
 λ f = Abs pfA (f x) where
   pfA :: AddCtx (Fresh g) s g g'
   pfA  = addCtx
@@ -35,49 +35,49 @@ var x = Var $ singSing x
   x    = addToSIdent pfA
 
 app :: CMerge g1 g2 g3 
-    => LExp dom g1 (s ⊸ t)
-    -> LExp dom g2 s
-    -> LExp dom g3 t
+    => LExp sig g1 (s ⊸ t)
+    -> LExp sig g2 s
+    -> LExp sig g3 t
 e1 `app` e2 = App merge e1 e2
 
-put :: a -> LExp dom 'Empty (Lower a)
+put :: a -> LExp sig 'Empty (Lower a)
 put = Put
 
 (>!) :: CMerge g1 g2 g3
-     => LExp dom g1 (Lower a)
-     -> (a -> LExp dom g2 t)
-     -> LExp dom g3 t
+     => LExp sig g1 (Lower a)
+     -> (a -> LExp sig g2 t)
+     -> LExp sig g3 t
 (>!) = LetBang merge
 
 (⊗) :: CMerge g1 g2 g3
-    => LExp dom g1 t1
-    -> LExp dom g2 t2
-    -> LExp dom g3 (t1 ⊗ t2)
+    => LExp sig g1 t1
+    -> LExp sig g2 t2
+    -> LExp sig g3 (t1 ⊗ t2)
 e1 ⊗ e2 = Pair merge e1 e2
 
-(&) :: LExp dom g t1
-    -> LExp dom g t2
-    -> LExp dom g (t1 & t2)
+(&) :: LExp sig g t1
+    -> LExp sig g t2
+    -> LExp sig g (t1 & t2)
 (&) = Prod
 
 letin :: (CMerge g1 g2 g, CMergeForward g2 g1 g, CDiv g g1 g2, CDiv g g2 g1)
-      => LExp dom g1 s
-      -> LExp dom g2 (s ⊸ t)
-      -> LExp dom g t
+      => LExp sig g1 s
+      -> LExp sig g2 (s ⊸ t)
+      -> LExp sig g t
 letin e f = f `app` e
 
 letUnit :: CMerge g1 g2 g
-        => LExp dom g1 One -> LExp dom g2 t -> LExp dom g t
+        => LExp sig g1 One -> LExp sig g2 t -> LExp sig g t
 letUnit = LetUnit merge
 
 
-letPair :: forall dom g s1 s2 t g1 g2 g2' g2''.
+letPair :: forall sig g s1 s2 t g1 g2 g2' g2''.
            ( CAddCtx (Fresh g) s1 g2'' g2'
            , CAddCtx (Fresh2 g) s2 g2' g2
            , CMerge g1 g2'' g)
-        => LExp dom g1 (s1 ⊗ s2)
-        -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp dom g2 t)
-        -> LExp dom g t
+        => LExp sig g1 (s1 ⊗ s2)
+        -> ((Var (Fresh g) s1, Var (Fresh2 g) s2) -> LExp sig g2 t)
+        -> LExp sig g t
 letPair e f = 
     case addRemoveEquiv (removeCtx @(Fresh2 g) @s2 @g2 @g2') of {Dict ->
     case addRemoveEquiv (removeCtx @(Fresh g) @s1 @g2' @g2'') of {Dict ->
@@ -102,20 +102,20 @@ letPair e f =
     pfA1 = inAddRemove pfI1'
     pfA2 :: AddCtx (Fresh2 g) s2 (Remove (Fresh2 g) g2) g2
     pfA2 = inAddRemove pfI2
-    e' :: LExp dom g2 t
+    e' :: LExp sig g2 t
     e' = f (x1,x2)
 
 
-caseof :: forall dom g2 g g21 g22 g1 s1 s2 t.
+caseof :: forall sig g2 g g21 g22 g1 s1 s2 t.
           (CIn (Fresh g) s1 g21, CIn (Fresh g) s2 g22
           ,CAddCtx (Fresh g) s1 g2 g21
           ,CAddCtx (Fresh g) s2 g2 g22
           ,CMerge g1 g2 g
           ,KnownCtx g)
-       => LExp dom g1 (s1 ⊕ s2)
-       -> (Var (Fresh g) s1 -> LExp dom g21 t)
-       -> (Var (Fresh g) s2 -> LExp dom g22 t)
-       -> LExp dom g t
+       => LExp sig g1 (s1 ⊕ s2)
+       -> (Var (Fresh g) s1 -> LExp sig g21 t)
+       -> (Var (Fresh g) s2 -> LExp sig g22 t)
+       -> LExp sig g t
 caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
   where
     pfA1 :: AddCtx (Fresh g) s1 g2 g21
@@ -132,7 +132,8 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
 
 -- Linearity Monad and Comonad -------------------------------
 
-type Bang dom a = Lower (Lift dom a)
+type family Bang (dom :: Dom sig) (a :: LType sig) :: LType sig where
+  Bang dom a = Lower (Lift dom a)
 data Lin dom a where
   Lin :: Lift dom (Lower a) -> Lin dom a
 
@@ -164,15 +165,19 @@ forceL (Lin e) = force e
 suspendL :: LExp dom 'Empty (Lower a) -> Lin dom a
 suspendL = Lin . Suspend 
 
-evalL :: Domain dom => Lin dom a -> DomEffect dom (Lin dom a)
+evalL :: forall sig (dom :: Dom sig) a.
+         Monad (SigEffect sig) => Lin dom a -> SigEffect sig (Lin dom a)
 evalL (Lin e) = fmap Lin $ evalL' e where
-  evalL' :: forall dom a. Domain dom => Lift dom (Lower a) -> DomEffect dom (Lift dom (Lower a))
+  evalL' :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
+         => Lift dom (Lower a) -> SigEffect sig (Lift dom (Lower a))
   evalL' (Suspend e) = fmap Suspend $ eval e
 
-evalVal :: Domain dom => Lin dom a -> DomEffect dom (LVal dom (Lower a))
+evalVal :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
+        => Lin dom a -> SigEffect sig (LVal dom (Lower a))
 evalVal (Lin (Suspend e)) = eval' e
 
-run :: Domain dom => Lin dom a -> DomEffect dom a
+run :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
+    => Lin dom a -> SigEffect sig a
 run e = do
   VPut a <- evalVal e
   return a
