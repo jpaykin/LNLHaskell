@@ -23,17 +23,14 @@ type Dom sig = ValDom sig
 --type family DomVal (dom :: Dom sig) :: ValDom sig where -- LType sig -> * where
 --  DomVal '(exp,val) = val -- (LVal '(m, '(exp,val)))
 
-class HasExp (dom :: ValDom sig) (exp :: ExpDom sig)
+class ToExp (dom :: Dom sig) (exp :: ExpDom sig) where
+  valToExpDomain :: Proxy exp
+                 -> dom (LVal dom') s 
+                 -> exp (LExp dom') 'Empty s
 
 class Monad (SigEffect sig) => Domain (dom :: ValDom sig) (exp :: ExpDom sig) where
---  type SigExp sig :: ExpDom sig
---  type SigVal sig :: ValDom sig
 
-  valToExpDomain :: Proxy exp
-                 -> dom (LVal dom) s 
-                 -> exp (LExp dom) 'Empty s
-
-  substDomain :: AddCtx x s g g' -> LExp dom 'Empty s 
+  substDomain :: Proxy exp -> AddCtx x s g g' -> LExp dom 'Empty s 
               -> exp (LExp dom) g' t 
               -> LExp dom g t
 
@@ -104,7 +101,7 @@ data LExp :: forall sig. Dom sig -> Ctx sig -> LType sig -> * where
 -- Values -----------------------------------------------------
 
 data LVal :: forall sig. Dom sig -> LType sig -> * where
-  VDom  :: Domain dom exp 
+  VDom  :: (Domain dom exp, ToExp dom exp)
         => Proxy exp -> dom (LVal dom) s -> LVal dom s
   VUnit :: LVal dom One
   VAbs  :: AddCtx x s 'Empty g'
