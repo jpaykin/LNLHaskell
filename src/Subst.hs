@@ -22,7 +22,7 @@ subst :: AddCtx x s g g'
       -> LExp dom Empty s 
       -> LExp dom g' t 
       -> LExp dom g t
-subst pfA s (Dom p e) = substDomain p pfA s e
+subst pfA s (Dom pfIn e) = substDomain pfIn pfA s e
 
 {-
 subst pfA s e = case addRemoveEquiv pfA of Dict -> subst' pfI s e

@@ -29,7 +29,7 @@ eval e = fmap valToExp $ eval' e
 eval' :: forall sig (dom :: Dom sig) (s :: LType sig).
          Monad (SigEffect sig)
       => LExp dom 'Empty s -> SigEffect sig (LVal dom s)
-eval' (Dom p e)         = evalDomain p e
+eval' (Dom pfIn e)         = evalDomain pfIn e
 -- eval' (Abs pfA e)       = return $ VAbs pfA e
 -- eval' (App pfM e1 e2) = 
 --   case mergeEmpty pfM of {Dict -> do

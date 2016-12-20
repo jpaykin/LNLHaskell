@@ -17,31 +17,41 @@ import Context
   
 type ExpDom sig = (Ctx sig -> LType sig -> *) -> Ctx sig -> LType sig -> *
 type ValDom sig = (LType sig -> *) -> LType sig -> *
-type Dom sig = ValDom sig
+type Dom sig = [(ExpDom sig, ValDom sig)]
+
+
 --type family DomExp (dom :: Dom sig) :: ExpDom sig where -- Ctx sig -> LType sig -> * where
 --  DomExp '(exp,val) = exp -- (LExp '(m, '(exp,val)))
 --type family DomVal (dom :: Dom sig) :: ValDom sig where -- LType sig -> * where
 --  DomVal '(exp,val) = val -- (LVal '(m, '(exp,val)))
 
-class ToExp (dom :: Dom sig) (exp :: ExpDom sig) where
-  valToExpDomain :: Proxy exp
-                 -> dom (LVal dom') s 
-                 -> exp (LExp dom') 'Empty s
+--class ToExp (dom :: Dom sig) (exp :: ExpDom sig) where
+--  valToExpDomain :: Proxy exp
+--                 -> dom (LVal dom') s 
+--                 -> exp (LExp dom') 'Empty s
 
-class Monad (SigEffect sig) => Domain (dom :: ValDom sig) (exp :: ExpDom sig) where
+class Monad (SigEffect sig) 
+   => Domain i (exp :: ExpDom sig) (val :: ValDom sig) (dom :: Dom sig) where
 
-  substDomain :: Proxy exp -> AddCtx x s g g' -> LExp dom 'Empty s 
+  substDomain :: InMap i '(exp,val) dom
+              -> AddCtx x s g g' 
+              -> LExp dom 'Empty s 
               -> exp (LExp dom) g' t 
               -> LExp dom g t
 
-  evalDomain  :: Proxy exp 
-              -> exp (LExp dom) 'Empty s 
+  evalDomain  :: InMap i '(exp,val) dom
+              -> exp (LExp dom) 'Empty s
               -> SigEffect sig (LVal dom s)
+
+  valToExpDomain :: InMap i '(exp,val) dom
+                 -> val (LVal dom) s 
+                 -> exp (LExp dom) 'Empty s
+
 
 
 data LExp :: forall sig. Dom sig -> Ctx sig -> LType sig -> * where
-  Dom :: Domain dom exp
-      => Proxy exp 
+  Dom :: Domain i exp val dom
+      => InMap i '(exp,val) dom
       -> exp (LExp dom) g t 
       -> LExp dom g t
 
@@ -101,8 +111,9 @@ data LExp :: forall sig. Dom sig -> Ctx sig -> LType sig -> * where
 -- Values -----------------------------------------------------
 
 data LVal :: forall sig. Dom sig -> LType sig -> * where
-  VDom  :: (Domain dom exp, ToExp dom exp)
-        => Proxy exp -> dom (LVal dom) s -> LVal dom s
+  VDom  :: Domain i exp val dom
+        => InMap i '(exp,val) dom 
+        -> val (LVal dom) s -> LVal dom s
   VUnit :: LVal dom One
   VAbs  :: AddCtx x s 'Empty g'
         -> LExp dom g' t
@@ -116,7 +127,7 @@ data LVal :: forall sig. Dom sig -> LType sig -> * where
 
 valToExp :: forall sig (dom :: Dom sig) (t :: LType sig).
             LVal dom t -> LExp dom 'Empty t
-valToExp (VDom p v) = Dom p $ valToExpDomain p v
+valToExp (VDom pfIn v) = Dom pfIn $ valToExpDomain pfIn v
 -- valToExp VUnit           = Unit
 -- valToExp (VAbs pfAdd e)  = Abs pfAdd e
 -- valToExp (VPut a)        = Put a
@@ -124,6 +135,8 @@ valToExp (VDom p v) = Dom p $ valToExpDomain p v
 -- valToExp (VProd v1 v2)   = Prod (valToExp v1) (valToExp v2)
 -- valToExp (VInl v)        = Inl $ valToExp v
 -- valToExp (VInr v)        = Inr $ valToExp v
+
+
 
 
 -- Lift --------------------------------------------------------

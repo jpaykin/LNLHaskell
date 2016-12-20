@@ -12,20 +12,21 @@ import Data.Constraint
 
 type EffectSig = * -> *
 type TypeSig = * -> *
-type Sig = (EffectSig, TypeSig)
+type Sig = (EffectSig, [TypeSig])
 type family SigEffect (sig :: Sig) :: EffectSig where
   SigEffect '(m,_) = m
-type family SigType (sig :: Sig) :: TypeSig where
-  SigType '(_,t) = t
+type family SigType (sig :: Sig) :: [TypeSig] where
+  SigType '(_,tys) = tys
+
 
 data LType (sig :: Sig) where
+  Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
   One    :: LType sig
   Lolli  :: LType sig -> LType sig -> LType sig
   Lower  :: * -> LType sig
   Tensor :: LType sig -> LType sig -> LType sig
   With   :: LType sig -> LType sig -> LType sig
   Plus   :: LType sig -> LType sig -> LType sig
-  Sig    :: SigType sig (LType sig) -> LType sig
 
 type (⊸) = Lolli
 infixr 0 ⊸
@@ -45,6 +46,26 @@ data Usage sig = Used (LType sig) | Unused
 
 data Ctx  sig = Empty | N (NCtx sig)
 data NCtx sig = End (LType sig) | Cons (Usage sig) (NCtx sig)
+
+-- In Lists ------------------------------------------------------
+
+data InMap (i :: Nat) (x :: a) (xs :: [a]) where
+  InZ :: InMap 'Z a (a ': as)
+  InS :: InMap i a as -> InMap ('S i) a (b ': as)
+
+data InList (x :: a) (xs :: [a]) where
+  InList :: InMap i x xs -> InList x xs
+
+class CInList (i :: Nat) (x :: a) (xs :: [a]) where
+  pfInList :: InMap i x xs
+instance CInList 'Z a (a ': as) where
+  pfInList = InZ
+instance CInList i a as => CInList ('S i) a (b ': as) where
+  pfInList = InS pfInList
+
+compareInList :: InMap i1 x1 ls -> InMap i2 x2 ls 
+              -> Maybe (Dict( '(i1,x1) ~ '(i2,x2) ))
+compareInList = undefined
 
 
 -- Singleton types for contexts -----------------------------------
@@ -130,6 +151,7 @@ data Nat = Z | S Nat deriving (Eq, Ord)
 data SIdent :: Nat -> * where
   SZ :: SIdent 'Z
   SS :: SIdent x -> SIdent ('S x)
+
 
 instance Num Nat where
   Z   + n   = n
