@@ -31,25 +31,9 @@ data ArraySig :: TypeSig where
   ArraySig :: * -> ArraySig ty
 
 
-data ArrayLVal (val :: LType sig -> *) :: LType sig -> * where
-  VArr    :: forall sig (val :: LType sig -> *) a. 
-             HasArraySig sig => LArray sig a -> ArrayLVal val (Array sig a)
 
-type ArrayDomain sig = (ArrayLVal :: Dom sig)  
+-- Array type family -----------------------------------------------
 
--- Has Array type -----------------------------------------------
-
---class HasArrayType' flag sig where
---  type ArrayType sig flag (a :: *) = (r :: SigType sig (LType sig)) | r -> a 
-class HasArrayType sig where
-  pfHasArray :: Dict (HasArray sig ~ 'True)
-
---type family HasArray sig where
---  HasArray '(IO,ArraySig) = 'True
---  HasArray _ = 'False
---type family If (b :: Bool) a1 a2 where
---  If 'True  a1 a2 = a1
---  If 'False a1 a2 = a2
 type family Array sig a = (r :: LType sig) | r -> a where
   Array '(IO,ArraySig) a = 'Sig ('ArraySig a)
 --  Array '(m,sig1 :+: sig2) a = 
@@ -59,44 +43,46 @@ type family Array sig a = (r :: LType sig) | r -> a where
   Array '(m,sig1 :+: sig2) a = 'Sig ('AndTy2 (Array '(m,sig2) a))
 
 
+-- Array Effect ----------------------------------------------------
 
--- instance HasArrayType' 0 sig => HasArrayType sig where
---   type Array sig a = 'Sig (ArrayType sig 0 a)
+type family LArray m a = r | r -> a where
+  LArray IO a          = ArrayIO.IOArray Int a
+type family LArray' sig a where
+  LArray' sig a = LArray (SigEffect sig) a
 
--- instance HasArrayType' flag '(IO,ArraySig) where
---   type ArrayType '(IO,ArraySig) _ a = 'ArraySig a
+class Monad m => HasArrayEffect m where
+  newArray       :: Int -> a -> m (LArray m a)
+  readArray      :: LArray m a -> Int -> m a
+  writeArray     :: LArray m a -> Int -> a -> m ()
+  deallocArray   :: LArray m a -> m ()
 
--- instance HasArrayType' 0 '(m,sig1) => HasArrayType' 1 '(m, sig1 :+: sig2) where
---   type ArrayType '(m, sig1 :+: sig2) 1 a = 'AndTy1 (ArrayType '(m,sig1) 0 a)
-
--- instance HasArrayType' 0 '(m,sig2) => HasArrayType' 2 '(m, sig1 :+: sig2) where
---   type ArrayType '(m, sig1 :+: sig2) 2 a = 'AndTy2 (ArrayType '(m,sig2) 0 a)
-
--- instance HasArrayType' 1 sig => HasArrayType' 0 sig where
---   type ArrayType sig 0 a = ArrayType sig 1 a
--- instance HasArrayType' 2 sig => HasArrayType' 0 sig where
---   type ArrayType sig 0 a = ArrayType sig 2 a
-
-
--- Has Array Signature ------------------------------------------
-
-class Monad (SigEffect sig) => HasArraySig sig where
-  type LArray sig (a :: *) = (r :: *) | r -> a
-
-  newArray       :: Int -> a -> SigEffect sig (LArray sig a)
-  readArray      :: LArray sig a -> Int -> SigEffect sig a
-  writeArray     :: LArray sig a -> Int -> a -> SigEffect sig ()
-  deallocArray   :: LArray sig a -> SigEffect sig ()
-
-
-instance HasArraySig '(IO,ArraySig) where
-  type LArray '(IO,ArraySig) a = ArrayIO.IOArray Int a
-
+instance HasArrayEffect IO where
   newArray n     =  ArrayIO.newArray (0,n)
   readArray      =  ArrayIO.readArray
   writeArray     =  ArrayIO.writeArray
   deallocArray m =  return ()
-  
+
+class HasArrayEffect (SigEffect sig) => HasArraySig sig  
+
+instance HasArraySig '(IO,ty)
+
+
+
+-- Has Array Domain ------------------------------------------
+
+data ArrayLVal (val :: LType sig -> *) :: LType sig -> * where
+  VArr    :: forall sig (val :: LType sig -> *) a. 
+             HasArraySig sig => LArray' sig a -> ArrayLVal val (Array sig a)
+
+type ArrayDomain sig = (ArrayLVal :: Dom sig)  
+
+
+class HasArraySig sig => HasArrayDom (dom :: Dom sig) where
+  varray  :: LArray' sig a -> LVal dom (Array sig a)
+
+instance HasArraySig sig => HasArrayDom (ArrayDomain sig) where
+  varray arr  = VDom (Proxy :: Proxy ArrayLExp) $ VArr arr
+
 
 --- Expressions -------------------------------------------
 data ArrayLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * where
@@ -109,7 +95,7 @@ data ArrayLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * w
   Write   :: forall sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
              Int -> exp g (Array sig a) -> a -> ArrayLExp exp g (Array sig a)
   Arr     :: forall sig a (exp :: Ctx sig -> LType sig -> *).
-             LArray sig a -> ArrayLExp exp Empty (Array sig a)
+             LArray' sig a -> ArrayLExp exp Empty (Array sig a)
 
 
 
@@ -119,9 +105,8 @@ class HasArraySig sig => HasArrays (dom :: Dom sig) where
   dealloc :: forall g a. LExp dom g (Array sig a) -> LExp dom g One
   read    :: Int -> LExp dom g (Array sig a) -> LExp dom g (Array sig a ⊗ Lower a)
   write   :: Int -> LExp dom g (Array sig a) -> a -> LExp dom g (Array sig a)
-  array   :: LArray sig a -> LExp dom 'Empty (Array sig a)
+  array   :: LArray' sig a -> LExp dom 'Empty (Array sig a)
   
-  varray  :: LArray sig a -> LVal dom (Array sig a)
   
 
 
@@ -134,7 +119,6 @@ instance HasArraySig sig
   write i e a = Dom (Proxy :: Proxy ArrayLExp) $ Write i e a
   array arr   = Dom (Proxy :: Proxy ArrayLExp) $ Arr arr
 
-  varray arr  = VDom (Proxy :: Proxy ArrayLExp) $ VArr arr
 
 instance HasArraySig sig => ToExp (ArrayDomain sig) ArrayLExp where
   valToExpDomain _ (VArr arr) = Arr arr
@@ -146,15 +130,15 @@ instance HasArraySig sig => Domain (ArrayDomain sig) ArrayLExp where
   substDomain _ pfA s (Write i e a) = write   i (subst pfA s e) a
 
   evalDomain _ (Alloc n a) = do
-    arr <- newArray @sig n a
+    arr <- newArray @(SigEffect sig) n a
     return $ varray arr
   evalDomain _ (Dealloc e) = do
     VDom _ (VArr arr) <- eval' e
-    deallocArray @sig arr
+    deallocArray @(SigEffect sig) arr
     return VUnit
   -- evalDomain _ (Read i e) = do
   --   VDom _ (VArr arr) <- eval' e
-  --   a <- readArray @sig arr i
+  --   a <- readArray @(SigEffect sig) arr i
   --   return $ varray arr `VPair` VPut a
   -- evalDomain _ (Write i e a) = do
   --   VDom _ (VArr arr) <- eval' e
