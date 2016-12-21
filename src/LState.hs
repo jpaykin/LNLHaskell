@@ -10,6 +10,7 @@ module LState where
  
 import Data.Kind
 import Data.Proxy
+import Data.Constraint
 
 import Types
 import Classes
@@ -17,83 +18,68 @@ import Lang
 import Subst
 import Eval
 import Interface
-import Domain
 
 -- Signature
 data LStateSig ty where
   LStateSig :: ty -> ty -> LStateSig ty
 
-class Monad (SigEffect sig) => HasLStateSig sig where
-  type LState (s :: LType sig) (t :: LType sig) = (r :: LType sig) | r -> s t
-
-instance Monad m => HasLStateSig '(m,LStateSig) where
-  type LState s t = 'Sig ('LStateSig s t)
+type family LState sig (s :: LType sig) (t :: LType sig) :: LType sig where
+  LState sig s t = 'Sig (IsInList LStateSig (SigType sig)) ('LStateSig s t)
 
 data LStateLVal (val :: LType sig -> *) :: LType sig -> * where
   VState :: forall sig (val :: LType sig -> *) s t.
-            HasLStateSig sig 
-         => val (s ⊸ s ⊗ t) -> LStateLVal val (LState s t)
-type LStateDom sig = (LStateLVal :: Dom sig)
-
-
-class HasLStateSig sig => HasLStateDom (dom :: Dom sig) where
-  vstate :: LVal dom (s ⊸ s ⊗ t) -> LVal dom (LState s t)
-
-instance HasLStateSig sig => HasLStateDom (LStateDom sig) where
-  vstate v = VDom (Proxy :: Proxy LStateLExp) $ VState v
-
-
--- Domain specification
+            val (s ⊸ s ⊗ t) -> LStateLVal val (LState sig s t)
 
 data LStateLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * where
-  LState :: exp g (s ⊸ s ⊗ t) -> LStateLExp exp g (LState s t)
-  ApplyLState :: exp g (LState s t) -> LStateLExp exp g (s ⊸ s ⊗ t)
+  LState :: exp g (s ⊸ s ⊗ t) -> LStateLExp exp g (LState sig s t)
+  ApplyLState :: exp g (LState sig s t) -> LStateLExp exp g (s ⊸ s ⊗ t)
 
+type LStateDom = '(LStateLExp, LStateLVal)
+----------------------------------------------------------
 
-class HasLStateSig sig => HasLState (dom :: Dom sig) (exp :: ExpDom sig) where
-  lstate :: LExp dom g (s ⊸ s ⊗ t) -> LExp dom g (LState s t)
-  applyLState :: CMerge g1 g2 g
-              => LExp dom g1 (LState s t)
-              -> LExp dom g2 s
-              -> LExp dom g (s ⊗ t)
-instance HasLStateDom dom => HasLState dom LStateLExp where
-  lstate e = Dom Proxy $ LState e
-  applyLState e1 e2 = (Dom Proxy $ ApplyLState e1) `app` e2
+class (Monad (SigEffect sig), CInList i '(LStateLExp, LStateLVal) (dom :: Dom sig)) 
+   => HasLState i (dom  :: Dom sig)
+instance (Monad (SigEffect sig), CInList i '(LStateLExp, LStateLVal) dom) 
+      => HasLState i (dom :: Dom sig)
 
+lstate :: forall i sig (dom :: Dom sig) g s t.
+          HasLState i dom 
+       => LExp dom g (s ⊸ s ⊗ t) -> LExp dom g (LState sig s t)
+lstate = Dom (pfInList @_ @i @'(LStateLExp, LStateLVal)) . LState
 
-instance HasLStateDom dom => Domain dom LStateLExp where
-  substDomain _ pfA s (LState e) = Dom Proxy $ LState $ subst pfA s e
-  evalDomain  _ (LState e) = fmap vstate $ eval' e
-  evalDomain  _ (ApplyLState e) = undefined
+applyLState :: forall i sig (dom :: Dom sig) g s t.
+               HasLState i dom
+            => LExp dom g (LState sig s t)
+            -> LExp dom g (s ⊸ s ⊗ t)
+applyLState e = 
+  Dom (pfInList @_ @i @'(LStateLExp, LStateLVal)) $ ApplyLState e
 
+vstate :: forall i sig (dom :: Dom sig) g s t.
+          HasLState i dom
+       => LVal dom (s ⊸ s ⊗ t) -> LVal dom (LState sig s t)
+vstate = VDom (pfInList @_ @i @'(LStateLExp, LStateLVal)) . VState
 
-instance HasLStateSig sig => ToExp (LStateDom sig) LStateLExp where
+lValToLState :: forall i sig (dom :: Dom sig) s t.
+                HasLState i dom
+             => LVal dom (LState sig s t) -> LStateLVal (LVal dom) (LState sig s t)
+lValToLState (VDom pfInList' v) = 
+  case compareInList (pfInList @_ @i @'(LStateLExp,LStateLVal)) pfInList' of
+    Nothing   -> error "Value of type LState not derived from the LState domain"
+    Just Dict -> v
+
+instance HasLState i dom
+      => Domain i LStateLExp LStateLVal (dom :: Dom sig) where
+
   valToExpDomain _ (VState v) = LState $ valToExp v
 
+  substDomain _ pfA s (LState e) = lstate @i $ subst pfA s e
+  substDomain _ pfA s (ApplyLState e) = applyLState @i $ subst pfA s e
 
-{-
-
-
-
-
-lstate :: LExp (LStateDomain m) g (s ⊸ s ⊗ t) -> LExp (LStateDomain m) g (LState s t)
-lstate e = Dom $ LState e
-
-appLState :: CMerge g1 g2 g => LExp (LStateDomain m) g1 (LState s t)
-          -> LExp (LStateDomain m) g2 s
-          -> LExp (LStateDomain m) g (s ⊗ t)
-appLState e1 e2 = Dom (ApplyLState e1) `app` e2
-
-instance Monad m => Domain (LStateDomain m) where
-  toExpDomain (VState v) = LState $ valToExp v
-
-  substDomain pfA s (LState e) = lstate $ subst pfA s e
-  substDomain pfA s (ApplyLState e) = Dom $ ApplyLState $ subst pfA s e
-
-  evalDomain (LState e) = do
+  evalDomain _ (LState e) = do
     v <- eval' e
-    return . VDom $ VState v
-  evalDomain (ApplyLState e) = do
-    VDom (VState v) <- eval' e
+    return $ vstate @i v
+  evalDomain _ (ApplyLState e) = do
+    VState v <- fmap (lValToLState @i) $ eval' e
     return v
--}
+
+

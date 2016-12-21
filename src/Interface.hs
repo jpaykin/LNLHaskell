@@ -182,3 +182,55 @@ run e = do
   VPut a <- evalVal e
   return a
 
+-- Monads in the linear fragment ----------------------------------
+
+class LFunctor (f :: LType sig -> LType sig) where
+  lfmap :: LExp dom 'Empty ((s ⊸ t) ⊸ f s ⊸ f t)
+class LFunctor f => LApplicative (f :: LType sig -> LType sig) where
+  lpure :: LExp dom 'Empty (s ⊸ f s)
+  llift :: LExp dom 'Empty (f(s ⊸ t) ⊸ f s ⊸ f t)
+class LApplicative m => LMonad (m :: LType sig -> LType sig) where
+  lbind :: LExp dom 'Empty ( m s ⊸ (s ⊸ m t) ⊸ m t)
+
+lowerT :: (a -> b) -> LExp dom 'Empty (Lower a ⊸ Lower b)
+lowerT f = λ $ \x -> 
+  var x >! \ a ->
+  put $ f a
+
+liftT :: LExp dom 'Empty (s ⊸ t) -> Lift dom s -> Lift dom t
+liftT f e = Suspend $ f `app` force e
+
+data LinT dom (f :: LType sig -> LType sig) a where
+  LinT :: Lift dom (f (Lower a)) -> LinT dom f a
+
+forceT :: LinT dom f a -> LExp dom 'Empty (f (Lower a))
+forceT (LinT e) = force e
+
+instance LFunctor f => Functor (LinT dom f) where
+  fmap :: (a -> b) -> LinT dom f a -> LinT dom f b
+  fmap f (LinT e) = LinT . Suspend $ lfmap `app` lowerT f `app` force e
+
+instance LApplicative f => Applicative (LinT dom f) where
+  pure :: a -> LinT dom f a
+  pure a = LinT . Suspend $ lpure `app` put a
+
+  (<*>) :: LinT dom f (a -> b) -> LinT dom f a -> LinT dom f b
+  LinT f <*> LinT a = LinT . Suspend $ 
+    llift `app` (lfmap `app` lowerT' `app` force f) `app` force a
+    where
+      lowerT' :: LExp dom 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
+      lowerT' = λ $ \gl ->
+                  var gl >! \g ->
+                  lowerT g
+
+instance LMonad m => Monad (LinT dom m) where
+  (>>=) :: forall dom a b. 
+           LinT dom m a -> (a -> LinT dom m b) -> LinT dom m b
+  LinT ma >>= f = LinT . Suspend $ lbind `app` force ma `app` f'
+    where
+      f' :: LExp dom 'Empty (Lower a ⊸ m (Lower b))
+      f' = λ $ \la ->
+        var la >! \a ->
+        forceT $ f a
+    
+    

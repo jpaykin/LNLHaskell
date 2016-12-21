@@ -30,6 +30,9 @@ type Dom sig = [(ExpDom sig, ValDom sig)]
 --                 -> dom (LVal dom') s 
 --                 -> exp (LExp dom') 'Empty s
 
+class WellScopedDom sig (dom :: Dom sig)
+instance WellScopedDom sig (dom :: Dom sig)
+
 class Monad (SigEffect sig) 
    => Domain i (exp :: ExpDom sig) (val :: ValDom sig) (dom :: Dom sig) where
 

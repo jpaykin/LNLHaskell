@@ -38,14 +38,9 @@ instance CInList i ArraySig sig => HasArrayType i ArraySig sig where
   type Array' ArraySig a = 'Sig PfInSig ('ArraySig a)
 -}
 
-type Array sig a = 'Sig (ArrayInList (SigType sig)) ('ArraySig a :: ArraySig (LType sig))
+type Array sig a = 'Sig (IsInList ArraySig (SigType sig)) 
+                        ('ArraySig a :: ArraySig (LType sig))
 
-type family ArrayInList ty :: InList ArraySig ty where
-  ArrayInList (ArraySig ': _) = 'InList 'InZ
-  ArrayInList (_ ': ty)       = InListCons (ArrayInList ty)
-
-type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
-  InListCons ('InList pfM) = 'InList ('InS pfM)
 
 -- Array type family -----------------------------------------------
 {-
@@ -80,13 +75,14 @@ instance HasArrayEffect IO where
   deallocArray m =  return ()
 
 class HasArrayEffect (SigEffect sig) => HasArraySig sig  
+instance HasArrayEffect (SigEffect sig) => HasArraySig sig
 
 
 -- Has Array Domain ------------------------------------------
 
 data ArrayLVal (val :: LType sig -> *) :: LType sig -> * where
   VArr    :: forall sig (val :: LType sig -> *) a. 
-             HasArraySig sig => LArray' sig a -> ArrayLVal val (Array sig a)
+             LArray' sig a -> ArrayLVal val (Array sig a)
 
 {-
 
@@ -110,20 +106,24 @@ data ArrayLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * w
   Arr     :: forall sig a (exp :: Ctx sig -> LType sig -> *).
              LArray' sig a -> ArrayLExp exp Empty (Array sig a)
 
+type ArrayDom = '(ArrayLExp,ArrayLVal)
 
 class HasArraySig sig => HasArrayDom sig (dom :: Dom sig)
+instance HasArraySig sig => HasArrayDom sig (dom :: Dom sig)
 
 class (CInList i '(ArrayLExp, ArrayLVal) dom, HasArrayDom sig dom)
    => HasArrays i (dom :: Dom sig) where
-  arrayInDom :: InMap i '(ArrayLExp,ArrayLVal) dom
 
-instance (HasArrayDom sig dom, CInList i '(ArrayLExp, ArrayLVal) dom)
+instance (HasArrayDom sig dom, CInList i ArrayDom dom)
    => HasArrays i dom where
-  arrayInDom = pfInList 
 
 fromArrayLExp :: forall i sig (dom :: Dom sig) g t.
                  HasArrays i dom => ArrayLExp (LExp dom) g t -> LExp dom g t
-fromArrayLExp = Dom (arrayInDom @i) 
+fromArrayLExp = Dom $ pfInList @_ @i @ArrayDom
+
+fromArrayLVal :: forall i sig (dom :: Dom sig) g t.
+                 HasArrays i dom => ArrayLVal (LVal dom) t -> LVal dom t
+fromArrayLVal = VDom $ pfInList @_ @i @ArrayDom
 
 -- As long as the HasArrays instance is the only source of Array values, 
 -- this function is total.
@@ -131,7 +131,7 @@ lValToArray :: forall i sig (dom :: Dom sig) a.
                HasArrays i dom
             => LVal dom (Array sig a) -> ArrayLVal (LVal dom) (Array sig a)
 lValToArray (VDom pfInList' v) = 
-  case compareInList (pfInList @_ @i @'(ArrayLExp,ArrayLVal)) pfInList' of
+  case compareInList (pfInList @_ @i @ArrayDom) pfInList' of
     Nothing   -> error "Value of type Array a not derived from Arrays class"
     Just Dict -> v
 --lValToArray _ = error "Value of type Array a not derived from Arrays class"
@@ -139,7 +139,7 @@ lValToArray (VDom pfInList' v) =
 alloc :: forall i sig (dom :: Dom sig) a.
          HasArrays i dom
       => Int -> a -> LExp dom 'Empty (Array sig a)
-alloc n a = Dom (arrayInDom @i) $ Alloc n a
+alloc n a = fromArrayLExp @i $ Alloc n a
 
 dealloc :: forall i sig (dom :: Dom sig) g a.
            HasArrays i dom
@@ -164,7 +164,7 @@ array = fromArrayLExp @i . Arr
 varray :: forall i sig (dom :: Dom sig) g a.
         HasArrays i dom
      => LArray' sig a -> LVal dom (Array sig a)
-varray = VDom (arrayInDom @i) . VArr
+varray = fromArrayLVal @i . VArr
 
 
 instance HasArrays i dom
@@ -243,11 +243,11 @@ toFromList ls = suspendL $
   where
     len = length ls
 
-type MyArraySig = ( '(IO, '[ ArraySig ]) :: Sig )
-instance HasArraySig MyArraySig
 
-type MyArrayDomain = ( '[ '(ArrayLExp,ArrayLVal) ] :: Dom MyArraySig )
-instance HasArrayDom MyArraySig MyArrayDomain
+
+type MyArraySig = ( '(IO, '[ ArraySig ]) :: Sig )
+
+type MyArrayDomain = ( '[ ArrayDom ] :: Dom MyArraySig )
 
 main :: Lin MyArrayDomain [Int]
 main = toFromList @'Z [1,2,3]

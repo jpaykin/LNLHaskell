@@ -67,6 +67,13 @@ compareInList :: InMap i1 x1 ls -> InMap i2 x2 ls
               -> Maybe (Dict( '(i1,x1) ~ '(i2,x2) ))
 compareInList = undefined
 
+type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
+  IsInList ty (ty ': _)  = 'InList 'InZ
+  IsInList ty (_  ': ls) = InListCons (IsInList ty ls)
+
+type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
+  InListCons ('InList pfM) = 'InList ('InS pfM)
+
 
 -- Singleton types for contexts -----------------------------------
 
