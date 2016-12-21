@@ -21,15 +21,18 @@ type family SigType (sig :: Sig) :: [TypeSig] where
 
 data LType (sig :: Sig) where
   Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
-  One    :: LType sig
   Lolli  :: LType sig -> LType sig -> LType sig
+
+type (⊸) = Lolli
+infixr 0 ⊸
+
+{-
+  One    :: LType sig
   Lower  :: * -> LType sig
   Tensor :: LType sig -> LType sig -> LType sig
   With   :: LType sig -> LType sig -> LType sig
   Plus   :: LType sig -> LType sig -> LType sig
 
-type (⊸) = Lolli
-infixr 0 ⊸
 
 type (⊗) = Tensor
 infixr 3 ⊗
@@ -39,7 +42,7 @@ infixr 3 &
 
 type (⊕) = Plus
 infixr 3 ⊕
-
+-}
 
 type Ident = Nat
 data Usage sig = Used (LType sig) | Unused
@@ -56,15 +59,21 @@ data InMap (i :: Nat) (x :: a) (xs :: [a]) where
 data InList (x :: a) (xs :: [a]) where
   InList :: InMap i x xs -> InList x xs
 
-class CInList (i :: Nat) (x :: a) (xs :: [a]) where
-  pfInList :: InMap i x xs
-instance CInList 'Z a (a ': as) where
-  pfInList = InZ
-instance CInList i a as => CInList ('S i) a (b ': as) where
-  pfInList = InS pfInList
+class MapsTo (i :: Nat) (x :: a) (xs :: [a]) where
+  pfInMap :: InMap i x xs
+instance MapsTo 'Z a (a ': as) where
+  pfInMap = InZ
+instance MapsTo i a as => MapsTo ('S i) a (b ': as) where
+  pfInMap = InS pfInMap
 
-compareInList :: InMap i1 x1 ls -> InMap i2 x2 ls 
-              -> Maybe (Dict( '(i1,x1) ~ '(i2,x2) ))
+class CInList (x :: a) (xs :: [a]) where
+  pfInList :: InList x xs
+
+class CInSig (ty :: TypeSig) (sig :: Sig) where
+  type PfInList :: InList ty (SigType sig)
+
+compareInList :: InList x1 ls -> InList x2 ls 
+              -> Maybe (Dict( x1 ~ x2 ))
 compareInList = undefined
 
 type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
@@ -73,6 +82,9 @@ type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
 
 type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
   InListCons ('InList pfM) = 'InList ('InS pfM)
+
+type family Sig' (ty :: TypeSig) (tys :: [TypeSig]) :: ty (LType '(m,tys)) -> LType '(m,tys) where
+  Sig' ty tys = 'Sig (IsInList ty tys)
 
 
 -- Singleton types for contexts -----------------------------------

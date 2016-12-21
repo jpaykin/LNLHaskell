@@ -403,6 +403,11 @@ mergeInSplit (MergeN pfM) (In pfI) =
     Left  pfI1 -> Left  $ In pfI1
     Right pfI2 -> Right $ In pfI2
 
+mergeAddSplit :: Merge g1 g2 g -> AddCtx x s g' g 
+              -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 g') 
+                        (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) g')
+mergeAddSplit = undefined
+
 mergeNIn1 :: MergeN g1 g2 g3 -> InN x s g1
           -> Merge (RemoveN x g1) ('N g2) (RemoveN x g3)
 mergeNIn1 (MergeEndL g)          InEnd            = MergeEL $ SCons SUnused g

@@ -178,10 +178,10 @@ instance CMergeU ('Used s) 'Unused ('Used s) where
 instance CMergeU 'Unused ('Used s) ('Used s) where
   mergeU = MergeUR
 
-class CMerge g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1 where
+class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1 where
   merge :: Merge g1 g2 g3
 
-instance (CMergeForward g1 g2 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 where
+instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 where
   merge = divMerge div
 
 class CMergeForward g1 g2 g3 | g1 g2 -> g3 where
