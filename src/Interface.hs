@@ -3,7 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables, FlexibleContexts,
-             EmptyCase, RankNTypes
+             EmptyCase, RankNTypes, TypeFamilyDependencies
 #-}
 
 module Interface where
@@ -78,81 +78,6 @@ data LolliLVal :: ValDom sig where
   VAbs :: AddCtx x s g g'
        -> 
 -}
--- Combine signatures -----------------------
-
-{-
-data (:+:) :: TypeSig -> TypeSig -> TypeSig where
-  AddSig1 :: ty1 (LType '(m,ty1)) -> (ty1 :+: ty2) (LType '(m, ty1 :+: ty2))
-  AddSig2 :: ty2 a -> (ty1 :+: ty2) a
-
-
-
-data Shape where
-  NoShape :: Shape
-  Shape0 :: Shape
-  Shape1 :: Shape -> Shape
-  Shape2 :: Shape -> Shape
-data SShape (sh :: Shape) where
-  SShape0 :: SShape Shape0
-  SShape1 :: SShape sh -> SShape (Shape1 sh)
-
-type family EitherShape (s1 :: Shape) (s2 :: Shape) :: Shape where
-  EitherShape 'NoShape s2 = s2
-  EitherShape s1       _  = s1
-type family LookupShape (ty :: TypeSig) (sig :: Sig) where
-  LookupShape ty '(m,ty)          = 'Shape0
-  LookupShape ty '(m,ty1 :+: ty2) = 
-    EitherShape (LookupShape ty '(m,ty1)) (LookupShape ty '(m,ty2))
-  LookupShape ty '(m,_)           = 'NoShape
-
---type family LookupShape' (t :: ty (LType sig)) :: SigType sig (LType sig) 
---type instance LookupShape' ('AddSig1 
-type family FromSingShape (s :: SShape sh) :: Shape where
-  FromSingShape 'SShape0 = 'Shape0
-  FromSingShape ('SShape1 s) = 'Shape1 (FromSingShape s)
-
-
-data SSig m (ty :: TypeSig) (sig :: Sig) where
-  SSig0 :: SSig m ty '(m,ty)
-  SSig1 :: SSig m ty '(m,ty1) -> SSig m ty '(m,ty1 :+: ty2)
-  SSig2 :: SSig m ty '(m,ty2) -> SSig m ty '(m,ty1 :+: ty2)
-
-type family FromSSig (pf :: SSig m ty sig) :: Sig where
-  FromSSig 'SSig0 = '(m,ty)
-
-class InSig (ty :: TypeSig) (sig :: Sig) where
-  type Inj (t :: ty (LType sig)) :: SigType sig (LType sig)
-
-class InSig' (ty :: TypeSig) (sig :: Sig) where
-  type SingSig :: SSig ty sig
-  type Inj' sig (t :: ty (LType sig)) :: SigType sig (LType sig)
-
-instance InSig' (LookupShape ty sig) ty sig => InSig ty sig where
-  type Inj t = Inj' (FromSingShape SingShape) t
-
-instance InSig' Shape0 ty '(m,ty) where
-  type SingShape = SShape0
-  type Inj' Shape0 t = t
-instance InSig' sh ty '(m,sig1) => InSig' (Shape1 sh) ty '(m,sig1 :+: sig2) where
-  type SingShape = SShape1 SingShape
-  type Inj' (Shape1 sh) t = 'AddSig1 (Inj' sh t)
--}
-{-
-instance InSig' 0 ty '(m,ty) where
-  type Inj' 0 t = t
-instance InSig ty '(m,ty1) => InSig' 1 ty '(m, ty1 :+: ty2) where
-  type Inj' 1 t = 'AddSig1 (Inj t)
--}
-
---instance InSig 0 ty '(m,ty) where
---  type Inj t = t
---instance InSig 0 ty '(m,ty1) => InSig 1 ty '(m,ty1 :+: ty2) where
---  type Inj t = 'AddSig1 t
--- instance InSig 1 ty '(m,ty1) => InSig 1 ty '(m,ty1 :+: ty2)
--- instance InSig 2 ty '(m,ty1) => InSig 1 ty '(m,ty1 :+: ty2)
--- instance InSig 0 ty '(m,ty2) => InSig 2 ty '(m,ty1 :+: ty2)
--- instance InSig 1 ty '(m,ty2) => InSig 2 ty '(m,ty1 :+: ty2)
--- instance InSig 2 ty '(m,ty2) => InSig 2 ty '(m,ty1 :+: ty2)
 
 
 -- One ---------------------------------------
@@ -217,14 +142,16 @@ instance (HasOneSig sig, InDom sig OneExp OneVal dom) => Domain OneExp OneVal do
 
 data TensorSig ty = TensorSig ty ty
 class HasTensorSig sig where
-  type (⊗) (s :: LType sig) (t :: LType sig) :: LType sig
+  type family (⊗) (s :: LType sig) (t :: LType sig) = (r :: LType sig) | r -> s t
 
 data TensorExp :: forall sig. ExpDom sig where
   Pair :: forall sig (exp :: Ctx sig -> LType sig -> *) g1 g2 g t1 t2.
           HasTensorSig sig => Merge g1 g2 g
        -> exp g1 t1 -> exp g2 t2 -> TensorExp exp g (t1 ⊗ t2)
-  LetPair :: forall sig (exp :: Ctx sig -> LType sig -> *) g1 g2 g2' g2'' g x1 x2 s1 s2 t.
-             HasTensorSig sig => Merge g1 g2'' g -> AddCtx x1 s1 g2'' g2' -> AddCtx x2 s2 g2' g2
+  LetPair :: forall sig (exp :: Ctx sig -> LType sig -> *) 
+                    g1 g2 g2' g2'' g x1 x2 s1 s2 t.
+             HasTensorSig sig 
+          => Merge g1 g2'' g -> AddCtx x1 s1 g2'' g2' -> AddCtx x2 s2 g2' g2
           -> exp g1 (s1 ⊗ s2) -> exp g2 t -> TensorExp exp g t
 data TensorVal :: forall sig. ValDom sig where
   VPair :: forall sig (val :: LType sig -> *) t1 t2.
@@ -265,22 +192,91 @@ vpair :: (HasTensorSig sig, InDom sig TensorExp TensorVal dom)
 vpair v1 v2 = VDom proxyTensor $ VPair v1 v2
 
 
+
 instance (HasTensorSig sig, InDom sig TensorExp TensorVal dom)
       => Domain TensorExp TensorVal dom where
-  substDomain = undefined
-  evalDomain = undefined
-  valToExpDomain = undefined
+  substDomain proxy pfA s (Pair pfM e1 e2) = 
+    case mergeAddSplit pfM pfA of
+      Left  (pfA1,pfM1) -> Dom proxy $ Pair pfM1 (subst pfA1 s e1) e2
+      Right (pfA2,pfM2) -> Dom proxy $ Pair pfM2 e1 (subst pfA2 s e2)
+  substDomain proxy pfA s (LetPair pfM pfA1 pfA2 e e') = undefined
 
-newtype Id a = Id a
+  evalDomain _ (Pair pfM e1 e2) = 
+    case mergeEmpty pfM of {Dict -> do
+      v1 <- eval' e1
+      v2 <- eval' e2
+      return $ vpair v1 v2
+    }
+  evalDomain proxy (LetPair pfM pfA1 pfA2 e e') = -- TODO: fix injectivity problem
+    case mergeEmpty pfM of {Dict -> do
+      Just (VPair v1 v2) <- fmap (fromLVal proxy) $ eval' e
+      undefined
+--      eval' $ subst pfA1 (valToExp v1) $ subst pfA2 (valToExp v2) e'
+    }
+
+  valToExpDomain _ (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
+
+-- Lower -------------------------------------------------------
+
+data LowerSig ty where
+  LowerSig :: * -> LowerSig ty
+class HasLowerSig sig where
+  type Lower :: * -> LType sig
+
+data LowerExp :: forall sig. ExpDom sig where
+  Put :: a -> LowerExp exp 'Empty (Lower a)
+  LetBang :: Merge g1 g2 g
+          -> exp g1 (Lower a)
+          -> (a -> exp g2 t)
+          -> LowerExp exp g t
+data LowerVal :: forall sig. ValDom sig where
+  VPut :: a -> LowerVal val (Lower a)
+
+proxyLower :: (Proxy LowerExp, Proxy LowerVal)
+proxyLower = (Proxy,Proxy)
+
+put :: InDom sig LowerExp LowerVal dom
+    => a -> LExp dom 'Empty (Lower a)
+put a = Dom proxyLower $ Put a
+
+(>!) :: (InDom sig LowerExp LowerVal dom, CMerge g1 g2 g)
+     => LExp dom g1 (Lower a)
+     -> (a -> LExp dom g2 t)
+     -> LExp dom g t
+e >! f = Dom proxyLower $ LetBang merge e f
+
+vput :: InDom sig LowerExp LowerVal dom
+     => a -> LVal dom (Lower a)
+vput a = VDom proxyLower $ VPut a
+
+instance InDom sig LowerExp LowerVal dom 
+      => Domain LowerExp LowerVal dom where
+  substDomain _ pfA s (LetBang pfM e f) =
+    case mergeAddSplit pfM pfA of
+      Left  (pfA1,pfM1) -> Dom proxyLower $ LetBang pfM1 (subst pfA1 s e) f
+      Right (pfA2,pfM2) -> Dom proxyLower $ LetBang pfM2 e f'
+        where
+          f' x = subst pfA2 s (f x)
+
+  evalDomain _ (Put a) = return $ vput a
+  evalDomain _ (LetBang pfM e f) = 
+    case mergeEmpty pfM of {Dict -> do
+      Just (VPut a) <- fmap (fromLVal proxyLower) $ eval' e
+      eval' $ f a
+    }
+
+  valToExpDomain _ (VPut a) = Put a
 
 -- concrete examples
+
 
 type MultiplicativeProductSig = '[ OneSig, TensorSig ]
 instance HasOneSig '(m,MultiplicativeProductSig) where
   type One = Sig' OneSig MultiplicativeProductSig 'OneSig
-instance HasTensorSig '(m,MultiplicativeProductSig) where
+instance Monad m => HasTensorSig '(m,MultiplicativeProductSig) where
   type s ⊗ t = Sig' TensorSig MultiplicativeProductSig ('TensorSig s t)
 
+--type MELL
 
 {-
 

@@ -83,8 +83,8 @@ type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
 type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
   InListCons ('InList pfM) = 'InList ('InS pfM)
 
-type family Sig' (ty :: TypeSig) (tys :: [TypeSig]) :: ty (LType '(m,tys)) -> LType '(m,tys) where
-  Sig' ty tys = 'Sig (IsInList ty tys)
+type Sig' (ty :: TypeSig) (tys :: [TypeSig]) = ('Sig (IsInList ty tys) 
+            :: ty (LType '(m,tys)) -> LType '(m,tys))
 
 
 -- Singleton types for contexts -----------------------------------

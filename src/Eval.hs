@@ -30,14 +30,14 @@ eval' :: forall sig (dom :: Dom sig) (s :: LType sig).
          Monad (SigEffect sig)
       => LExp dom 'Empty s -> SigEffect sig (LVal dom s)
 eval' (Dom proxy e)         = evalDomain proxy e
--- eval' (Abs pfA e)       = return $ VAbs pfA e
--- eval' (App pfM e1 e2) = 
---   case mergeEmpty pfM of {Dict -> do
---     VAbs pfA e1' <- eval' e1
---     e2'          <- eval e2
---     case addRemoveEquiv pfA of {Dict -> 
---     eval' $ subst pfA e2' e1'
---   }}
+eval' (Abs pfA e)       = return $ VAbs pfA e
+eval' (App pfM e1 e2) = 
+  case mergeEmpty pfM of {Dict -> do
+    VAbs pfA e1' <- eval' e1
+    e2'          <- eval e2
+    case addRemoveEquiv pfA of {Dict -> 
+    eval' $ subst pfA e2' e1'
+  }}
 -- eval' Unit                          = return VUnit
 -- eval' (LetUnit pfM e1 e2)           = 
 --   case mergeEmpty pfM of {Dict -> do

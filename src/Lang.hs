@@ -19,22 +19,13 @@ type ExpDom sig = (Ctx sig -> LType sig -> *) -> Ctx sig -> LType sig -> *
 type ValDom sig = (LType sig -> *) -> LType sig -> *
 type Dom sig = [(ExpDom sig, ValDom sig)]
 
-
---type family DomExp (dom :: Dom sig) :: ExpDom sig where -- Ctx sig -> LType sig -> * where
---  DomExp '(exp,val) = exp -- (LExp '(m, '(exp,val)))
---type family DomVal (dom :: Dom sig) :: ValDom sig where -- LType sig -> * where
---  DomVal '(exp,val) = val -- (LVal '(m, '(exp,val)))
-
---class ToExp (dom :: Dom sig) (exp :: ExpDom sig) where
---  valToExpDomain :: Proxy exp
---                 -> dom (LVal dom') s 
---                 -> exp (LExp dom') 'Empty s
-
-class Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
+class    Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
 instance Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
 
-class (WellScopedDom sig dom, CInList '(exp,val) dom) => InDom sig exp val (dom :: Dom sig)
-instance (WellScopedDom sig dom, CInList '(exp,val) dom) => InDom sig exp val dom
+class    (WellScopedDom sig dom, CInList '(exp,val) dom) 
+      => InDom sig exp val (dom :: Dom sig)
+instance (WellScopedDom sig dom, CInList '(exp,val) dom) 
+      => InDom sig exp val dom
 
 class InDom sig exp val dom
    => Domain (exp :: ExpDom sig) (val :: ValDom sig) (dom :: Dom sig) where
