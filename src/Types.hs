@@ -68,9 +68,20 @@ instance MapsTo i a as => MapsTo ('S i) a (b ': as) where
 
 class CInList (x :: a) (xs :: [a]) where
   pfInList :: InList x xs
+instance MapsTo (GetIndex x xs) x xs => CInList x xs where
+  pfInList = InList (pfInMap @_ @(GetIndex x xs))
 
-class CInSig (ty :: TypeSig) (sig :: Sig) where
-  type PfInList :: InList ty (SigType sig)
+
+class CInSig (ty :: TypeSig) (sig :: Sig)
+instance CInSig' (GetIndex ty (SigType sig)) ty sig => CInSig ty sig
+
+class CInSig' (i :: Nat) (ty :: TypeSig) (sig :: Sig)
+instance CInSig' 'Z ty '(m,ty ': tys)
+instance CInSig' i ty '(m,tys) => CInSig' ('S i) ty '(m, ty' ': tys)
+
+type family GetIndex (x :: a) (xs :: [a]) where
+  GetIndex x (x ': _) = 'Z
+  GetIndex x (_ ': ls) = 'S (GetIndex x ls)
 
 compareInList :: InList x1 ls -> InList x2 ls 
               -> Maybe (Dict( x1 ~ x2 ))
@@ -85,6 +96,9 @@ type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
 
 type Sig' (ty :: TypeSig) (tys :: [TypeSig]) = ('Sig (IsInList ty tys) 
             :: ty (LType '(m,tys)) -> LType '(m,tys))
+
+type InSig (ty :: TypeSig) sig = 
+    (IsInList ty (SigType sig) :: InList ty (SigType sig))
 
 
 -- Singleton types for contexts -----------------------------------

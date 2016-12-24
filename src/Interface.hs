@@ -11,6 +11,7 @@ module Interface where
 import Data.Kind
 import Data.Constraint
 import Data.Proxy
+--import Control.Category
 
 import Types
 import Context
@@ -26,9 +27,6 @@ var :: Var x s -> LExp sig (Singleton x s) s
 var x = Var $ singSing x
 
 
--- DEFINING DOMAINS ---------------------------------
-
--- Abstraction and Application ----------------------
 
 λ :: forall sig s t g g'. CAddCtx (Fresh g) s g g'
   => (Var (Fresh g) s -> LExp sig g' t)
@@ -51,6 +49,18 @@ letin :: CMerge g1 g2 g
       -> LExp sig g2 (s ⊸ t)
       -> LExp sig g t
 letin e f = f `app` e
+
+-- Categories ----------------------------
+
+--newtype LArrow (dom :: Dom sig) (s :: LType sig) (t :: LType sig) = LArrow (LExp dom 'Empty (s ⊸ t))
+
+--instance Category (LArrow dom) where
+--  id    = LArrow $ λ var
+--  LArrow g . LArrow f = LArrow Prelude.. λ $ \x -> g `app` (f `app` var x)
+
+-- DEFINING DOMAINS ---------------------------------
+
+-- Abstraction and Application ----------------------
 
 
 {-
@@ -85,12 +95,11 @@ data LolliLVal :: ValDom sig where
 
 data OneSig ty where
   OneSig :: OneSig ty
-class HasOneSig sig where
-  type One :: LType sig
--- Instances need to be declared for each concrete signature
---instance CInSig OneSig sig => HasOne sig where
---  type One = 'Sig (PfInList :: InList OneSig (SigType sig)) 'OneSig
 
+type One = ('Sig (InSig OneSig sig) 'OneSig :: LType sig)
+
+class (Monad (SigEffect sig),CInSig OneSig sig) => HasOneSig sig 
+instance (Monad (SigEffect sig),CInSig OneSig sig) => HasOneSig sig 
 
 data OneExp :: forall sig. ExpDom sig where
   Unit :: forall sig (exp :: Ctx sig -> LType sig -> *).
@@ -103,12 +112,7 @@ data OneExp :: forall sig. ExpDom sig where
 data OneVal :: forall sig. ValDom sig where
   VUnit :: forall sig (val :: LType sig -> *).
            HasOneSig sig => OneVal val One
-{-
-class (WellScopedDom sig dom, HasOneSig sig, CInList '(OneExp,OneVal) dom) 
-   => HasOne sig (dom :: Dom sig)
-instance (WellScopedDom sig dom, HasOneSig sig, CInList '(OneExp,OneVal) dom) 
-      => HasOne sig dom
--}
+
 proxyOne :: (Proxy OneExp, Proxy OneVal)
 proxyOne = (Proxy,Proxy)
 
@@ -123,7 +127,8 @@ vunit :: (HasOneSig sig, InDom sig OneExp OneVal dom)
       => LVal dom One
 vunit = VDom proxyOne VUnit
 
-instance (HasOneSig sig, InDom sig OneExp OneVal dom) => Domain OneExp OneVal dom where
+instance (HasOneSig sig, InDom sig OneExp OneVal dom) 
+      => Domain OneExp OneVal dom where
   substDomain _ pfA s (LetUnit pfM e1 e2) = 
     case mergeAddSplit pfM pfA of 
       Left  (pfA1,pfM1) -> Dom proxyOne $ LetUnit pfM1 (subst pfA1 s e1) e2
@@ -141,8 +146,13 @@ instance (HasOneSig sig, InDom sig OneExp OneVal dom) => Domain OneExp OneVal do
 -- Tensor ------------------------------------------------------
 
 data TensorSig ty = TensorSig ty ty
-class HasTensorSig sig where
-  type family (⊗) (s :: LType sig) (t :: LType sig) = (r :: LType sig) | r -> s t
+
+-- I claim: this type is valid as long as `HasTensorSig sig` holds
+type (⊗) (s :: LType sig) (t :: LType sig) = 
+     'Sig (InSig TensorSig sig) ('TensorSig s t)
+
+class (Monad (SigEffect sig), CInSig TensorSig sig) => HasTensorSig sig
+instance (Monad (SigEffect sig), CInSig TensorSig sig) => HasTensorSig sig
 
 data TensorExp :: forall sig. ExpDom sig where
   Pair :: forall sig (exp :: Ctx sig -> LType sig -> *) g1 g2 g t1 t2.
@@ -199,7 +209,7 @@ instance (HasTensorSig sig, InDom sig TensorExp TensorVal dom)
     case mergeAddSplit pfM pfA of
       Left  (pfA1,pfM1) -> Dom proxy $ Pair pfM1 (subst pfA1 s e1) e2
       Right (pfA2,pfM2) -> Dom proxy $ Pair pfM2 e1 (subst pfA2 s e2)
-  substDomain proxy pfA s (LetPair pfM pfA1 pfA2 e e') = undefined
+  substDomain proxy pfA s (LetPair pfM pfA1 pfA2 e e') = undefined -- TODO
 
   evalDomain _ (Pair pfM e1 e2) = 
     case mergeEmpty pfM of {Dict -> do
@@ -207,11 +217,10 @@ instance (HasTensorSig sig, InDom sig TensorExp TensorVal dom)
       v2 <- eval' e2
       return $ vpair v1 v2
     }
-  evalDomain proxy (LetPair pfM pfA1 pfA2 e e') = -- TODO: fix injectivity problem
+  evalDomain proxy (LetPair pfM pfA1 pfA2 e e') = 
     case mergeEmpty pfM of {Dict -> do
       Just (VPair v1 v2) <- fmap (fromLVal proxy) $ eval' e
-      undefined
---      eval' $ subst pfA1 (valToExp v1) $ subst pfA2 (valToExp v2) e'
+      eval' $ subst pfA1 (valToExp v1) $ subst pfA2 (valToExp v2) e'
     }
 
   valToExpDomain _ (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
@@ -235,21 +244,21 @@ data LowerVal :: forall sig. ValDom sig where
 proxyLower :: (Proxy LowerExp, Proxy LowerVal)
 proxyLower = (Proxy,Proxy)
 
-put :: InDom sig LowerExp LowerVal dom
+put :: (HasLowerSig sig, InDom sig LowerExp LowerVal dom)
     => a -> LExp dom 'Empty (Lower a)
 put a = Dom proxyLower $ Put a
 
-(>!) :: (InDom sig LowerExp LowerVal dom, CMerge g1 g2 g)
+(>!) :: (HasLowerSig sig, InDom sig LowerExp LowerVal dom, CMerge g1 g2 g)
      => LExp dom g1 (Lower a)
      -> (a -> LExp dom g2 t)
      -> LExp dom g t
 e >! f = Dom proxyLower $ LetBang merge e f
 
-vput :: InDom sig LowerExp LowerVal dom
+vput :: (HasLowerSig sig, InDom sig LowerExp LowerVal dom)
      => a -> LVal dom (Lower a)
 vput a = VDom proxyLower $ VPut a
 
-instance InDom sig LowerExp LowerVal dom 
+instance (HasLowerSig sig, InDom sig LowerExp LowerVal dom)
       => Domain LowerExp LowerVal dom where
   substDomain _ pfA s (LetBang pfM e f) =
     case mergeAddSplit pfM pfA of
@@ -267,27 +276,159 @@ instance InDom sig LowerExp LowerVal dom
 
   valToExpDomain _ (VPut a) = Put a
 
+
+-- Additive Sums
+
+data PlusSig ty = PlusSig ty ty
+type (⊕) (s :: LType sig) (t :: LType sig) =
+    'Sig (InSig PlusSig sig) ('PlusSig s t)
+
+class (Monad (SigEffect sig), CInSig PlusSig sig) => HasPlusSig sig
+instance (Monad (SigEffect sig), CInSig PlusSig sig) => HasPlusSig sig
+
+data PlusExp :: forall sig. ExpDom sig where
+  Inl  :: forall t2 t1 exp g. exp g t1 -> PlusExp exp g (t1 ⊕ t2)
+  Inr  :: exp g t2 -> PlusExp exp g (t1 ⊕ t2)
+  Case :: Merge g1 g2 g
+       -> AddCtx x1 s1 g2 g21
+       -> AddCtx x2 s2 g2 g22
+       -> exp g1 (s1 ⊕ s2)
+       -> exp g21 t
+       -> exp g22 t
+       -> PlusExp exp g t
+
+data PlusVal :: forall sig. ValDom sig where
+  VInl :: val t1 -> PlusVal val (t1 ⊕ t2)
+  VInr :: val t2 -> PlusVal val (t1 ⊕ t2)
+
+proxyPlus :: (Proxy PlusExp, Proxy PlusVal)
+proxyPlus = (Proxy,Proxy)
+
+inl :: (HasPlusSig sig, InDom sig PlusExp PlusVal dom)
+    => LExp dom g t1 -> LExp dom g (t1 ⊕ t2)
+inl e = Dom proxyPlus $ Inl e
+
+inr :: (HasPlusSig sig, InDom sig PlusExp PlusVal dom)
+    => LExp dom g t2 -> LExp dom g (t1 ⊕ t2)
+inr e = Dom proxyPlus $ Inr e
+
+caseof :: forall sig dom s1 s2 g g1 g2 g21 g22 t.
+          (HasPlusSig sig, InDom sig PlusExp PlusVal dom,
+           CAddCtx (Fresh g) s1 g2 g21,
+           CAddCtx (Fresh g) s2 g2 g22,
+           CMerge g1 g2 g)
+       => LExp dom g1 (s1 ⊕ s2)
+       -> (Var (Fresh g) s1 -> LExp dom g21 t)
+       -> (Var (Fresh g) s2 -> LExp dom g22 t)
+       -> LExp dom g t
+caseof e f1 f2 = Dom proxyPlus $ Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
+  where
+    pfA1 :: AddCtx (Fresh g) s1 g2 g21
+    pfA1 = addCtx
+    pfA2 :: AddCtx (Fresh g) s2 g2 g22
+    pfA2 = addCtx
+    v1 :: Var (Fresh g) s1
+    v1 = addToSIdent pfA1
+    v2 :: Var (Fresh g) s2
+    v2 = addToSIdent pfA2
+
+instance (HasPlusSig sig, InDom sig PlusExp PlusVal dom)
+      => Domain PlusExp PlusVal dom where
+
+  substDomain _ pfA s (Inl e) = inl $ subst pfA s e
+  substDomain _ pfA s (Inr e) = inr $ subst pfA s e
+  substDomain _ pfA s (Case pfM pfA1 pfA2 e e1 e2) =
+    case mergeAddSplit pfM pfA of
+      Left  (pfA1',pfM1) -> 
+        Dom proxyPlus $ Case pfM1 pfA1 pfA2 (subst pfA1' s e) e1 e2
+      Right (pfA2',pfM2) -> undefined -- TODO
+
+  evalDomain _     (Inl e) = fmap (VDom proxyPlus . VInl) $ eval' e
+  evalDomain _     (Inr e) = fmap (VDom proxyPlus . VInr) $ eval' e
+  evalDomain proxy (Case pfM pfA1 pfA2 e e1 e2) = 
+    case mergeEmpty pfM of {Dict -> do
+      v <- eval' e
+      case fromLVal proxy v of
+        Just (VInl v1) -> eval' $ subst pfA1 (valToExp v1) e1
+        Just (VInr v2) -> eval' $ subst pfA2 (valToExp v2) e2
+    }   
+
+  valToExpDomain _ (VInl v) = Inl $ valToExp v
+  valToExpDomain _ (VInr v) = Inr $ valToExp v
+
+-- Additive Product
+
+data WithSig ty = WithSig ty ty
+type (&) (s :: LType sig) (t :: LType sig) = 
+    'Sig (InSig WithSig sig) ('WithSig s t)
+
+class (Monad (SigEffect sig), CInSig WithSig sig) => HasWithSig sig
+instance (Monad (SigEffect sig), CInSig WithSig sig) => HasWithSig sig
+
+data WithExp :: forall sig. ExpDom sig where
+  With  :: exp g t1 -> exp g t2 -> WithExp exp g (t1 & t2)
+  Proj1 :: exp g (t1 & t2) -> WithExp exp g t1
+  Proj2 :: exp g (t1 & t2) -> WithExp exp g t2
+data WithVal :: forall sig. ValDom sig where
+  VWith :: val t1 -> val t2 -> WithVal val (t1 & t2)
+
+proxyWith :: (Proxy WithExp, Proxy WithVal)
+proxyWith = (Proxy,Proxy)
+
+(&) :: (HasWithSig sig, InDom sig WithExp WithVal dom)
+    => LExp dom g t1 -> LExp dom g t2 -> LExp dom g (t1 & t2)
+e1 & e2 = Dom proxyWith $ With e1 e2
+
+proj1 :: (HasWithSig sig, InDom sig WithExp WithVal dom)
+      => LExp dom g (t1 & t2) -> LExp dom g t1
+proj1 = Dom proxyWith . Proj1
+
+proj2 :: (HasWithSig sig, InDom sig WithExp WithVal dom)
+      => LExp dom g (t1 & t2) -> LExp dom g t2
+proj2 = Dom proxyWith . Proj2
+
+instance (HasWithSig sig, InDom sig WithExp WithVal dom)
+      => Domain WithExp WithVal dom where
+  substDomain _ pfA s (With e1 e2) = subst pfA s e1 & subst pfA s e2
+  substDomain _ pfA s (Proj1 e)    = proj1 $ subst pfA s e
+  substDomain _ pfA s (Proj2 e)    = proj2 $ subst pfA s e
+
+
+  -- TODO: Think about laziness and evaluation order
+  evalDomain _ (With e1 e2) = do
+    v1 <- eval' e1 
+    v2 <- eval' e2
+    return $ VDom proxyWith $ VWith v1 v2
+  evalDomain _ (Proj1 e) = do
+    Just (VWith v1 v2) <- fmap (fromLVal proxyWith) $ eval' e
+    return v1
+  evalDomain _ (Proj2 e) = do
+    Just (VWith v1 v2) <- fmap (fromLVal proxyWith) $ eval' e
+    return v2
+
+  valToExpDomain _ (VWith v1 v2) = With (valToExp v1) (valToExp v2)
+
+
 -- concrete examples
 
+type MultiplicativeProductSig m = '(m,'[ OneSig, TensorSig ])
+type MultiplicativeProductDom m = 
+    ('[ '(OneExp,OneVal), '(TensorExp,TensorVal) ] 
+      :: Dom (MultiplicativeProductSig m) )
 
-type MultiplicativeProductSig = '[ OneSig, TensorSig ]
-instance HasOneSig '(m,MultiplicativeProductSig) where
-  type One = Sig' OneSig MultiplicativeProductSig 'OneSig
-instance Monad m => HasTensorSig '(m,MultiplicativeProductSig) where
-  type s ⊗ t = Sig' TensorSig MultiplicativeProductSig ('TensorSig s t)
+swapMP :: Monad m => Lift (MultiplicativeProductDom m) (s ⊗ t ⊸ t ⊗ s)
+swapMP = Suspend . λ $ \ pr ->
+    var pr `letPair` \(x,y) ->
+    var y ⊗ var x
+
+-- instance HasOneSig '(m,MultiplicativeProductSig) where
+--  type One = Sig' OneSig MultiplicativeProductSig 'OneSig
+--instance Monad m => HasTensorSig '(m,MultiplicativeProductSig) where
+--  type s ⊗ t = Sig' TensorSig MultiplicativeProductSig ('TensorSig s t)
 
 --type MELL
 
 {-
-
-put :: a -> LExp sig 'Empty (Lower a)
-put = Put
-
-(>!) :: CMerge g1 g2 g3
-     => LExp sig g1 (Lower a)
-     -> (a -> LExp sig g2 t)
-     -> LExp sig g3 t
-(>!) = LetBang merge
 
 
 (&) :: LExp sig g t1
