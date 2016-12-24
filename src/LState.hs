@@ -22,9 +22,12 @@ import Interface
 -- Signature
 data LStateSig ty where
   LStateSig :: ty -> ty -> LStateSig ty
+type LState (s :: LType sig) (t :: LType sig) 
+    = 'Sig (InSig LStateSig sig) ('LStateSig s t)
 
-type family LState sig (s :: LType sig) (t :: LType sig) :: LType sig where
-  LState sig s t = 'Sig (IsInList LStateSig (SigType sig)) ('LStateSig s t)
+class (Monad (SigEffect sig), CInSig LStateSig sig) => HasLStateSig sig
+instance (Monad (SigEffect sig), CInSig LStateSig sig) => HasLStateSig sig
+
 
 data LStateLVal (val :: LType sig -> *) :: LType sig -> * where
   VState :: forall sig (val :: LType sig -> *) s t.

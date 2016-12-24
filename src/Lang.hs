@@ -18,85 +18,86 @@ import Proofs
   
 type ExpDom sig = (Ctx sig -> LType sig -> *) -> Ctx sig -> LType sig -> *
 type ValDom sig = (LType sig -> *) -> LType sig -> *
-type Component sig = (ExpDom sig, ValDom sig)
-type Dom sig = [Component sig]
+type Dom sig = (ExpDom sig, ValDom sig)
+type Lang sig = [Dom sig]
 
-type family Exp (component :: Component sig) :: ExpDom sig where
-  Exp '(exp,_) = exp
-type family Val (component :: Component sig) :: ValDom sig where
-  Val '(_,val) = val
+--type family Exp (component :: Dom sig) :: ExpDom sig where
+--  Exp '(exp,_) = exp
+--type family Val (component :: Dom sig) :: ValDom sig where
+--  Val '(_,val) = val
 
-class    Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
-instance Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
+--class    Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
+--instance Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
 
-class    (WellScopedDom sig dom, CInList component dom) 
-      => InDom sig component (dom :: Dom sig)
-instance (WellScopedDom sig dom, CInList component dom) 
-      => InDom sig component dom
 
-class InDom sig component dom
-   => Domain (component :: Component sig) (dom :: Dom sig) where
+class (Monad (SigEffect sig), CInList dom lang)
+   => Domain (dom :: Dom sig) (lang :: Lang sig)
+instance (Monad (SigEffect sig), CInList dom lang)
+      => Domain (dom :: Dom sig) (lang :: Lang sig)
 
-  substDomain :: Exp component ~ exp
-              => Proxy component
+class Domain dom lang
+   => Language (dom :: Dom sig) (lang :: Lang sig) where
+
+  substDomain :: dom ~ '(exp,val)
+              => Proxy '(exp,val)
               -> AddCtx x s g g' 
-              -> LExp dom 'Empty s 
-              -> exp (LExp dom) g' t 
-              -> LExp dom g t
+              -> LExp lang 'Empty s 
+              -> exp (LExp lang) g' t 
+              -> LExp lang g t
 
-  evalDomain  :: Exp component ~ exp
-              => Proxy component
-              -> exp (LExp dom) 'Empty s
-              -> SigEffect sig (LVal dom s)
+  evalDomain  :: dom ~ '(exp,val)
+              => Proxy '(exp,val)
+              -> exp (LExp lang) 'Empty s
+              -> SigEffect sig (LVal lang s)
 
-  valToExpDomain :: (Exp component ~ exp, Val component ~ val)
-                 => Proxy component 
-                 -> val (LVal dom) s 
-                 -> exp (LExp dom) 'Empty s
+  valToExpDomain :: dom ~ '(exp,val)
+                 => Proxy '(exp,val)
+                 -> val (LVal lang) s 
+                 -> exp (LExp lang) 'Empty s
 
 
 
-data LExp :: forall sig. Dom sig -> Ctx sig -> LType sig -> * where
-  Dom :: Domain '(exp,val) dom
+data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
+  Dom :: Language '(exp,val) lang
       => Proxy '(exp,val)
-      -> exp (LExp dom) g t 
-      -> LExp dom g t
+      -> exp (LExp lang) g t 
+      -> LExp lang g t
 
-  Var :: SingletonCtx x t g -> LExp dom g t
+  Var :: SingletonCtx x t g -> LExp lang g t
 
   Abs :: AddCtx x s g g' 
-      -> LExp dom g' t
-      -> LExp dom g (s ⊸ t)
+      -> LExp lang g' t
+      -> LExp lang g (s ⊸ t)
 
   App :: Merge g1 g2 g3
-      -> LExp dom g1 (s ⊸ t)
-      -> LExp dom g2 s
-      -> LExp dom g3 t
+      -> LExp lang g1 (s ⊸ t)
+      -> LExp lang g2 s
+      -> LExp lang g3 t
 
 
 -- Values -----------------------------------------------------
 
-data LVal :: forall sig. Dom sig -> LType sig -> * where
-  VDom  :: Domain '(exp,val) dom
+data LVal :: forall sig. Lang sig -> LType sig -> * where
+  VDom  :: Language '(exp,val) lang
         => Proxy '(exp,val)
-        -> val (LVal dom) s -> LVal dom s
+        -> val (LVal lang) s -> LVal lang s
   VAbs  :: AddCtx x s 'Empty g'
-        -> LExp dom g' t
-        -> LVal dom (s ⊸ t)
+        -> LExp lang g' t
+        -> LVal lang (s ⊸ t)
 
 -- ValToExp -----------------------------------------------
 
-valToExp :: forall sig (dom :: Dom sig) (t :: LType sig).
-            LVal dom t -> LExp dom 'Empty t
+valToExp :: forall sig (lang :: Lang sig) (t :: LType sig).
+            LVal lang t -> LExp lang 'Empty t
 valToExp (VDom proxy v) = Dom proxy $ valToExpDomain proxy v
 valToExp (VAbs pfA e)   = Abs pfA e
 
 -- Substitution --------------------------------------------
 
 subst :: AddCtx x s g g' 
-      -> LExp dom Empty s 
-      -> LExp dom g' t 
-      -> LExp dom g t
+      -> LExp lang Empty s 
+      -> LExp lang g' t 
+      -> LExp lang g t
 subst pfA s (Dom proxy e) = substDomain proxy pfA s e
 subst pfA s (Abs pfA' e)   = undefined
 subst pfA s (App pfM e1 e2)= 
@@ -107,18 +108,18 @@ subst pfA s (App pfM e1 e2)=
 
 -- Evaluation ---------------------------------------------
 
-eval :: forall sig (dom :: Dom sig) (s :: LType sig).
+eval :: forall sig (lang :: Lang sig) (s :: LType sig).
         Monad (SigEffect sig)
-     => LExp dom 'Empty s 
-     -> SigEffect sig (LExp dom 'Empty s)
+     => LExp lang 'Empty s 
+     -> SigEffect sig (LExp lang 'Empty s)
 eval e = fmap valToExp $ eval' e
 
 
-eval' :: forall sig (dom :: Dom sig) (s :: LType sig).
+eval' :: forall sig (lang :: Lang sig) (s :: LType sig).
          Monad (SigEffect sig)
-      => LExp dom 'Empty s -> SigEffect sig (LVal dom s)
-eval' (Dom proxy e)         = evalDomain proxy e
-eval' (Abs pfA e)       = return $ VAbs pfA e
+      => LExp lang 'Empty s -> SigEffect sig (LVal lang s)
+eval' (Dom proxy e)   = evalDomain proxy e
+eval' (Abs pfA e)     = return $ VAbs pfA e
 eval' (App pfM e1 e2) = 
   case mergeEmpty pfM of {Dict -> do
     VAbs pfA e1' <- eval' e1
@@ -130,28 +131,29 @@ eval' (App pfM e1 e2) =
 
 -- Lift --------------------------------------------------------
 
-data Lift (dom :: Dom sig) :: LType sig -> * where
-  Suspend :: LExp dom 'Empty t -> Lift dom t
+data Lift (lang :: Lang sig) :: LType sig -> * where
+  Suspend :: LExp lang 'Empty t -> Lift lang t
 
-force :: Lift dom t -> LExp dom 'Empty t
+force :: Lift lang t -> LExp lang 'Empty t
 force (Suspend e) = e
 
 ------------------------------------------------------
 
 
-proxyToInList :: forall sig (dom :: Dom sig) component.
-                 CInList component dom 
-              => Proxy component
-              -> InList component dom
-proxyToInList _ = pfInList @_ @component
+proxyToInList :: forall sig (lang :: Lang sig) dom.
+                 CInList dom lang
+              => Proxy dom
+              -> InList dom lang
+proxyToInList _ = pfInList @_ @dom
 
 
-fromLVal :: forall sig (dom :: Dom sig) exp val s.
-            CInList '(exp,val) dom
+fromLVal :: forall sig (lang :: Lang sig) exp val s.
+            CInList '(exp,val) lang
          => Proxy '(exp,val)
-         -> LVal dom s -> Maybe (val (LVal dom) s)
+         -> LVal lang s -> Maybe (val (LVal lang) s)
 fromLVal proxy (VDom proxy' v) =
-  case compareInList (proxyToInList @sig @dom proxy) (proxyToInList @sig @dom proxy') of
+  case compareInList (proxyToInList @sig @lang proxy) 
+                     (proxyToInList @sig @lang proxy') of
     Nothing   -> Nothing
     Just Dict -> Just v
 
