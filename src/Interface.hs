@@ -11,6 +11,7 @@ module Interface where
 import Data.Kind
 import Data.Constraint
 import Data.Proxy
+import Data.Singletons
 --import Control.Category
 
 import Types
@@ -210,6 +211,81 @@ instance Domain TensorDom lang
     }
 
   valToExpDomain _ (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
+
+-- State Monad -------------------------------------------------
+
+data LState' :: LType sig -> LType sig ~> LType sig
+type instance Apply (LState' s) t = s ⊸ s ⊗ t
+
+type LState s t = LState' s @@ t
+
+-- Defunctionalization from singletons library!
+class LFunctor lang (f :: LType sig ~> LType sig) where
+  lfmap :: LExp lang 'Empty ((s ⊸ t) ⊸ f @@ s ⊸ f @@ t)
+class LFunctor lang f => LApplicative lang f where
+  lpure :: LExp lang 'Empty (t ⊸ f @@ t)
+  llift :: LExp lang 'Empty (f @@ (s ⊸ t) ⊸ f @@ s ⊸ f @@ t)
+class LApplicative lang m => LMonad lang m where
+  lbind :: LExp lang 'Empty (m @@ s ⊸ (s ⊸ m @@ t) ⊸ m @@ t)
+
+instance Domain TensorDom lang => LFunctor lang (LState' s) where
+  lfmap = λ $ \f -> λ $ \fs -> λ $ \r ->
+    var fs `app` var r `letPair` \(r,s) ->
+    var r ⊗ (var f `app` var s)
+
+instance Domain TensorDom lang => LApplicative lang (LState' s) where
+  lpure = λ $ \s -> λ $ \r -> var r ⊗ var s
+  llift = λ $ \ff -> λ $ \fs -> λ $ \r -> undefined
+--    var ff `app` var r `letPair` \ (r,f) ->
+--    var fs `app` var r `letPair` \ (r,s) ->
+--    var r ⊗ (var f `app` var s)
+
+instance Domain TensorDom lang => LMonad lang (LState' s) where
+  lbind = λ $ \ ms -> λ $ \ f -> λ $ \r -> 
+     var ms `app` var r `letPair` \(r,s) -> 
+     var f `app` var s `app` var r
+
+-- Linearity monad transformer
+data LinT lang (m :: LType sig ~> LType sig) :: * -> * where
+  LinT :: Lift lang (m @@ Lower a) -> LinT lang m a
+
+forceT :: LinT lang m a -> LExp lang 'Empty (m @@ Lower a)
+forceT (LinT e) = force e
+suspendT :: LExp lang 'Empty (m @@ Lower a) -> LinT lang m a
+suspendT = LinT . Suspend
+
+lowerT :: Domain LowerDom lang
+       => LExp lang 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
+lowerT = λ $ \g -> λ $ \ x -> 
+          var g >! \f ->
+          var x >! \a -> put $ f a
+
+instance (Domain LowerDom lang, LFunctor lang f) 
+      => Functor (LinT lang f) where
+  fmap (g :: a -> b) (x :: LinT lang f a) = 
+    suspendT $ lfmap @lang @f `app` (lowerT `app` put g) `app` forceT x
+instance (Domain LowerDom lang, LApplicative lang f) 
+      => Applicative (LinT lang f) where
+  pure a = suspendT $ lpure @lang @f `app` put a
+
+  (<*>) :: forall a b. LinT lang f (a -> b) -> LinT lang f a -> LinT lang f b
+  g <*> a = suspendT $ foo `app` forceT a
+    where
+      g' :: LExp lang 'Empty (f @@ (Lower a ⊸ Lower b))
+      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
+            `app` lowerT `app` forceT g
+      foo :: LExp lang 'Empty (f @@ (Lower a) ⊸ f @@ (Lower b))
+      foo = llift @lang @f @(Lower a) @(Lower b) `app` g'
+
+instance (Domain LowerDom lang, LMonad lang m)
+      => Monad (LinT lang m) where
+  (>>=) :: forall a b. LinT lang m a -> (a -> LinT lang m b) -> LinT lang m b
+  x >>= f = suspendT mb
+    where
+      f' :: LExp lang 'Empty (Lower a ⊸ m @@ (Lower b))
+      f' = λ $ \ x -> var x >! (forceT . f)
+      mb :: LExp lang 'Empty (m @@ Lower b)
+      mb = lbind @lang @m @(Lower a) @(Lower b) `app` forceT x `app` f'   
 
 -- Lower -------------------------------------------------------
 

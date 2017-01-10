@@ -23,6 +23,8 @@ data LType (sig :: Sig) where
   Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
   Lolli  :: LType sig -> LType sig -> LType sig
 
+
+
 type (⊸) = Lolli
 infixr 0 ⊸
 
@@ -102,7 +104,6 @@ type InSig (ty :: TypeSig) sig =
 
 
 -- Singleton types for contexts -----------------------------------
-
 
 data SUsage :: Usage sig -> * where
   SUsed   :: forall s. SUsage ('Used s)
