@@ -245,6 +245,10 @@ instance Domain TensorDom lang => LApplicative lang (LState' r) where
   llift :: forall s t. 
            LExp lang 'Empty (LState r (s ⊸ t) ⊸ LState r s ⊸ LState r t)
   llift = λ $ \ff -> λ $ \fs -> λ $ \r -> foo ff fs r
+--    var ff `app` var r `letPair` \ (r,f) -> foo fs f r
+--    var fs `app` var r `letPair` \ (r,s) ->
+--    var r ⊗ (var f `app` var s)
+
     where
       foo :: ( x1 ~ 'Z, x2 ~ 'S 'Z, x3 ~ 'S ('S 'Z)
              , g ~ 'N ('Cons ('Used (LState r (s ⊸ t))) g')
@@ -264,9 +268,6 @@ instance Domain TensorDom lang => LApplicative lang (LState' r) where
       foo' fs (r,f) = var fs `app` var r `letPair` \ (r,s) ->
         var r ⊗ (var f `app` var s)
 
---    var ff `app` var r `letPair` \ (r,f) -> foo fs f r
---    var fs `app` var r `letPair` \ (r,s) ->
---    var r ⊗ (var f `app` var s)
 
 instance Domain TensorDom lang => LMonad lang (LState' s) where
   lbind = λ $ \ ms -> λ $ \ f -> λ $ \r -> 

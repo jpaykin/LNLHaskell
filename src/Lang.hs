@@ -21,18 +21,10 @@ type ValDom sig = (LType sig -> *) -> LType sig -> *
 type Dom sig = (ExpDom sig, ValDom sig)
 type Lang sig = [Dom sig]
 
---type family Exp (component :: Dom sig) :: ExpDom sig where
---  Exp '(exp,_) = exp
---type family Val (component :: Dom sig) :: ValDom sig where
---  Val '(_,val) = val
 
---class    Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
---instance Monad (SigEffect sig) => WellScopedDom sig (dom :: Dom sig)
-
-
-class (Monad (SigEffect sig), CInList dom lang)
+class (CInList dom lang, Monad (SigEffect sig))
    => Domain (dom :: Dom sig) (lang :: Lang sig)
-instance (Monad (SigEffect sig), CInList dom lang)
+instance (CInList dom lang, Monad (SigEffect sig))
       => Domain (dom :: Dom sig) (lang :: Lang sig)
 
 class Domain dom lang

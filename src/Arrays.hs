@@ -19,8 +19,6 @@ import Data.Constraint
 import Types
 import Context
 import Lang
-import Subst
-import Eval
 import Interface
 --import Domain
 
@@ -30,28 +28,8 @@ import Interface
 data ArraySig :: TypeSig where
   ArraySig :: * -> ArraySig ty
 
-{-
-class CInList i ty sig => HasArrayType i (ty :: TypeSig) sig where
-  type family Array' ty a = (r :: LType sig) | r -> a 
-
-instance CInList i ArraySig sig => HasArrayType i ArraySig sig where
-  type Array' ArraySig a = 'Sig PfInSig ('ArraySig a)
--}
-
-type Array sig a = 'Sig (IsInList ArraySig (SigType sig)) 
-                        ('ArraySig a :: ArraySig (LType sig))
-
-
--- Array type family -----------------------------------------------
-{-
-type family Array sig a = (r :: LType sig) | r -> a where
-  Array '(IO,ArraySig) a = 'Sig ('ArraySig a)
---  Array '(m,sig1 :+: sig2) a = 
---    If (HasArray '(m,sig1)) ('Sig ('AndTy1 (Array '(m,sig1) a)))
---                            ('Sig ('AndTy2 (Array '(m,sig2) a)))
-  Array '(IO,ArraySig :+: sig2) a = 'Sig ('AndTy1 (Array '(IO,ArraySig) a))
-  Array '(m,sig1 :+: sig2) a = 'Sig ('AndTy2 (Array '(m,sig2) a))
--}
+type Array a = ('Sig (IsInList ArraySig (SigType sig)) 
+                     ('ArraySig a :: ArraySig (LType sig)) :: LType sig)
 
 -- Array Effect ----------------------------------------------------
 
@@ -82,41 +60,27 @@ instance HasArrayEffect (SigEffect sig) => HasArraySig sig
 
 data ArrayLVal (val :: LType sig -> *) :: LType sig -> * where
   VArr    :: forall sig (val :: LType sig -> *) a. 
-             LArray' sig a -> ArrayLVal val (Array sig a)
-
-{-
-
-class HasArraySig sig => HasArrayDom (dom :: Dom sig) where
-  varray  :: LArray' sig a -> LVal dom (Array sig a)
-
-instance HasArraySig sig => HasArrayDom (ArrayDomain sig) where
-  varray arr  = VDom (Proxy :: Proxy ArrayLExp) $ VArr arr
--}
+             LArray' sig a -> ArrayLVal val (Array a)
 
 --- Expressions -------------------------------------------
 data ArrayLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * where
   Alloc   :: forall sig a (exp :: Ctx sig -> LType sig -> *).
-             Int -> a -> ArrayLExp exp 'Empty (Array sig a)
+             Int -> a -> ArrayLExp exp 'Empty (Array a)
   Dealloc :: forall sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             exp g (Array sig a) -> ArrayLExp exp g One
+             exp g (Array a) -> ArrayLExp exp g One
   Read    :: forall  sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             Int -> exp g (Array sig a) -> ArrayLExp exp g (Array sig a ⊗ Lower a)
+             Int -> exp g (Array a) -> ArrayLExp exp g (Array a ⊗ Lower a)
   Write   :: forall sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             Int -> exp g (Array sig a) -> a -> ArrayLExp exp g (Array sig a)
+             Int -> exp g (Array a) -> a -> ArrayLExp exp g (Array a)
   Arr     :: forall sig a (exp :: Ctx sig -> LType sig -> *).
-             LArray' sig a -> ArrayLExp exp Empty (Array sig a)
+             LArray' sig a -> ArrayLExp exp Empty (Array a)
 
 type ArrayDom = '(ArrayLExp,ArrayLVal)
 
-class HasArraySig sig => HasArrayDom sig (dom :: Dom sig)
-instance HasArraySig sig => HasArrayDom sig (dom :: Dom sig)
+proxyArray :: Proxy ArrayDom
+proxyArray = Proxy
 
-class (CInList i '(ArrayLExp, ArrayLVal) dom, HasArrayDom sig dom)
-   => HasArrays i (dom :: Dom sig) where
-
-instance (HasArrayDom sig dom, CInList i ArrayDom dom)
-   => HasArrays i dom where
-
+{-
 fromArrayLExp :: forall i sig (dom :: Dom sig) g t.
                  HasArrays i dom => ArrayLExp (LExp dom) g t -> LExp dom g t
 fromArrayLExp = Dom $ pfInList @_ @i @ArrayDom
@@ -124,85 +88,91 @@ fromArrayLExp = Dom $ pfInList @_ @i @ArrayDom
 fromArrayLVal :: forall i sig (dom :: Dom sig) g t.
                  HasArrays i dom => ArrayLVal (LVal dom) t -> LVal dom t
 fromArrayLVal = VDom $ pfInList @_ @i @ArrayDom
+-}
 
+{-
 -- As long as the HasArrays instance is the only source of Array values, 
 -- this function is total.
 lValToArray :: forall i sig (dom :: Dom sig) a.
                HasArrays i dom
-            => LVal dom (Array sig a) -> ArrayLVal (LVal dom) (Array sig a)
+            => LVal dom (Array a) -> ArrayLVal (LVal dom) (Array a)
 lValToArray (VDom pfInList' v) = 
   case compareInList (pfInList @_ @i @ArrayDom) pfInList' of
     Nothing   -> error "Value of type Array a not derived from Arrays class"
     Just Dict -> v
 --lValToArray _ = error "Value of type Array a not derived from Arrays class"
+-}
 
-alloc :: forall i sig (dom :: Dom sig) a.
-         HasArrays i dom
-      => Int -> a -> LExp dom 'Empty (Array sig a)
-alloc n a = fromArrayLExp @i $ Alloc n a
+class (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
+       Domain TensorDom lang, Domain LowerDom lang)
+   => HasArrayDom (lang :: Lang sig) 
+instance (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
+       Domain TensorDom lang, Domain LowerDom lang)
+   => HasArrayDom (lang :: Lang sig) 
 
-dealloc :: forall i sig (dom :: Dom sig) g a.
-           HasArrays i dom
-        => LExp dom g (Array sig a) -> LExp dom g One
-dealloc = fromArrayLExp @i . Dealloc
+alloc :: HasArrayDom lang
+      => Int -> a -> LExp lang 'Empty (Array a)
+alloc n a = Dom proxyArray $ Alloc n a
 
-read :: forall i sig (dom :: Dom sig) g a.
-        HasArrays i dom
-     => Int -> LExp dom g (Array sig a) -> LExp dom g (Array sig a ⊗ Lower a)
-read i e = fromArrayLExp @i $ Read i e
+dealloc :: HasArrayDom lang
+        => LExp lang g (Array a) -> LExp lang g One
+dealloc = Dom proxyArray . Dealloc
 
-write :: forall i sig (dom :: Dom sig) g a.
-        HasArrays i dom
-     => Int -> LExp dom g (Array sig a) -> a -> LExp dom g (Array sig a)
-write i e a = fromArrayLExp @i $ Write i e a 
+read :: HasArrayDom lang
+     => Int -> LExp lang g (Array a) -> LExp lang g (Array a ⊗ Lower a)
+read i e = Dom proxyArray $ Read i e
 
-array :: forall i sig (dom :: Dom sig) g a.
-        HasArrays i dom
-     => LArray' sig a -> LExp dom 'Empty (Array sig a)
-array = fromArrayLExp @i . Arr
+write :: HasArrayDom lang
+     => Int -> LExp lang g (Array a) -> a -> LExp lang g (Array a)
+write i e a = Dom proxyArray $ Write i e a 
 
-varray :: forall i sig (dom :: Dom sig) g a.
-        HasArrays i dom
-     => LArray' sig a -> LVal dom (Array sig a)
-varray = fromArrayLVal @i . VArr
+array :: forall sig (lang :: Lang sig) a.
+         HasArrayDom lang
+      => LArray' sig a -> LExp lang 'Empty (Array a)
+array = Dom proxyArray . Arr
+
+varray :: forall sig (lang :: Lang sig) a.
+        HasArrayDom lang
+     => LArray' sig a -> LVal lang (Array a)
+varray = VDom proxyArray . VArr
 
 
-instance HasArrays i dom
-      => Domain i ArrayLExp ArrayLVal (dom :: Dom sig) where
+instance HasArrayDom lang
+      => Language ArrayDom lang where
 
   valToExpDomain _ (VArr arr) = Arr arr
 
-  substDomain _ pfA s (Dealloc e)   = dealloc @i $ subst pfA s e
-  substDomain _ pfA s (Read i e)    = read    @i i $ subst pfA s e
-  substDomain _ pfA s (Write i e a) = write   @i i (subst pfA s e) a
+  substDomain _ pfA s (Dealloc e)   = dealloc $ subst pfA s e
+  substDomain _ pfA s (Read i e)    = read    i $ subst pfA s e
+  substDomain _ pfA s (Write i e a) = write   i (subst pfA s e) a
 
   evalDomain _ (Alloc n a) = do
-    arr <- newArray @(SigEffect sig) n a
-    return $ varray @i arr
+    arr <- newArray n a
+    return $ varray arr
   evalDomain _ (Dealloc e) = do
-    VArr arr <- fmap (lValToArray @i) $ eval' e
-    deallocArray @(SigEffect sig) arr
-    return VUnit
+    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    deallocArray arr
+    return vunit
   evalDomain _ (Read i e) = do
-    VArr arr <- fmap (lValToArray @i) $ eval' e
-    a <- readArray @(SigEffect sig) arr i
-    return $ varray @i arr `VPair` VPut a
+    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    a <- readArray arr i
+    return $ varray arr `vpair` vput a
   evalDomain _ (Write i e a) = do
-    VArr arr <- fmap (lValToArray @i) $ eval' e
-    writeArray @(SigEffect sig) arr i a
-    return $ varray @i arr
-  evalDomain _ (Arr arr) = return $ varray @i arr
-
+    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    writeArray arr i a
+    return $ varray arr
+  evalDomain _ (Arr arr) = return $ varray arr
 
 -- Examples
 
 
+{-
 liftApply :: Lift dom (a ⊸ b) -> Lift dom a -> Lift dom b
 liftApply f a = Suspend $ force f `app` force a
 
 
 fromList :: forall i sig (dom :: Dom sig) a.
-            HasArrays i dom => [a] -> Lift dom (Array sig a)
+            HasArrays i dom => [a] -> Lift dom (Array a)
 fromList [] = error "Cannot call fromList on an empty list"
 fromList ls@(a:as) = Suspend $ 
     force (fromList' @i 0 ls) `app` alloc @i len a
@@ -211,14 +181,14 @@ fromList ls@(a:as) = Suspend $
 
 fromList' :: forall i sig (dom :: Dom sig) a.
              HasArrays i dom
-          => Int -> [a] -> Lift dom (Array sig a ⊸ Array sig a)
+          => Int -> [a] -> Lift dom (Array a ⊸ Array a)
 fromList' offset []     = Suspend . λ $ \x -> var x
 fromList' offset (a:as) = Suspend . λ $ \ arr -> 
   force (fromList' @i (1+offset) as) `app` write @i offset (var arr) a
 
 
 toList :: forall i sig (dom :: Dom sig) a.
-          HasArrays i dom => Int -> Lift dom (Array sig a ⊸ Lower [a])
+          HasArrays i dom => Int -> Lift dom (Array a ⊸ Lower [a])
 toList len = Suspend . λ $ \arr ->
   (force (toList' @i len) `app` var arr) `letPair` \(arr,ls) ->
   dealloc @i (var arr) `letUnit`
@@ -226,7 +196,7 @@ toList len = Suspend . λ $ \arr ->
 
 toList' :: forall i sig (dom :: Dom sig) a.
            HasArrays i dom 
-        => Int -> Lift dom (Array sig a ⊸ Array sig a ⊗ Lower [a])
+        => Int -> Lift dom (Array a ⊸ Array a ⊗ Lower [a])
 toList' 0     = Suspend . λ $ \arr -> 
     var arr ⊗ put []
 toList' i = Suspend . λ $ \arr ->
@@ -251,4 +221,4 @@ type MyArrayDomain = ( '[ ArrayDom ] :: Dom MyArraySig )
 
 main :: Lin MyArrayDomain [Int]
 main = toFromList @'Z [1,2,3]
-
+-}
