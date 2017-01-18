@@ -174,6 +174,13 @@ singletonAdd (SingN pfS) = AddN $ AddS pfS
 addSingleton :: AddCtx x s 'Empty g -> SingletonCtx x s g
 addSingleton (AddN pfA) = SingN $ addNSingleton pfA
 
+addSingletonEmpty :: AddCtx x s g g' -> SingletonCtx x s g' -> Dict (g ~ 'Empty)
+addSingletonEmpty pfA pfS = 
+  case addRemoveEquiv pfA of {Dict -> -- g ~ Remove x g'
+  case singletonRemove pfS of {Dict -> -- Remove x g' ~ 'Empty
+    Dict
+  }}
+
 addNSingleton :: AddCtxN x s 'Empty g -> SingletonNCtx x s g
 addNSingleton (AddS pfS) = pfS
 --addNSingleton AddEHere = AddHereS
@@ -182,6 +189,7 @@ addNSingleton (AddS pfS) = pfS
 
 addFresh :: SCtx g -> AddCtx (Fresh g) s g (Add (Fresh g) s g)
 addFresh g = addAdd g $ knownFresh g
+
 
 
 {-
@@ -403,10 +411,19 @@ mergeInSplit (MergeN pfM) (In pfI) =
     Left  pfI1 -> Left  $ In pfI1
     Right pfI2 -> Right $ In pfI2
 
-mergeAddSplit :: Merge g1 g2 g -> AddCtx x s g' g 
+mergeAddSplit :: forall x s g1 g2 g g'.
+                 Merge g1 g2 g -> AddCtx x s g' g 
               -> Either (AddCtx x s (Remove x g1) g1, Merge (Remove x g1) g2 g') 
                         (AddCtx x s (Remove x g2) g2, Merge g1 (Remove x g2) g')
-mergeAddSplit = undefined
+mergeAddSplit pfM pfA = 
+    case addRemoveEquiv pfA of {Dict -> 
+    case mergeInSplit pfM pfI of
+      Left  pfI1 -> Left  (inAddRemove pfI1, mergeIn1 pfM pfI1)
+      Right pfI2 -> Right (inAddRemove pfI2, mergeIn2 pfM pfI2)
+    }
+  where
+    pfI :: In x s g
+    pfI = addIn pfA
 
 mergeNIn1 :: MergeN g1 g2 g3 -> InN x s g1
           -> Merge (RemoveN x g1) ('N g2) (RemoveN x g3)

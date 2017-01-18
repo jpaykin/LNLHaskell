@@ -188,7 +188,39 @@ vpair :: Domain TensorDom lang
       => LVal lang s1 -> LVal lang s2 -> LVal lang (s1 ⊗ s2)
 vpair v1 v2 = VDom proxyTensor $ VPair v1 v2
 
-
+substLetPair :: forall lang x s g g' g1 g2 g2' g2'' x1 x2 s1 s2 t.
+                Domain TensorDom lang
+             => AddCtx x s g g'
+             -> LExp lang Empty s
+             -> Merge g1 g2'' g' 
+             -> AddCtx x1 s1 g2'' g2' 
+             -> AddCtx x2 s2 g2' g2
+             -> LExp lang g1 (s1 ⊗ s2) 
+             -> LExp lang g2 t
+             -> LExp lang g t
+substLetPair pfA s pfM pfA1 pfA2 e e' = 
+  case addRemoveEquiv pfA of {Dict ->
+  case mergeAddSplit pfM pfA of
+    Left  ( pfA1' :: AddCtx x s (Remove x g1) g1
+          , pfM1  :: Merge (Remove x g1) g2'' g) -> 
+      Dom proxyTensor $ LetPair pfM1 pfA1 pfA2 (subst pfA1' s e) e'
+    Right ( pfA2' :: AddCtx x s (Remove x g2'') g2''
+          , pfM2  :: Merge g1 (Remove x g2'') g) -> 
+      Dom proxyTensor $ LetPair pfM2 pfA10 pfA20 e $ subst pfA0 s e'
+      where
+        pfI2'' :: In x s g2''
+        pfI2'' = addIn pfA2'
+        pfI2' :: In x s g2'
+        pfI2' = inAdd pfI2'' pfA1
+        pfI2 :: In x s g2
+        pfI2 = inAdd pfI2' pfA2
+        pfA0 :: AddCtx x s (Remove x g2) g2
+        pfA0 = inAddRemove pfI2
+        pfA10 :: AddCtx x1 s1 (Remove x g2'') (Remove x g2')
+        pfA10 = inAddRemoveLater pfI2'' pfA1
+        pfA20 :: AddCtx x2 s2 (Remove x g2') (Remove x g2)
+        pfA20 = inAddRemoveLater pfI2' pfA2
+  }
 
 instance Domain TensorDom lang
       => Language TensorDom lang where
@@ -196,7 +228,8 @@ instance Domain TensorDom lang
     case mergeAddSplit pfM pfA of
       Left  (pfA1,pfM1) -> Dom proxy $ Pair pfM1 (subst pfA1 s e1) e2
       Right (pfA2,pfM2) -> Dom proxy $ Pair pfM2 e1 (subst pfA2 s e2)
-  substDomain proxy pfA s (LetPair pfM pfA1 pfA2 e e') = undefined -- TODO
+  substDomain proxy pfA s (LetPair pfM pfA1 pfA2 e e') = 
+    substLetPair pfA s pfM pfA1 pfA2 e e'
 
   evalDomain _ (Pair pfM e1 e2) = 
     case mergeEmpty pfM of {Dict -> do
@@ -218,6 +251,29 @@ data LState' :: LType sig -> LType sig ~> LType sig
 type instance Apply (LState' s) t = s ⊸ s ⊗ t
 
 type LState s t = LState' s @@ t
+class (Domain TensorDom lang, Domain LowerDom lang, Domain OneDom lang) 
+   => HasLStateDom lang
+instance (Domain TensorDom lang, Domain LowerDom lang, Domain OneDom lang) 
+   => HasLStateDom lang
+
+runLState :: LinT lang (LState' s) a -> Lift lang s -> Lift lang (s ⊗ Lower a)
+runLState st s = Suspend $ forceT st `app` force s
+
+execLState :: HasLStateDom lang 
+           => LinT lang (LState' s) a -> Lift lang s -> Lift lang s
+execLState st s = Suspend $ 
+    forceT st `app` force s `letPair` \(s',a) ->
+    var a >! \_ ->
+    var s'
+
+evalLState :: HasLStateDom lang
+           => LinT lang (LState' s) a
+           -> Lift lang s
+           -> Lift lang (s ⊸ One) -- a way to eliminate the state
+           -> Lin lang a
+evalLState st s f = suspendL $
+    force (runLState st s) `letPair` \(s',a) ->
+    force f `app` var s' `letUnit` var a
 
 -- Defunctionalization from singletons library!
 class LFunctor lang (f :: LType sig ~> LType sig) where
@@ -549,23 +605,23 @@ caseof e f1 f2 = Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     v2 = knownFresh (ctx @g)
 
 
-
+-}
 
 -- Linearity Monad and Comonad -------------------------------
 
-type family Bang (dom :: Dom sig) (a :: LType sig) :: LType sig where
-  Bang dom a = Lower (Lift dom a)
-data Lin dom a where
-  Lin :: Lift dom (Lower a) -> Lin dom a
+type family Bang (lang :: Lang sig) (a :: LType sig) :: LType sig where
+  Bang lang a = Lower (Lift lang a)
+data Lin lang a where
+  Lin :: Lift lang (Lower a) -> Lin lang a
 
 
 
-instance Functor (Lin dom) where
+instance Domain LowerDom lang => Functor (Lin lang) where
   -- f :: a -> b
   -- a :: Lin a ~ Lift f (Lower a)
   -- fmap f a :: Lift (Lower b)
   fmap f (Lin (Suspend e)) = Lin . Suspend $ e >! \ x → put (f x)
-instance Applicative (Lin dom) where
+instance  Domain LowerDom lang => Applicative (Lin lang) where
   pure a = Lin $ Suspend (put a)
   -- a :: Lift (Lower a) 
   -- f :: Lift (Lower (a -> b))
@@ -573,38 +629,38 @@ instance Applicative (Lin dom) where
   Lin (Suspend f) <*> Lin (Suspend e) = Lin . Suspend $ e >! \ x -> 
                                                         f >! \ f' -> 
                                                         put (f' x)
-instance Monad (Lin dom) where
+instance  Domain LowerDom lang => Monad (Lin lang) where
   -- e :: Lin a = Lift (Lower a)
   -- f :: a -> Lift (Lower b)
   Lin (Suspend e) >>= f  = Lin . Suspend $ e >! \ x -> forceL (f x)
 
 
 
-forceL :: Lin dom a -> LExp dom 'Empty (Lower a)
+forceL :: Lin lang a -> LExp lang 'Empty (Lower a)
 forceL (Lin e) = force e
 
-suspendL :: LExp dom 'Empty (Lower a) -> Lin dom a
+suspendL :: LExp lang 'Empty (Lower a) -> Lin lang a
 suspendL = Lin . Suspend 
 
-evalL :: forall sig (dom :: Dom sig) a.
-         Monad (SigEffect sig) => Lin dom a -> SigEffect sig (Lin dom a)
+evalL :: forall sig (lang :: Lang sig) a.
+         Monad (SigEffect sig) => Lin lang a -> SigEffect sig (Lin lang a)
 evalL (Lin e) = fmap Lin $ evalL' e where
-  evalL' :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
-         => Lift dom (Lower a) -> SigEffect sig (Lift dom (Lower a))
+  evalL' :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
+         => Lift lang (Lower a) -> SigEffect sig (Lift lang (Lower a))
   evalL' (Suspend e) = fmap Suspend $ eval e
 
-evalVal :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
-        => Lin dom a -> SigEffect sig (LVal dom (Lower a))
+evalVal :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
+        => Lin lang a -> SigEffect sig (LVal lang (Lower a))
 evalVal (Lin (Suspend e)) = eval' e
 
-run :: forall sig (dom :: Dom sig) a. Monad (SigEffect sig) 
-    => Lin dom a -> SigEffect sig a
+run :: forall sig (lang :: Lang sig) a. (Monad (SigEffect sig), Domain LowerDom lang)
+    => Lin lang a -> SigEffect sig a
 run e = do
-  VPut a <- evalVal e
+  Just (VPut a) <- fmap (fromLVal proxyLower) $ evalVal e
   return a
 
 -- Monads in the linear fragment ----------------------------------
-
+{-
 class LFunctor (f :: LType sig -> LType sig) where
   lfmap :: LExp dom 'Empty ((s ⊸ t) ⊸ f s ⊸ f t)
 class LFunctor f => LApplicative (f :: LType sig -> LType sig) where

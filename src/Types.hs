@@ -87,7 +87,13 @@ type family GetIndex (x :: a) (xs :: [a]) where
 
 compareInList :: InList x1 ls -> InList x2 ls 
               -> Maybe (Dict( x1 ~ x2 ))
-compareInList = undefined
+compareInList (InList pfM1) (InList pfM2) = compareInMap pfM1 pfM2
+
+compareInMap :: InMap i1 x1 ls -> InMap i2 x2 ls
+             -> Maybe (Dict ( x1 ~ x2 ))
+compareInMap InZ InZ = Just Dict
+compareInMap (InS pfM1) (InS pfM2) = compareInMap pfM1 pfM2
+compareInMap _ _ = Nothing
 
 type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
   IsInList ty (ty ': _)  = 'InList 'InZ

@@ -15,6 +15,8 @@ import qualified Data.Array.IO as ArrayIO
 import Prelude hiding (read)
 import Data.Proxy
 import Data.Constraint
+import System.TimeIt
+import Control.Monad (void)
 
 import Types
 import Context
@@ -114,17 +116,34 @@ alloc :: HasArrayDom lang
       => Int -> a -> LExp lang 'Empty (Array a)
 alloc n a = Dom proxyArray $ Alloc n a
 
+allocL :: HasArrayDom lang
+       => Int -> a -> Lift lang (Array a)
+allocL n a = Suspend $ alloc n a
+
 dealloc :: HasArrayDom lang
         => LExp lang g (Array a) -> LExp lang g One
 dealloc = Dom proxyArray . Dealloc
+
+deallocL :: HasArrayDom lang
+         => Lift lang (Array a ⊸ One)
+deallocL = Suspend . λ $ \ arr -> dealloc $ var arr
 
 read :: HasArrayDom lang
      => Int -> LExp lang g (Array a) -> LExp lang g (Array a ⊗ Lower a)
 read i e = Dom proxyArray $ Read i e
 
+readM :: HasArrayDom lang
+      => Int -> LinT lang (LState' (Array a)) a
+readM i = suspendT . λ $ \arr -> read i $ var arr
+
 write :: HasArrayDom lang
      => Int -> LExp lang g (Array a) -> a -> LExp lang g (Array a)
 write i e a = Dom proxyArray $ Write i e a 
+
+writeM :: forall sig (lang :: Lang sig) a.
+          HasArrayDom lang
+       => Int -> a -> LinT lang (LState' (Array a)) ()
+writeM i a = suspendT . λ $ \arr -> write i (var arr) a ⊗ put ()
 
 array :: forall sig (lang :: Lang sig) a.
          HasArrayDom lang
@@ -165,53 +184,87 @@ instance HasArrayDom lang
 
 -- Examples
 
+fromList :: HasArrayDom lang
+         => [a] -> Lift lang (Array a)
+fromList [] = error "Cannot call fromList on an empty list"
+fromList ls@(a:as) = execLState (fromListSt 0 ls) (allocL (length ls) a)
+
+fromListSt :: HasArrayDom lang
+           => Int -> [a] -> LinT lang (LState' (Array a)) ()
+fromListSt offset [] = return ()
+fromListSt offset (a:as) = do
+  writeM offset a
+  fromListSt (offset+1) as
+
+
+toList :: HasArrayDom lang 
+       => Int -> Lift lang (Array a) -> Lin lang [a]
+toList i arr = evalLState (toList' i) arr deallocL
+
+toList' :: HasArrayDom lang
+        => Int -> LinT lang (LState' (Array a)) [a]
+toList' 0 = return []
+toList' i = do
+  a  <- readM (i-1)
+  as <- toList' (i-1)
+  return $ as ++ [a]
+
+toFromList :: HasArrayDom lang
+           => [a] -> Lin lang [a]
+toFromList ls = toList (length ls) $ fromList ls
+
+type MyArraySig = ( '(IO, '[ ArraySig, TensorSig, OneSig, LowerSig ]) :: Sig)
+type MyArrayDom = ( '[ ArrayDom, TensorDom, OneDom, LowerDom ] :: Lang MyArraySig )
+
+
+toFromListIO :: [a] -> Lin MyArrayDom [a]
+toFromListIO = toFromList
+
+--main :: IO [Int]
+--main = run mainL
+
+
+-- Compare to plain IOArrays
+
+-- Invoke with the length of the array
+toListPlain :: Int -> LArray IO a -> IO [a]
+toListPlain 0 _ = return []
+toListPlain i arr = do
+  a <- readArray arr (i-1)
+  as <- toListPlain (i-1) arr
+  return $ as ++ [a]
+  
+fromListPlain :: [a] -> IO (LArray IO a)
+fromListPlain [] = error "Cannot call fromList on an empty list"
+fromListPlain ls@(a:as) = do
+  arr <- newArray (length ls) a
+  fromListPlain' 0 ls arr
+  return arr
+
+fromListPlain' :: Int -> [a] -> LArray IO a -> IO ()
+fromListPlain' offset [] _ = return ()
+fromListPlain' offset (a:as) arr = do
+  writeArray arr offset a
+  fromListPlain' (offset+1) as arr
+
+toFromListPlain :: [a] -> IO [a]
+toFromListPlain ls = do
+  arr <- fromListPlain ls
+  toListPlain (length ls) arr
+
+plain :: IO [Int]
+plain = toFromListPlain $ replicate 1000 3
+
+comp :: Int -> IO ()
+comp n = do
+  timeIt . void . run $ toFromListIO ls
+  timeIt . void $ toFromListPlain ls
+  where
+    ls = replicate n 3
+
 
 {-
-liftApply :: Lift dom (a ⊸ b) -> Lift dom a -> Lift dom b
-liftApply f a = Suspend $ force f `app` force a
 
-
-fromList :: forall i sig (dom :: Dom sig) a.
-            HasArrays i dom => [a] -> Lift dom (Array a)
-fromList [] = error "Cannot call fromList on an empty list"
-fromList ls@(a:as) = Suspend $ 
-    force (fromList' @i 0 ls) `app` alloc @i len a
-  where
-    len = length ls
-
-fromList' :: forall i sig (dom :: Dom sig) a.
-             HasArrays i dom
-          => Int -> [a] -> Lift dom (Array a ⊸ Array a)
-fromList' offset []     = Suspend . λ $ \x -> var x
-fromList' offset (a:as) = Suspend . λ $ \ arr -> 
-  force (fromList' @i (1+offset) as) `app` write @i offset (var arr) a
-
-
-toList :: forall i sig (dom :: Dom sig) a.
-          HasArrays i dom => Int -> Lift dom (Array a ⊸ Lower [a])
-toList len = Suspend . λ $ \arr ->
-  (force (toList' @i len) `app` var arr) `letPair` \(arr,ls) ->
-  dealloc @i (var arr) `letUnit`
-  var ls
-
-toList' :: forall i sig (dom :: Dom sig) a.
-           HasArrays i dom 
-        => Int -> Lift dom (Array a ⊸ Array a ⊗ Lower [a])
-toList' 0     = Suspend . λ $ \arr -> 
-    var arr ⊗ put []
-toList' i = Suspend . λ $ \arr ->
-  read @i (i-1) (var arr) `letPair` \(arr,x) ->
-  force (toList' @i (i-1)) `app` var arr `letPair` \(arr,xs) ->
-  var x  >! \ a -> 
-  var xs >! \as ->
-  var arr ⊗ put (as ++ [a])
-
-
-toFromList :: forall i dom a. HasArrays i dom => [a] -> Lin dom [a]
-toFromList ls = suspendL $ 
-  force (toList @i len) `app` (force $ fromList @i ls)
-  where
-    len = length ls
 
 
 

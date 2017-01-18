@@ -90,13 +90,36 @@ subst :: AddCtx x s g g'
       -> LExp lang Empty s 
       -> LExp lang g' t 
       -> LExp lang g t
-subst pfA s (Dom proxy e) = substDomain proxy pfA s e
-subst pfA s (Abs pfA' e)   = undefined
+subst pfA s (Var pfS)      = 
+  case singletonInInv (addIn pfA) pfS of {Dict -> 
+  case addSingletonEmpty pfA pfS of {Dict -> 
+    s
+  }}
+subst pfA s (Dom proxy e)  = substDomain proxy pfA s e
+subst pfA s (Abs pfA' e)   = substAbs pfA s pfA' e
 subst pfA s (App pfM e1 e2)= 
   case mergeAddSplit pfM pfA of
     Left  (pfA1,pfM1) -> App pfM1 (subst pfA1 s e1) e2
     Right (pfA2,pfM2) -> App pfM2 e1 (subst pfA2 s e2)
 
+substAbs :: forall lang x s y t g g' g'' r.
+            AddCtx x s g g'
+         -> LExp lang Empty s
+         -> AddCtx y t g' g''
+         -> LExp lang g'' r
+         -> LExp lang g (t ⊸ r)
+substAbs pfA s pfA' e = Abs pfA0 $ subst pfA0' s e
+  where
+    pfI :: In x s g'
+    pfI = addIn pfA
+    pfI' :: In x s g''
+    pfI' = inAdd pfI pfA'
+    pfEq :: Dict (g ~ Remove x g')
+    pfEq = addRemoveEquiv pfA
+    pfA0 :: AddCtx y t g (Remove x g'')
+    pfA0 = case pfEq of Dict -> inAddRemoveLater pfI pfA' 
+    pfA0' :: AddCtx x s (Remove x g'') g''
+    pfA0' = inAddRemove pfI'
 
 -- Evaluation ---------------------------------------------
 

@@ -21,6 +21,7 @@ library
                      , constraints >= 0.8
                      , singletons >= 2.2
                      , array >= 0.5.1.1
+                     , timeit >= 1.0.0.0
   default-language:    Haskell2010
 
 executable LNLHask-exe
