@@ -21,12 +21,12 @@ type family SigType (sig :: Sig) :: [TypeSig] where
 
 data LType (sig :: Sig) where
   Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
-  Lolli  :: LType sig -> LType sig -> LType sig
+--  Lolli  :: LType sig -> LType sig -> LType sig
 
 
 
-type (⊸) = Lolli
-infixr 0 ⊸
+--type (⊸) = Lolli
+--infixr 0 ⊸
 
 {-
   One    :: LType sig

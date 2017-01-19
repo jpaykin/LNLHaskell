@@ -60,22 +60,18 @@ instance HasArrayEffect (SigEffect sig) => HasArraySig sig
 
 -- Has Array Domain ------------------------------------------
 
-data ArrayLVal (val :: LType sig -> *) :: LType sig -> * where
-  VArr    :: forall sig (val :: LType sig -> *) a. 
-             LArray' sig a -> ArrayLVal val (Array a)
+data ArrayLVal (lang :: Lang sig) :: LType sig -> * where
+  VArr    :: forall sig (lang :: Lang sig) a. 
+             LArray' sig a -> ArrayLVal lang (Array a)
 
 --- Expressions -------------------------------------------
-data ArrayLExp (exp :: Ctx sig -> LType sig -> *) :: Ctx sig -> LType sig -> * where
-  Alloc   :: forall sig a (exp :: Ctx sig -> LType sig -> *).
-             Int -> a -> ArrayLExp exp 'Empty (Array a)
-  Dealloc :: forall sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             exp g (Array a) -> ArrayLExp exp g One
-  Read    :: forall  sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             Int -> exp g (Array a) -> ArrayLExp exp g (Array a ⊗ Lower a)
-  Write   :: forall sig a (exp :: Ctx sig -> LType sig -> *) (g :: Ctx sig).
-             Int -> exp g (Array a) -> a -> ArrayLExp exp g (Array a)
-  Arr     :: forall sig a (exp :: Ctx sig -> LType sig -> *).
-             LArray' sig a -> ArrayLExp exp Empty (Array a)
+data ArrayLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
+  Alloc   :: Int -> a -> ArrayLExp lang 'Empty (Array a)
+  Dealloc :: LExp lang g (Array a) -> ArrayLExp lang g One
+  Read    :: Int -> LExp lang g (Array a) -> ArrayLExp lang g (Array a ⊗ Lower a)
+  Write   :: Int -> LExp lang g (Array a) -> a -> ArrayLExp lang g (Array a)
+  Arr     :: forall sig a (lang :: Lang sig).
+             LArray' sig a -> ArrayLExp lang Empty (Array a)
 
 type ArrayDom = '(ArrayLExp,ArrayLVal)
 
@@ -159,28 +155,28 @@ varray = VDom proxyArray . VArr
 instance HasArrayDom lang
       => Language ArrayDom lang where
 
-  valToExpDomain _ (VArr arr) = Arr arr
+  valToExpDomain (VArr arr) = Arr arr
 
-  substDomain _ pfA s (Dealloc e)   = dealloc $ subst pfA s e
-  substDomain _ pfA s (Read i e)    = read    i $ subst pfA s e
-  substDomain _ pfA s (Write i e a) = write   i (subst pfA s e) a
+  substDomain pfA s (Dealloc e)   = dealloc $ subst pfA s e
+  substDomain pfA s (Read i e)    = read    i $ subst pfA s e
+  substDomain pfA s (Write i e a) = write   i (subst pfA s e) a
 
-  evalDomain _ (Alloc n a) = do
+  evalDomain (Alloc n a) = do
     arr <- newArray n a
     return $ varray arr
-  evalDomain _ (Dealloc e) = do
+  evalDomain (Dealloc e) = do
     Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
     deallocArray arr
     return vunit
-  evalDomain _ (Read i e) = do
+  evalDomain (Read i e) = do
     Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
     a <- readArray arr i
     return $ varray arr `vpair` vput a
-  evalDomain _ (Write i e a) = do
+  evalDomain (Write i e a) = do
     Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
     writeArray arr i a
     return $ varray arr
-  evalDomain _ (Arr arr) = return $ varray arr
+  evalDomain (Arr arr) = return $ varray arr
 
 -- Examples
 
@@ -214,7 +210,7 @@ toFromList :: HasArrayDom lang
 toFromList ls = toList (length ls) $ fromList ls
 
 type MyArraySig = ( '(IO, '[ ArraySig, TensorSig, OneSig, LowerSig ]) :: Sig)
-type MyArrayDom = ( '[ ArrayDom, TensorDom, OneDom, LowerDom ] :: Lang MyArraySig )
+type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom ] :: Lang MyArraySig )
 
 
 toFromListIO :: [a] -> Lin MyArrayDom [a]
