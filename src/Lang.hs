@@ -12,12 +12,11 @@ import Data.Kind
 import Data.Constraint
 import Data.Proxy
 
+import Prelim
 import Types
 import Context
 import Proofs
   
---type ExpDom sig = Lang sig -> Ctx sig -> LType sig -> *
---type ValDom sig = Lang sig -> LType sig -> *
 type Dom sig = (Lang sig -> Ctx sig -> LType sig -> *, Lang sig -> LType sig -> *)
 newtype Lang sig = Lang [Dom sig]
 type family ExpDom (dom :: Dom sig) :: Lang sig -> Ctx sig -> LType sig -> * where

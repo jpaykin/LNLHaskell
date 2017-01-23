@@ -12,15 +12,15 @@ import Data.Kind
 import Data.Constraint
 import Data.Proxy
 import Data.Singletons
---import Control.Category
 
+import Prelim
 import Types
 import Context
 import Proofs
 import Classes
 import Lang
 
-type Var x s = SIdent x
+type Var x s = SNat x
 
 var :: Var x s -> LExp sig (Singleton x s) s
 var x = Var $ singSing x
@@ -58,8 +58,8 @@ proxyLolli = Proxy
 λ f = Dom proxyLolli $ Abs pfA (f x) where
   pfA :: AddCtx (Fresh g) s g g'
   pfA  = addCtx
-  x   :: SIdent (Fresh g)
-  x    = addToSIdent pfA
+  x   :: SNat (Fresh g)
+  x    = addToSNat pfA
 
 app :: (Domain LolliDom lang, CMerge g1 g2 g3)
     => LExp lang g1 (s ⊸ t)
@@ -414,9 +414,9 @@ caseof e f1 f2 = Dom proxyPlus $ Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     pfA2 :: AddCtx (Fresh g) s2 g2 g22
     pfA2 = addCtx
     v1 :: Var (Fresh g) s1
-    v1 = addToSIdent pfA1
+    v1 = addToSNat pfA1
     v2 :: Var (Fresh g) s2
-    v2 = addToSIdent pfA2
+    v2 = addToSNat pfA2
 
 instance Domain PlusDom lang
       => Language PlusDom lang where

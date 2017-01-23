@@ -10,6 +10,7 @@ module Proofs where
 import Data.Kind
 import Data.Constraint
 
+import Prelim
 import Types
 import Context
 
@@ -42,13 +43,13 @@ inSNCtx (InLater u pfI) = SCons u $ inSNCtx pfI
 inSCtx :: In x s g -> SCtx g
 inSCtx (In pfI) = SN $ inSNCtx pfI
 
-inSIdent :: In x s g -> SIdent x
-inSIdent (In pfI) = inNSIdent pfI
+inSNat :: In x s g -> SNat x
+inSNat (In pfI) = inNSNat pfI
 
-inNSIdent :: InN x s g -> SIdent x
-inNSIdent InEnd           = SZ
-inNSIdent (InHere _)      = SZ
-inNSIdent (InLater _ pfI) = SS $ inNSIdent pfI
+inNSNat :: InN x s g -> SNat x
+inNSNat InEnd           = SZ
+inNSNat (InHere _)      = SZ
+inNSNat (InLater _ pfI) = SS $ inNSNat pfI
 
 inSCtxRemove :: InN x s g ->  SCtx (RemoveN x g)
 inSCtxRemove InEnd           = SEmpty
@@ -79,32 +80,32 @@ singletonSCtx :: SingletonCtx x s g -> SCtx g
 singletonSCtx (SingN pfS) = SN $ singletonSCtxN pfS
 
 
-addToSIdent :: AddCtx x s g g' -> SIdent x
-addToSIdent pfA = inSIdent $ addIn pfA
+addToSNat :: AddCtx x s g g' -> SNat x
+addToSNat pfA = inSNat $ addIn pfA
 
-sCtxSing :: forall s x. SIdent x -> SCtx (Singleton x s)
+sCtxSing :: forall s x. SNat x -> SCtx (Singleton x s)
 sCtxSing x = SN $ sNCtxSing @s x
 
-sNCtxSing :: forall s x. SIdent x -> SNCtx (SingletonN x s)
+sNCtxSing :: forall s x. SNat x -> SNCtx (SingletonN x s)
 sNCtxSing SZ = SEnd
 sNCtxSing (SS x) = SCons SUnused $ sNCtxSing @s x
 
 -- Freshness ---------------------------------------------
 
-knownFresh :: SCtx g -> SIdent (Fresh g)
+knownFresh :: SCtx g -> SNat (Fresh g)
 knownFresh SEmpty = SZ
 knownFresh (SN g) = knownFreshN g
 
-knownFreshN :: SNCtx g -> SIdent (FreshN g)
+knownFreshN :: SNCtx g -> SNat (FreshN g)
 knownFreshN SEnd = SS SZ
 knownFreshN (SCons SUnused _) = SZ
 knownFreshN (SCons SUsed g)   = SS $ knownFreshN g
 
-knownFresh2 :: SCtx g -> SIdent (Fresh2 g)
+knownFresh2 :: SCtx g -> SNat (Fresh2 g)
 knownFresh2 SEmpty = SS SZ
 knownFresh2 (SN g) = knownFreshN2 g
 
-knownFreshN2 :: SNCtx g -> SIdent (FreshN2 g)
+knownFreshN2 :: SNCtx g -> SNat (FreshN2 g)
 knownFreshN2 SEnd = SS (SS SZ)
 knownFreshN2 (SCons SUnused g) = SS (knownFreshN g)
 knownFreshN2 (SCons SUsed   g) = SS $ knownFreshN2 g
@@ -207,19 +208,19 @@ singletonAddEq :: SCtx g -> Dict (Add x s g ~ Singleton x s)
 -}
 ------------------------------------------------
 
-addAdd :: SCtx g -> SIdent x -> AddCtx x s g (Add x s g)
+addAdd :: SCtx g -> SNat x -> AddCtx x s g (Add x s g)
 addAdd SEmpty x = AddN . AddS $ singNSingN x
 addAdd (SN g) x = AddN . AddNN $ addNAddN g x
 
-addNAddN :: SNCtx g -> SIdent x -> AddNCtxN x s g (AddNN x s g)
+addNAddN :: SNCtx g -> SNat x -> AddNCtxN x s g (AddNN x s g)
 addNAddN SEnd              (SS x) = AddEnd $ singNSingN x
 addNAddN (SCons SUnused g) SZ     = AddHere g
 addNAddN (SCons u g)       (SS x) = AddLater u $ addNAddN g x
 
-singSing :: SIdent x -> SingletonCtx x s (Singleton x s)
+singSing :: SNat x -> SingletonCtx x s (Singleton x s)
 singSing x = SingN $ singNSingN x
 
-singNSingN :: SIdent x -> SingletonNCtx x s (SingletonN x s)
+singNSingN :: SNat x -> SingletonNCtx x s (SingletonN x s)
 singNSingN SZ     = AddHereS
 singNSingN (SS x) = AddLaterS $ singNSingN x
 

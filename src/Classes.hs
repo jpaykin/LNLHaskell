@@ -11,6 +11,7 @@ import Data.Kind
 import Data.Constraint
 import Prelude hiding (div)
 
+import Prelim
 import Types
 import Context
 import Proofs
@@ -152,18 +153,6 @@ class CRemoveCtx x s g g' | x s g -> g', x s g' -> g where
 instance CAddCtx x s g' g => CRemoveCtx x s g g' where
   removeCtx = addCtx
 
-
--- Shift ----------------------------------------------------
-
-class CShiftCtx u g g' | u g -> g', u g' -> g where
-  shiftCtx :: ShiftCtx u g g'
-
-instance CShiftCtx ('Used s) 'Empty ('N ('End s)) where
-  shiftCtx = ShiftEmptyUsed
-instance CShiftCtx 'Unused 'Empty 'Empty where
-  shiftCtx = ShiftEmptyUnused
-instance CShiftCtx u ('N g) ('N ('Cons u g)) where
-  shiftCtx = ShiftN
 
 -- Merge ----------------------------------------------------
 
