@@ -7,6 +7,8 @@
 
 module Types where
 
+import Prelim
+
 import Data.Kind
 import Data.Constraint
 
@@ -21,30 +23,6 @@ type family SigType (sig :: Sig) :: [TypeSig] where
 
 data LType (sig :: Sig) where
   Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
---  Lolli  :: LType sig -> LType sig -> LType sig
-
-
-
---type (⊸) = Lolli
---infixr 0 ⊸
-
-{-
-  One    :: LType sig
-  Lower  :: * -> LType sig
-  Tensor :: LType sig -> LType sig -> LType sig
-  With   :: LType sig -> LType sig -> LType sig
-  Plus   :: LType sig -> LType sig -> LType sig
-
-
-type (⊗) = Tensor
-infixr 3 ⊗
-
-type (&) = With
-infixr 3 &
-
-type (⊕) = Plus
-infixr 3 ⊕
--}
 
 type Ident = Nat
 data Usage sig = Used (LType sig) | Unused
@@ -54,24 +32,6 @@ data NCtx sig = End (LType sig) | Cons (Usage sig) (NCtx sig)
 
 -- In Lists ------------------------------------------------------
 
-data InMap (i :: Nat) (x :: a) (xs :: [a]) where
-  InZ :: InMap 'Z a (a ': as)
-  InS :: InMap i a as -> InMap ('S i) a (b ': as)
-
-data InList (x :: a) (xs :: [a]) where
-  InList :: InMap i x xs -> InList x xs
-
-class MapsTo (i :: Nat) (x :: a) (xs :: [a]) where
-  pfInMap :: InMap i x xs
-instance MapsTo 'Z a (a ': as) where
-  pfInMap = InZ
-instance MapsTo i a as => MapsTo ('S i) a (b ': as) where
-  pfInMap = InS pfInMap
-
-class CInList (x :: a) (xs :: [a]) where
-  pfInList :: InList x xs
-instance MapsTo (GetIndex x xs) x xs => CInList x xs where
-  pfInList = InList (pfInMap @_ @(GetIndex x xs))
 
 
 class CInSig (ty :: TypeSig) (sig :: Sig)
@@ -81,26 +41,6 @@ class CInSig' (i :: Nat) (ty :: TypeSig) (sig :: Sig)
 instance CInSig' 'Z ty '(m,ty ': tys)
 instance CInSig' i ty '(m,tys) => CInSig' ('S i) ty '(m, ty' ': tys)
 
-type family GetIndex (x :: a) (xs :: [a]) where
-  GetIndex x (x ': _) = 'Z
-  GetIndex x (_ ': ls) = 'S (GetIndex x ls)
-
-compareInList :: InList x1 ls -> InList x2 ls 
-              -> Maybe (Dict( x1 ~ x2 ))
-compareInList (InList pfM1) (InList pfM2) = compareInMap pfM1 pfM2
-
-compareInMap :: InMap i1 x1 ls -> InMap i2 x2 ls
-             -> Maybe (Dict ( x1 ~ x2 ))
-compareInMap InZ InZ = Just Dict
-compareInMap (InS pfM1) (InS pfM2) = compareInMap pfM1 pfM2
-compareInMap _ _ = Nothing
-
-type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
-  IsInList ty (ty ': _)  = 'InList 'InZ
-  IsInList ty (_  ': ls) = InListCons (IsInList ty ls)
-
-type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
-  InListCons ('InList pfM) = 'InList ('InS pfM)
 
 type Sig' (ty :: TypeSig) (tys :: [TypeSig]) = ('Sig (IsInList ty tys) 
             :: ty (LType '(m,tys)) -> LType '(m,tys))
@@ -186,29 +126,5 @@ type family Remove (x :: Ident) (g :: Ctx sig) :: Ctx sig where
 
 -- Nats ---------------------------------------------------------
 
-data Nat = Z | S Nat deriving (Eq, Ord)
+type SIdent = SNat 
 
-data SIdent :: Nat -> * where
-  SZ :: SIdent 'Z
-  SS :: SIdent x -> SIdent ('S x)
-
-
-instance Num Nat where
-  Z   + n   = n
-  S m + n   = S (m+n)
-  Z   - n   = Z
-  m   - Z   = m
-  S m - S n = m - n
-  Z   * n   = Z
-  S m * n   = m * n + n
-  abs e     = e
-  signum e  = S Z
-  fromInteger = undefined
-  negate e    = undefined
-
-toInt :: Nat -> Int
-toInt Z = 0
-toInt (S n) = toInt n + 1
-
-instance Show Nat where
-  show n = show $ toInt n
