@@ -40,7 +40,7 @@ packages:
 - '.'
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: [text-1.2.2.1, hashable-1.2.4.0, mtl-2.2.1, transformers-compat-0.5.1.4, constraints-0.8, random-1.1, MonadRandom-0.4.2.3, binary-0.8.4.1, bytestring-0.10.8.1, singletons-2.2, timeit-1.0.0.0]
+extra-deps: [text-1.2.2.1, hashable-1.2.4.0, mtl-2.2.1, transformers-compat-0.5.1.4, constraints-0.8, random-1.1, MonadRandom-0.4.2.3, binary-0.8.4.1, bytestring-0.10.8.1, singletons-2.2, timeit-1.0.0.0, linear-1.20.5, array-0.5.1.1, hmatrix-0.18.0.0]
 
 # Override default flag values for local packages and extra-deps
 flags: {}

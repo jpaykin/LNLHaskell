@@ -17,6 +17,14 @@ data SNat :: Nat -> * where
   SZ :: SNat 'Z
   SS :: SNat x -> SNat ('S x)
 
+
+class KnownNat n where
+  sNat :: SNat n
+instance KnownNat 'Z where
+  sNat = SZ
+instance KnownNat n => KnownNat ('S n) where
+  sNat = SS sNat
+
 type family Plus (m :: Nat) (n :: Nat) :: Nat where
   Plus 'Z     n = n
   Plus ('S m) n = 'S (Plus m n)
@@ -38,9 +46,30 @@ instance Num Nat where
   S m * n   = m * n + n
   abs e     = e
   signum e  = S Z
-  fromInteger = undefined
-  negate e    = undefined
 
+  fromInteger 0 = Z
+  fromInteger n = S $ fromInteger (n-1)
+
+  negate n = n
+
+-- Operations on SNats
+
+sTimes :: SNat m -> SNat n -> SNat (m `Times` n)
+sTimes = undefined
+
+data SomeSNat where
+  SomeSNat :: SNat n -> SomeSNat
+
+instance Num SomeSNat where
+  (+) = undefined
+  (-) = undefined
+  (*) = undefined
+  abs = undefined
+  signum = undefined
+  
+  fromInteger 0 = SomeSNat SZ
+  fromInteger n = case fromInteger (n-1) of
+    SomeSNat n' -> SomeSNat $ SS n'
 
 class ToInt a where
   toInt :: a -> Int
