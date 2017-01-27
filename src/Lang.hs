@@ -11,6 +11,7 @@ module Lang where
 import Data.Kind
 import Data.Constraint
 import Data.Proxy
+import Data.Maybe
 
 import Prelim
 import Types
@@ -60,14 +61,6 @@ data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
 
   Var :: SingletonCtx x t g -> LExp lang g t
 
-  -- Abs :: AddCtx x s g g' 
-  --     -> LExp lang g' t
-  --     -> LExp lang g (s ⊸ t)
-
-  -- App :: Merge g1 g2 g3
-  --     -> LExp lang g1 (s ⊸ t)
-  --     -> LExp lang g2 s
-  --     -> LExp lang g3 t
 
 
 -- Values -----------------------------------------------------
@@ -75,17 +68,12 @@ data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
 data LVal :: forall sig. Lang sig -> LType sig -> * where
   VDom  :: Language dom lang
         => Proxy dom -> ValDom dom lang s -> LVal lang s
-  -- VAbs  :: AddCtx x s 'Empty g'
-  --       -> LExp lang g' t
-  --       -> LVal lang (s ⊸ t)
 
 -- ValToExp -----------------------------------------------
 
 valToExp :: forall sig (lang :: Lang sig) (t :: LType sig).
             LVal lang t -> LExp lang 'Empty t
 valToExp (VDom (proxy :: Proxy dom) v) = Dom proxy $ valToExpDomain @_ @dom v
---valToExp (VAbs pfA e)   = Abs pfA e
-
 
 -- Substitution --------------------------------------------
 
@@ -135,3 +123,9 @@ fromLVal _ (VDom (proxy :: Proxy dom') v) =
     Nothing   -> Nothing
     Just Dict -> Just v
 
+-- this function is partial if the value is not
+-- in the specified domain
+evalToValDom :: forall sig dom (lang :: Lang sig) s.
+                (CInLang dom lang, Monad (SigEffect sig))
+             => Proxy dom -> LExp lang 'Empty s -> SigEffect sig (ValDom dom lang s)
+evalToValDom proxy e = fromJust . fromLVal proxy <$> eval' e

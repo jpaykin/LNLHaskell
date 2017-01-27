@@ -68,12 +68,12 @@ app :: (Domain LolliDom lang, CMerge g1 g2 g3)
 e1 `app` e2 = Dom proxyLolli $ App merge e1 e2
 
 
-letin :: (Domain LolliDom lang, CMerge g1 g2 g)
+letin :: forall lang s t g g1 g2 g2'.
+         (Domain LolliDom lang, CAddCtx (Fresh g2) s g2 g2', CMerge g1 g2 g)
       => LExp lang g1 s
-      -> LExp lang g2 (s ⊸ t)
+      -> (Var (Fresh g2) s -> LExp lang g2' t)
       -> LExp lang g t
-letin e f = f `app` e
-
+letin e f = λ f `app` e
 
 substAbs :: forall lang x s y t g g' g'' r.
             Domain LolliDom lang
@@ -105,7 +105,7 @@ instance Domain LolliDom lang => Language LolliDom lang where
   evalDomain (Abs pfA e) = return $ VDom proxyLolli $ VAbs pfA e
   evalDomain (App pfM e1 e2) = 
     case mergeEmpty pfM of {Dict -> do
-    Just (VAbs pfA e1') <- fmap (fromLVal proxyLolli) $ eval' e1
+    VAbs pfA e1' <- evalToValDom proxyLolli e1
     e2'          <- eval e2
     case addRemoveEquiv pfA of {Dict -> 
     eval' $ subst pfA e2' e1'
@@ -196,7 +196,7 @@ instance Domain OneDom lang
   evalDomain Unit = return vunit
   evalDomain (LetUnit pfM e1 e2) = 
     case mergeEmpty pfM of {Dict -> do
-      Just VUnit <- fmap (fromLVal proxyOne) $ eval' e1
+      VUnit <- evalToValDom proxyOne e1
       eval' e2
     }
 
@@ -305,7 +305,7 @@ instance Domain TensorDom lang
     }
   evalDomain (LetPair pfM pfA1 pfA2 e e') = 
     case mergeEmpty pfM of {Dict -> do
-      Just (VPair v1 v2) <- fmap (fromLVal proxyTensor) $ eval' e
+      VPair v1 v2 <- evalToValDom proxyTensor e
       eval' $ subst pfA1 (valToExp v1) $ subst pfA2 (valToExp v2) e'
     }
 
@@ -357,7 +357,7 @@ instance Domain LowerDom lang
   evalDomain (Put a) = return $ vput a
   evalDomain (LetBang pfM e f) = 
     case mergeEmpty pfM of {Dict -> do
-      Just (VPut a) <- fmap (fromLVal proxyLower) $ eval' e
+      VPut a <- evalToValDom proxyLower e
       eval' $ f a
     }
 
@@ -418,6 +418,14 @@ caseof e f1 f2 = Dom proxyPlus $ Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     v2 :: Var (Fresh g) s2
     v2 = addToSNat pfA2
 
+
+oplus :: (Domain LolliDom lang, Domain PlusDom lang, Domain WithDom lang)
+    => LExp lang 'Empty ((s1 ⊸ t) & (s2 ⊸ t) ⊸ s1 ⊕ s2 ⊸ t)
+oplus = λ $ \f -> λ $ \x -> 
+  caseof (var x)
+    (\x1 -> proj1 (var f) `app` var x1)
+    (\x2 -> proj2 (var f) `app` var x2)
+
 instance Domain PlusDom lang
       => Language PlusDom lang where
 
@@ -429,8 +437,8 @@ instance Domain PlusDom lang
         Dom proxyPlus $ Case pfM1 pfA1 pfA2 (subst pfA1' s e) e1 e2
       Right (pfA2',pfM2) -> undefined -- TODO
 
-  evalDomain (Inl e) = fmap (VDom proxyPlus . VInl) $ eval' e
-  evalDomain (Inr e) = fmap (VDom proxyPlus . VInr) $ eval' e
+  evalDomain (Inl e) = VDom proxyPlus . VInl <$> eval' e
+  evalDomain (Inr e) = VDom proxyPlus . VInr <$> eval' e
   evalDomain (Case pfM pfA1 pfA2 e e1 e2) = 
     case mergeEmpty pfM of {Dict -> do
       v <- eval' e
@@ -482,10 +490,10 @@ instance Domain WithDom lang => Language WithDom lang where
   -- TODO: Think about laziness and evaluation order
   evalDomain (With e1 e2) = return $ VDom proxyWith $ VWith e1 e2
   evalDomain (Proj1 e) = do
-    Just (VWith e1 e2) <- fmap (fromLVal proxyWith) $ eval' e
+    VWith e1 e2 <- evalToValDom proxyWith e
     eval' e1
   evalDomain (Proj2 e) = do
-    Just (VWith e1 e2) <- fmap (fromLVal proxyWith) $ eval' e
+    VWith e1 e2 <- evalToValDom proxyWith e
     eval' e2
 
   valToExpDomain (VWith e1 e2) = With e1 e2
@@ -674,21 +682,22 @@ forceL (Lin e) = force e
 suspendL :: LExp lang 'Empty (Lower a) -> Lin lang a
 suspendL = Lin . Suspend 
 
-evalL :: forall sig (lang :: Lang sig) a.
-         Monad (SigEffect sig) => Lin lang a -> SigEffect sig (Lin lang a)
-evalL (Lin e) = fmap Lin $ evalL' e where
-  evalL' :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
-         => Lift lang (Lower a) -> SigEffect sig (Lift lang (Lower a))
-  evalL' (Suspend e) = fmap Suspend $ eval e
+-- evalL :: forall sig (lang :: Lang sig) a.
+--          Monad (SigEffect sig) => Lin lang a -> SigEffect sig (Lin lang a)
+-- evalL (Lin e) = Lin <$> evalL' e where
+--   evalL' :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
+--          => Lift lang (Lower a) -> SigEffect sig (Lift lang (Lower a))
+--   evalL' (Suspend e) = Suspend <$> eval e
 
 evalVal :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
         => Lin lang a -> SigEffect sig (LVal lang (Lower a))
 evalVal (Lin (Suspend e)) = eval' e
 
-run :: forall sig (lang :: Lang sig) a. (Monad (SigEffect sig), Domain LowerDom lang)
+run :: forall sig (lang :: Lang sig) a. 
+       (Monad (SigEffect sig), Domain LowerDom lang)
     => Lin lang a -> SigEffect sig a
 run e = do
-  Just (VPut a) <- fmap (fromLVal proxyLower) $ evalVal e
+  Just (VPut a) <- fromLVal proxyLower <$> evalVal e
   return a
 
 -- Monads in the linear fragment ----------------------------------

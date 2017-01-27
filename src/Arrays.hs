@@ -30,8 +30,8 @@ import Interface
 data ArraySig :: TypeSig where
   ArraySig :: * -> ArraySig ty
 
-type Array a = ('Sig (IsInList ArraySig (SigType sig)) 
-                     ('ArraySig a :: ArraySig (LType sig)) :: LType sig)
+type Array a = ('Sig (InSig ArraySig sig) ('ArraySig a) :: LType sig)
+--                     ('ArraySig a :: ArraySig (LType sig)) :: LType sig)
 
 -- Array Effect ----------------------------------------------------
 
@@ -102,10 +102,10 @@ lValToArray (VDom pfInList' v) =
 -}
 
 class (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
-       Domain TensorDom lang, Domain LowerDom lang)
+       Domain TensorDom lang, Domain LowerDom lang, Domain LolliDom lang)
    => HasArrayDom (lang :: Lang sig) 
 instance (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
-       Domain TensorDom lang, Domain LowerDom lang)
+       Domain TensorDom lang, Domain LowerDom lang, Domain LolliDom lang)
    => HasArrayDom (lang :: Lang sig) 
 
 alloc :: HasArrayDom lang
@@ -165,15 +165,15 @@ instance HasArrayDom lang
     arr <- newArray n a
     return $ varray arr
   evalDomain (Dealloc e) = do
-    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    VArr arr <- evalToValDom proxyArray e
     deallocArray arr
     return vunit
   evalDomain (Read i e) = do
-    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    VArr arr <- evalToValDom proxyArray e
     a <- readArray arr i
     return $ varray arr `vpair` vput a
   evalDomain (Write i e a) = do
-    Just (VArr arr) <- fmap (fromLVal proxyArray) $ eval' e
+    VArr arr <- evalToValDom proxyArray e
     writeArray arr i a
     return $ varray arr
   evalDomain (Arr arr) = return $ varray arr
@@ -209,8 +209,8 @@ toFromList :: HasArrayDom lang
            => [a] -> Lin lang [a]
 toFromList ls = toList (length ls) $ fromList ls
 
-type MyArraySig = ( '(IO, '[ ArraySig, TensorSig, OneSig, LowerSig ]) :: Sig)
-type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom ] :: Lang MyArraySig )
+type MyArraySig = ( '(IO, '[ ArraySig, TensorSig, OneSig, LowerSig, LolliSig ]) :: Sig)
+type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom, LolliDom ] :: Lang MyArraySig )
 
 
 toFromListIO :: [a] -> Lin MyArrayDom [a]
