@@ -33,7 +33,6 @@ data QuantumLVal (lang :: Lang sig) :: LType sig -> * where
   VQubit :: QId -> QuantumLVal lang Qubit
   
 data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
-  Qubit   :: QId  -> QuantumLExp lang 'Empty Qubit
   New     :: Bool -> QuantumLExp lang 'Empty Qubit
   Meas    :: LExp lang g Qubit -> QuantumLExp lang g (Lower Bool)
   Unitary :: Unitary s -> LExp lang g s -> QuantumLExp lang g s
@@ -89,30 +88,18 @@ instance (Domain OneDom lang, Domain TensorDom lang, Domain LowerDom lang,
 
 
 instance HasQuantumDom lang => Language QuantumDom (lang :: Lang sig) where
-  substDomain pfA s (Meas e) = meas $ subst pfA s e
-  substDomain pfA s (Unitary u e) = unitary u $ subst pfA s e
---  substDomain pfA s (ControlBy pfM e1 e2) = 
---    case mergeAddSplit pfM pfA of
---      Left  (pfA1,pfM1) -> Dom proxyQuantum $ ControlBy pfM1 (subst pfA1 s e1) e2
---      Right (pfA2,pfM2) -> Dom proxyQuantum $ ControlBy pfM2 e1 (subst pfA2 s e2)
-
-  valToExpDomain :: forall sig (lang :: Lang sig) (s :: LType sig).
-                    QuantumLVal lang s
-                 -> QuantumLExp lang 'Empty s
-  valToExpDomain (VQubit i) = Qubit i
 
   -- Add controlBy
-  evalDomain :: QuantumLExp lang 'Empty s -> SigEffect sig (LVal lang s)
-  evalDomain (Qubit i) = return $ vqubit i
-  evalDomain (New b)   = do
+--  evalDomain :: QuantumLExp lang 'Empty s -> SigEffect sig (LVal lang s)
+  evalDomain _ (New b)   = do
     i <- newQubit @sig b
     return $ vqubit i
-  evalDomain (Meas e)  = do
-    VQubit i <- evalToValDom proxyQuantum e
+  evalDomain ρ (Meas e)  = do
+    VQubit i <- evalToValDom proxyQuantum ρ e
     b <- measQubit @sig i
     return $ vput b
-  evalDomain (Unitary u e) = do
-    v  <- eval' e
+  evalDomain ρ (Unitary u e) = do
+    v  <- eval' ρ e
     qs <- valToQubits @sig v
     applyU @sig u qs
     return v 

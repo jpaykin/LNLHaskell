@@ -43,7 +43,9 @@ data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
       -> LExp lang g2 s
       -> LolliExp lang g t
 data LolliVal :: Lang sig -> LType sig -> * where
-  VAbs :: AddCtx x s 'Empty g'
+  -- The value is a closure
+  VAbs :: ECtx lang g
+       -> AddCtx x s g g'
        -> LExp lang g' t
        -> LolliVal lang (s ⊸ t)
 
@@ -75,87 +77,21 @@ letin :: forall lang s t g g1 g2 g2'.
       -> LExp lang g t
 letin e f = λ f `app` e
 
-substAbs :: forall lang x s y t g g' g'' r.
-            Domain LolliDom lang
-         => AddCtx x s g g'
-         -> LExp lang Empty s
-         -> AddCtx y t g' g''
-         -> LExp lang g'' r
-         -> LExp lang g (t ⊸ r)
-substAbs pfA s pfA' e = Dom proxyLolli $ Abs pfA0 $ subst pfA0' s e
-  where
-    pfI :: In x s g'
-    pfI = addIn pfA
-    pfI' :: In x s g''
-    pfI' = inAdd pfI pfA'
-    pfEq :: Dict (g ~ Remove x g')
-    pfEq = addRemoveEquiv pfA
-    pfA0 :: AddCtx y t g (Remove x g'')
-    pfA0 = case pfEq of Dict -> inAddRemoveLater pfI pfA' 
-    pfA0' :: AddCtx x s (Remove x g'') g''
-    pfA0' = inAddRemove pfI'
 
+-- Can we make this CBN instead of CBV? Can we have both?
 instance Domain LolliDom lang => Language LolliDom lang where
-  substDomain pfA s (Abs pfA' e)   = substAbs pfA s pfA' e
-  substDomain pfA s (App pfM e1 e2)= 
-    case mergeAddSplit pfM pfA of
-      Left  (pfA1,pfM1) -> Dom proxyLolli $ App pfM1 (subst pfA1 s e1) e2
-      Right (pfA2,pfM2) -> Dom proxyLolli $ App pfM2 e1 (subst pfA2 s e2)
+  evalDomain ρ (Abs pfA e) = return $ VDom proxyLolli $ VAbs ρ pfA e
+  evalDomain ρ (App pfM e1 e2) = do
+      VAbs ρ' pfA e1' <- evalToValDom proxyLolli ρ1 e1
+      v2              <- eval' ρ2 e2
+      eval' (addECtx pfA ρ' $ ValData v2) e1'
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ
 
-  evalDomain (Abs pfA e) = return $ VDom proxyLolli $ VAbs pfA e
-  evalDomain (App pfM e1 e2) = 
-    case mergeEmpty pfM of {Dict -> do
-    VAbs pfA e1' <- evalToValDom proxyLolli e1
-    e2'          <- eval e2
-    case addRemoveEquiv pfA of {Dict -> 
-    eval' $ subst pfA e2' e1'
-  }}
-
-  valToExpDomain (VAbs pfA e) = Abs pfA e
-
-
--- Categories ----------------------------
-
---newtype LArrow (dom :: Dom sig) (s :: LType sig) (t :: LType sig) = LArrow (LExp dom 'Empty (s ⊸ t))
-
---instance Category (LArrow dom) where
---  id    = LArrow $ λ var
---  LArrow g . LArrow f = LArrow Prelude.. λ $ \x -> g `app` (f `app` var x)
 
 -- DEFINING DOMAINS ---------------------------------
 
--- Abstraction and Application ----------------------
-
-
-{-
-data LolliSig ty where
-  LolliSig :: ty -> ty -> LolliSig ty
-
-class HasLolli sig where
-  type (⊸) (s :: LType sig) (t :: LType sig) :: LType sig
-
-infixr 0 ⊸
-
-instance CInList LolliSig (SigType sig) => HasLolli sig where
-  type s ⊸ t = 'Sig PfInList ('LolliSig s t)
-
-data LolliLExp :: ExpDom sig where
-  Abs :: AddCtx x s g g'
-      -> exp g' t
-      -> LolliLExp exp g (s ⊸ t)
-  App :: Merge g1 g2 g
-      -> exp g1 (s ⊸ t)
-      -> exp g2 s
-      -> LolliLExp exp g t
-
-data LolliLVal :: ValDom sig where
-  VAbs :: AddCtx x s g g'
-       -> 
--}
-
-
 -- One ---------------------------------------
--- GOAL: have types that don't have to be indexed by the signature.
 
 data OneSig ty where
   OneSig :: OneSig ty
@@ -188,19 +124,14 @@ vunit = VDom proxyOne VUnit
 
 instance Domain OneDom lang
       => Language OneDom lang where
-  substDomain pfA s (LetUnit pfM e1 e2) = 
-    case mergeAddSplit pfM pfA of 
-      Left  (pfA1,pfM1) -> Dom proxyOne $ LetUnit pfM1 (subst pfA1 s e1) e2
-      Right (pfA2,pfM2) -> Dom proxyOne $ LetUnit pfM2 e1 (subst pfA2 s e2)
 
-  evalDomain Unit = return vunit
-  evalDomain (LetUnit pfM e1 e2) = 
-    case mergeEmpty pfM of {Dict -> do
-      VUnit <- evalToValDom proxyOne e1
-      eval' e2
-    }
+  evalDomain ρ Unit = return vunit
+  evalDomain ρ (LetUnit pfM e1 e2) = do
+    VUnit <- evalToValDom proxyOne ρ1 e1
+    eval' ρ2 e2
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ
 
-  valToExpDomain VUnit = Unit
 
 
 -- Tensor ------------------------------------------------------
@@ -254,62 +185,24 @@ vpair :: Domain TensorDom lang
       => LVal lang s1 -> LVal lang s2 -> LVal lang (s1 ⊗ s2)
 vpair v1 v2 = VDom proxyTensor $ VPair v1 v2
 
-substLetPair :: forall lang x s g g' g1 g2 g2' g2'' x1 x2 s1 s2 t.
-                Domain TensorDom lang
-             => AddCtx x s g g'
-             -> LExp lang Empty s
-             -> Merge g1 g2'' g' 
-             -> AddCtx x1 s1 g2'' g2' 
-             -> AddCtx x2 s2 g2' g2
-             -> LExp lang g1 (s1 ⊗ s2) 
-             -> LExp lang g2 t
-             -> LExp lang g t
-substLetPair pfA s pfM pfA1 pfA2 e e' = 
-  case addRemoveEquiv pfA of {Dict ->
-  case mergeAddSplit pfM pfA of
-    Left  ( pfA1' :: AddCtx x s (Remove x g1) g1
-          , pfM1  :: Merge (Remove x g1) g2'' g) -> 
-      Dom proxyTensor $ LetPair pfM1 pfA1 pfA2 (subst pfA1' s e) e'
-    Right ( pfA2' :: AddCtx x s (Remove x g2'') g2''
-          , pfM2  :: Merge g1 (Remove x g2'') g) -> 
-      Dom proxyTensor $ LetPair pfM2 pfA10 pfA20 e $ subst pfA0 s e'
-      where
-        pfI2'' :: In x s g2''
-        pfI2'' = addIn pfA2'
-        pfI2' :: In x s g2'
-        pfI2' = inAdd pfI2'' pfA1
-        pfI2 :: In x s g2
-        pfI2 = inAdd pfI2' pfA2
-        pfA0 :: AddCtx x s (Remove x g2) g2
-        pfA0 = inAddRemove pfI2
-        pfA10 :: AddCtx x1 s1 (Remove x g2'') (Remove x g2')
-        pfA10 = inAddRemoveLater pfI2'' pfA1
-        pfA20 :: AddCtx x2 s2 (Remove x g2') (Remove x g2)
-        pfA20 = inAddRemoveLater pfI2' pfA2
-  }
 
 instance Domain TensorDom lang
       => Language TensorDom lang where
-  substDomain pfA s (Pair pfM e1 e2) = 
-    case mergeAddSplit pfM pfA of
-      Left  (pfA1,pfM1) -> Dom proxyTensor $ Pair pfM1 (subst pfA1 s e1) e2
-      Right (pfA2,pfM2) -> Dom proxyTensor $ Pair pfM2 e1 (subst pfA2 s e2)
-  substDomain pfA s (LetPair pfM pfA1 pfA2 e e') = 
-    substLetPair pfA s pfM pfA1 pfA2 e e'
 
-  evalDomain (Pair pfM e1 e2) = 
-    case mergeEmpty pfM of {Dict -> do
-      v1 <- eval' e1
-      v2 <- eval' e2
+  evalDomain ρ (Pair pfM e1 e2) = do
+      v1 <- eval' ρ1 e1
+      v2 <- eval' ρ2 e2
       return $ vpair v1 v2
-    }
-  evalDomain (LetPair pfM pfA1 pfA2 e e') = 
-    case mergeEmpty pfM of {Dict -> do
-      VPair v1 v2 <- evalToValDom proxyTensor e
-      eval' $ subst pfA1 (valToExp v1) $ subst pfA2 (valToExp v2) e'
-    }
-
-  valToExpDomain (VPair v1 v2) = Pair MergeE (valToExp v1) (valToExp v2)
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ
+  evalDomain ρ (LetPair pfM pfA pfA' e e') = 
+    let 
+    in do
+      VPair v1 v2 <- evalToValDom proxyTensor ρ1 e
+      eval' (ρ' v1 v2) e'
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ 
+      ρ' v1 v2 = addECtx pfA' (addECtx pfA ρ2 (ValData v1)) (ValData v2)
 
 -- Lower -------------------------------------------------------
 
@@ -347,21 +240,15 @@ vput a = VDom proxyLower $ VPut a
 
 instance Domain LowerDom lang
       => Language LowerDom lang where
-  substDomain pfA s (LetBang pfM e f) =
-    case mergeAddSplit pfM pfA of
-      Left  (pfA1,pfM1) -> Dom proxyLower $ LetBang pfM1 (subst pfA1 s e) f
-      Right (pfA2,pfM2) -> Dom proxyLower $ LetBang pfM2 e f'
-        where
-          f' x = subst pfA2 s (f x)
 
-  evalDomain (Put a) = return $ vput a
-  evalDomain (LetBang pfM e f) = 
-    case mergeEmpty pfM of {Dict -> do
-      VPut a <- evalToValDom proxyLower e
-      eval' $ f a
-    }
+  evalDomain _ (Put a) = return $ vput a
+  evalDomain ρ (LetBang pfM e f) = do
+      VPut a <- evalToValDom proxyLower ρ1 e
+      eval' ρ2 $ f a
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ
 
-  valToExpDomain (VPut a) = Put a
+
 
 -- Additive Sums
 
@@ -419,36 +306,20 @@ caseof e f1 f2 = Dom proxyPlus $ Case merge pfA1 pfA2 e (f1 v1) (f2 v2)
     v2 = addToSNat pfA2
 
 
-oplus :: (Domain LolliDom lang, Domain PlusDom lang, Domain WithDom lang)
-    => LExp lang 'Empty ((s1 ⊸ t) & (s2 ⊸ t) ⊸ s1 ⊕ s2 ⊸ t)
-oplus = λ $ \f -> λ $ \x -> 
-  caseof (var x)
-    (\x1 -> proj1 (var f) `app` var x1)
-    (\x2 -> proj2 (var f) `app` var x2)
 
 instance Domain PlusDom lang
       => Language PlusDom lang where
 
-  substDomain pfA s (Inl e) = inl $ subst pfA s e
-  substDomain pfA s (Inr e) = inr $ subst pfA s e
-  substDomain pfA s (Case pfM pfA1 pfA2 e e1 e2) =
-    case mergeAddSplit pfM pfA of
-      Left  (pfA1',pfM1) -> 
-        Dom proxyPlus $ Case pfM1 pfA1 pfA2 (subst pfA1' s e) e1 e2
-      Right (pfA2',pfM2) -> undefined -- TODO
+  evalDomain ρ (Inl e) = VDom proxyPlus . VInl <$> eval' ρ e
+  evalDomain ρ (Inr e) = VDom proxyPlus . VInr <$> eval' ρ e
+  evalDomain ρ (Case pfM pfA1 pfA2 e e1 e2) = do
+      v <- evalToValDom proxyPlus ρ1 e
+      case v of
+        VInl v1 -> eval' (addECtx pfA1 ρ2 (ValData v1)) e1
+        VInr v2 -> eval' (addECtx pfA2 ρ2 (ValData v2)) e2
+    where
+      (ρ1,ρ2) = eCtxMerge pfM ρ
 
-  evalDomain (Inl e) = VDom proxyPlus . VInl <$> eval' e
-  evalDomain (Inr e) = VDom proxyPlus . VInr <$> eval' e
-  evalDomain (Case pfM pfA1 pfA2 e e1 e2) = 
-    case mergeEmpty pfM of {Dict -> do
-      v <- eval' e
-      case fromLVal proxyPlus v of
-        Just (VInl v1) -> eval' $ subst pfA1 (valToExp v1) e1
-        Just (VInr v2) -> eval' $ subst pfA2 (valToExp v2) e2
-    }   
-
-  valToExpDomain (VInl v) = Inl $ valToExp v
-  valToExpDomain (VInr v) = Inr $ valToExp v
 
 
 -- Additive Product
@@ -462,7 +333,7 @@ data WithExp :: Lang sig -> Ctx sig -> LType sig -> * where
   Proj1 :: LExp lang g (t1 & t2) -> WithExp lang g t1
   Proj2 :: LExp lang g (t1 & t2) -> WithExp lang g t2
 data WithVal :: Lang sig -> LType sig -> * where -- Lazy values
-  VWith :: LExp lang 'Empty t1 -> LExp lang 'Empty t2 -> WithVal lang (t1 & t2)
+  VWith :: ECtx lang g -> LExp lang g t1 -> LExp lang g t2 -> WithVal lang (t1 & t2)
 
 type WithDom = '(WithExp, WithVal)
 
@@ -481,22 +352,22 @@ proj2 :: Domain WithDom lang
       => LExp lang g (t1 & t2) -> LExp lang g t2
 proj2 = Dom proxyWith . Proj2
 
+
+oplus :: (Domain LolliDom lang, Domain PlusDom lang, Domain WithDom lang)
+    => LExp lang 'Empty ((s1 ⊸ t) & (s2 ⊸ t) ⊸ s1 ⊕ s2 ⊸ t)
+oplus = λ $ \f -> λ $ \x -> 
+  caseof (var x)
+    (\x1 -> proj1 (var f) `app` var x1)
+    (\x2 -> proj2 (var f) `app` var x2)
+
 instance Domain WithDom lang => Language WithDom lang where
-  substDomain pfA s (With e1 e2) = subst pfA s e1 & subst pfA s e2
-  substDomain pfA s (Proj1 e)    = proj1 $ subst pfA s e
-  substDomain pfA s (Proj2 e)    = proj2 $ subst pfA s e
-
-
-  -- TODO: Think about laziness and evaluation order
-  evalDomain (With e1 e2) = return $ VDom proxyWith $ VWith e1 e2
-  evalDomain (Proj1 e) = do
-    VWith e1 e2 <- evalToValDom proxyWith e
-    eval' e1
-  evalDomain (Proj2 e) = do
-    VWith e1 e2 <- evalToValDom proxyWith e
-    eval' e2
-
-  valToExpDomain (VWith e1 e2) = With e1 e2
+  evalDomain ρ (With e1 e2) = return $ VDom proxyWith $ VWith ρ e1 e2
+  evalDomain ρ (Proj1 e) = do
+    VWith ρ' e1 e2 <- evalToValDom proxyWith ρ e
+    eval' ρ' e1
+  evalDomain ρ (Proj2 e) = do
+    VWith ρ' e1 e2 <- evalToValDom proxyWith ρ e
+    eval' ρ' e2
 
 
 
@@ -691,7 +562,7 @@ suspendL = Lin . Suspend
 
 evalVal :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
         => Lin lang a -> SigEffect sig (LVal lang (Lower a))
-evalVal (Lin (Suspend e)) = eval' e
+evalVal (Lin (Suspend e)) = eval e
 
 run :: forall sig (lang :: Lang sig) a. 
        (Monad (SigEffect sig), Domain LowerDom lang)

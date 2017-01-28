@@ -31,7 +31,6 @@ data ArraySig :: TypeSig where
   ArraySig :: * -> ArraySig ty
 
 type Array a = ('Sig (InSig ArraySig sig) ('ArraySig a) :: LType sig)
---                     ('ArraySig a :: ArraySig (LType sig)) :: LType sig)
 
 -- Array Effect ----------------------------------------------------
 
@@ -70,8 +69,8 @@ data ArrayLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
   Dealloc :: LExp lang g (Array a) -> ArrayLExp lang g One
   Read    :: Int -> LExp lang g (Array a) -> ArrayLExp lang g (Array a ⊗ Lower a)
   Write   :: Int -> LExp lang g (Array a) -> a -> ArrayLExp lang g (Array a)
-  Arr     :: forall sig a (lang :: Lang sig).
-             LArray' sig a -> ArrayLExp lang Empty (Array a)
+--  Arr     :: forall sig a (lang :: Lang sig).
+--             LArray' sig a -> ArrayLExp lang Empty (Array a)
 
 type ArrayDom = '(ArrayLExp,ArrayLVal)
 
@@ -141,10 +140,6 @@ writeM :: forall sig (lang :: Lang sig) a.
        => Int -> a -> LinT lang (LState' (Array a)) ()
 writeM i a = suspendT . λ $ \arr -> write i (var arr) a ⊗ put ()
 
-array :: forall sig (lang :: Lang sig) a.
-         HasArrayDom lang
-      => LArray' sig a -> LExp lang 'Empty (Array a)
-array = Dom proxyArray . Arr
 
 varray :: forall sig (lang :: Lang sig) a.
         HasArrayDom lang
@@ -155,28 +150,21 @@ varray = VDom proxyArray . VArr
 instance HasArrayDom lang
       => Language ArrayDom lang where
 
-  valToExpDomain (VArr arr) = Arr arr
-
-  substDomain pfA s (Dealloc e)   = dealloc $ subst pfA s e
-  substDomain pfA s (Read i e)    = read    i $ subst pfA s e
-  substDomain pfA s (Write i e a) = write   i (subst pfA s e) a
-
-  evalDomain (Alloc n a) = do
+  evalDomain _ (Alloc n a) = do
     arr <- newArray n a
     return $ varray arr
-  evalDomain (Dealloc e) = do
-    VArr arr <- evalToValDom proxyArray e
+  evalDomain ρ (Dealloc e) = do
+    VArr arr <- evalToValDom proxyArray ρ e
     deallocArray arr
     return vunit
-  evalDomain (Read i e) = do
-    VArr arr <- evalToValDom proxyArray e
+  evalDomain ρ (Read i e) = do
+    VArr arr <- evalToValDom proxyArray ρ e
     a <- readArray arr i
     return $ varray arr `vpair` vput a
-  evalDomain (Write i e a) = do
-    VArr arr <- evalToValDom proxyArray e
+  evalDomain ρ (Write i e a) = do
+    VArr arr <- evalToValDom proxyArray ρ e
     writeArray arr i a
     return $ varray arr
-  evalDomain (Arr arr) = return $ varray arr
 
 -- Examples
 
