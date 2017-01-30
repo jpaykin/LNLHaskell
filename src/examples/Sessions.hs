@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, ConstraintKinds,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
 
@@ -10,6 +10,8 @@ module Sessions where
 
 import Data.Kind
 import Data.Proxy
+import Control.Concurrent hiding (Chan)
+import Control.Concurrent.MVar
 
 import Types
 import Context hiding (End, In)
@@ -21,8 +23,8 @@ import Interface
 data Session ty where
   SendSession :: ty -> Session ty -> Session ty
   RecvSession :: ty -> Session ty -> Session ty
-  SendEnd     :: Session ty 
-  RecvEnd     :: Session ty
+  SendEnd :: Session ty 
+  RecvEnd :: Session ty
 type (:!:) = SendSession
 type (:?:) = RecvSession
 infixr 1 :!:
@@ -33,11 +35,72 @@ type family Dual (s :: Session ty) :: Session ty where
   Dual SendEnd           = RecvEnd
   Dual RecvEnd           = SendEnd
 
-class (Dual (Dual s) ~ s) => WFSession (s :: Session ty) 
-instance WFSession SendEnd
+data Channels (lang :: Lang sig) (s :: Session (LType sig)) where
+  SendNil  :: C sig () -> Channels lang SendEnd
+  RecvNil  :: C sig () -> Channels lang RecvEnd
+  SendCons :: C sig (LVal lang t) 
+           -> Channels lang s -> Channels lang (t :!: s)
+  RecvCons :: C sig (LVal lang t) 
+           -> Channels lang s -> Channels lang (t :?: s)
+
+data SessionFrame (s :: Session ty) where
+  SendFrame :: SessionFrame s -> SessionFrame (t :!: s)
+  RecvFrame :: SessionFrame s -> SessionFrame (t :?: s)
+  SendEndFrame :: SessionFrame SendEnd
+  RecvEndFrame :: SessionFrame RecvEnd
+
+class HasSessionEffect sig where
+  type C sig (a :: *) = r | r -> a
+  newC :: SigEffect sig (C sig a)
+  recvC :: C sig a -> SigEffect sig a
+  sendC :: C sig a -> a -> SigEffect sig ()
+  forkEffect :: SigEffect sig () -> SigEffect sig ()
+
+instance HasSessionEffect '(IO,tys) where
+  type C '(IO,tys) a = MVar a
+  newC = newEmptyMVar
+  recvC = takeMVar
+  sendC = putMVar
+  forkEffect a = forkIO a >> return ()
+  
+
+newChannels :: forall sig (lang :: Lang sig) (s :: Session (LType sig)). 
+               HasSessionEffect sig
+            => SessionFrame s 
+            -> SigEffect sig (Channels lang s, Channels lang (Dual s))
+newChannels (SendFrame s) = do
+    c0     <- newC @sig
+    (c,c') <- newChannels @sig s
+    return (SendCons @sig c0 c, RecvCons @sig c0 c')
+newChannels (RecvFrame s) = do
+    c0     <- newC
+    (c,c') <- newChannels s
+    return (RecvCons c0 c, SendCons c0 c')
+newChannels SendEndFrame = do
+    c0 <- newC
+    return (SendNil c0, RecvNil c0)
+newChannels RecvEndFrame = do
+    c0 <- newC
+    return (RecvNil c0, SendNil c0)
+
+
+class KnownFrame (s :: Session ty) where
+  frame :: SessionFrame s
+instance KnownFrame SendEnd where
+  frame = SendEndFrame
+instance KnownFrame RecvEnd where
+  frame = RecvEndFrame
+instance KnownFrame s => KnownFrame (SendSession t s) where
+  frame = SendFrame frame
+instance KnownFrame s => KnownFrame (RecvSession t s) where
+  frame = RecvFrame frame
+
+class (Dual (Dual s) ~ s, KnownFrame s, KnownFrame (Dual s)) 
+   => WFSession (s :: Session ty) 
+instance WFSession SendEnd 
 instance WFSession RecvEnd
-instance WFSession s => WFSession (SendSession t s)
-instance WFSession s => WFSession (RecvSession t s)
+instance WFSession s => WFSession (SendSession t s) 
+instance WFSession s => WFSession (RecvSession t s) 
 
 data SessionSig ty where
   ChannelSig :: Session ty -> SessionSig ty
@@ -47,23 +110,26 @@ type Chan s = ('Sig (InSig SessionSig sig) ('ChannelSig s) :: LType sig)
 data SessionLExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Send    :: LExp lang g (t ⊗ Chan (t :!: s)) -> SessionLExp lang g (Chan s)
   Receive :: LExp lang g (Chan (t :?: s)) -> SessionLExp lang g (t ⊗ Chan s)
-  Fork    :: LExp lang g (Chan s ⊸ Chan SendEnd) -> SessionLExp lang g (Chan (Dual s))
+  Fork    :: SessionFrame s
+          -> LExp lang g (Chan s ⊸ Chan SendEnd) 
+          -> SessionLExp lang g (Chan (Dual s))
   Wait    :: LExp lang g (Chan RecvEnd) -> SessionLExp lang g One
   Link    :: LExp lang g (Chan s ⊗ Chan (Dual s)) -> SessionLExp lang g (Chan SendEnd)
 
-data SessionLVal :: forall sig. Lang sig -> LType sig -> *
+data SessionLVal :: forall sig. Lang sig -> LType sig -> * where
+  VChan   :: forall sig (lang :: Lang sig) s.
+             Channels lang s -> SessionLVal lang (Chan s)
 
 type SessionDom = '(SessionLExp, SessionLVal)
 
 proxySession :: Proxy SessionDom
 proxySession = Proxy
 
-class (Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang,
-       Domain LowerDom lang, Domain SessionDom lang, Domain PlusDom lang, Domain WithDom lang)
-    => HasSessions lang
-instance (Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang,
-       Domain LowerDom lang, Domain SessionDom lang, Domain PlusDom lang, Domain WithDom lang)
-    => HasSessions lang
+type HasSessions (lang :: Lang sig) =
+    ( HasSessionEffect sig, Domain SessionDom lang
+    , Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang
+    , Domain PlusDom lang, Domain WithDom lang
+    , Domain LowerDom lang )
 
 
 send :: (HasSessions lang, CMerge g1 g2 g, WFSession s) 
@@ -77,8 +143,8 @@ receive :: (HasSessions lang, WFSession s)
 receive = Dom proxySession . Receive
 
 fork :: (HasSessions lang, WFSession s) 
-     => LExp lang g (Chan (Dual s) ⊸ Chan SendEnd) -> LExp lang g (Chan s)
-fork = Dom proxySession . Fork
+     => LExp lang g ((Chan (Dual s)) ⊸ Chan SendEnd) -> LExp lang g (Chan s)
+fork f = Dom proxySession $ Fork frame f
 
 wait :: HasSessions lang => LExp lang g (Chan RecvEnd) -> LExp lang g One
 wait = Dom proxySession . Wait
@@ -101,9 +167,24 @@ processWith f = Suspend . λ $ \c ->
 
 
 instance HasSessions lang => Language SessionDom lang where
-  substDomain = undefined
-  valToExpDomain = undefined
-  evalDomain = undefined
+  evalDomain ρ (Send e)   = undefined
+  evalDomain ρ (Fork s f) = do
+      (c,c') <- newChannels s
+      forkEffect $ do
+         VChan (SendNil m) <- evalToValDom proxySession (ρ' $ VChan c) $ 
+                                Dom proxyLolli $ App (pfM s g) f (var x)
+         putMVar m ()
+      return $ VDom proxySession $ VChan c'
+    where
+      g  = eCtxToSCtx ρ
+      x  = knownFresh g
+      ρ' v = eAddFresh ρ $ VDom proxySession v
+
+      pfM :: forall s g. SessionFrame s -> SCtx g 
+          -> Merge g (Singleton (Fresh g) (Chan s)) (Add (Fresh g) (Chan s) g)
+      pfM _ = mergeFresh @g @(Chan s)
+     
+    
 
 -- Examples
 
