@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, ConstraintKinds,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
 
@@ -49,10 +49,9 @@ proxyQuantum = Proxy
 -- Add more?
 data Unitary (s :: LType sig) where
   Hadamard :: Unitary Qubit
---  CNOT     :: Unitary (Qubit ⊗ Qubit)
-  Not      :: Unitary Qubit
-  X        :: Unitary Qubit
-  Z        :: Unitary Qubit
+  PauliX   :: Unitary Qubit -- (NOT)
+  PauliY   :: Unitary Qubit
+  PauliZ   :: Unitary Qubit
 
 -- Quantum Simulation Class
 
@@ -69,7 +68,10 @@ class Monad (SigEffect sig) => HasQuantumEffect sig where
 instance HasQuantumEffect '(DensityMonad,sigs) where
   type QUnitary _ = Mat
 
-  interpU Hadamard = (hadamard :: Mat)
+  interpU Hadamard = hadamard
+  interpU PauliX   = pauliX
+  interpU PauliY   = pauliY
+  interpU PauliZ   = pauliZ
 --  interpU CNOT     = cnot
 
   newQubit  = undefined
@@ -79,18 +81,16 @@ instance HasQuantumEffect '(DensityMonad,sigs) where
 
 -- Language instance
 
-class (Domain OneDom lang, Domain TensorDom lang, Domain LowerDom lang,
-       Domain QuantumDom lang, Domain LolliDom lang, HasQuantumEffect sig)
-    => HasQuantumDom (lang :: Lang sig)
-instance (Domain OneDom lang, Domain TensorDom lang, Domain LowerDom lang,
-          Domain QuantumDom lang, Domain LolliDom lang, HasQuantumEffect sig)
-       => HasQuantumDom (lang :: Lang sig)
+type HasQuantumDom (lang :: Lang sig) =
+    ( HasQuantumEffect sig
+    , Domain QuantumDom lang
+    , Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang
+    , Domain LowerDom lang)
+
 
 
 instance HasQuantumDom lang => Language QuantumDom (lang :: Lang sig) where
 
-  -- Add controlBy
---  evalDomain :: QuantumLExp lang 'Empty s -> SigEffect sig (LVal lang s)
   evalDomain _ (New b)   = do
     i <- newQubit @sig b
     return $ vqubit i
@@ -103,6 +103,7 @@ instance HasQuantumDom lang => Language QuantumDom (lang :: Lang sig) where
     qs <- valToQubits @sig v
     applyU @sig u qs
     return v 
+  evalDomain ρ (ControlBy pfM e1 e2) = undefined
     
 
 -- This type family should be open 
@@ -125,9 +126,6 @@ valToQubits v = case fromLVal proxyQuantum v of
           Nothing       -> error "Cannot extract qubits from the given value"
     
   
-
-
-
 -- Interface for quantum data
 
 new :: HasQuantumDom lang
@@ -152,8 +150,6 @@ controlBy :: (HasQuantumDom lang, CMerge g1 g2 g)
           => LExp lang g1 s -> LExp lang g2 Qubit -> LExp lang g (s ⊗ Qubit)
 controlBy e1 e2 = Dom proxyQuantum $ ControlBy merge e1 e2
 
-
-
 ----------------------------------------------------
 -- Teleportation -----------------------------------
 ----------------------------------------------------
@@ -176,7 +172,7 @@ bell00 = Suspend $
 alice :: HasQuantumDom lang
       => Lift lang (Qubit ⊸ Qubit ⊸ Lower (Bool, Bool))
 alice = Suspend . λ $ \q -> λ $ \a ->
-    unitary Not (var a) `controlBy` var q `letPair` \(a,q) ->
+    unitary PauliX (var a) `controlBy` var q `letPair` \(a,q) ->
     meas (unitary Hadamard $ var q) >! \x ->
     meas (var a) >! \y ->
     put (x,y)
@@ -184,8 +180,8 @@ alice = Suspend . λ $ \q -> λ $ \a ->
 bob :: HasQuantumDom lang
     => (Bool,Bool) -> Lift lang (Qubit ⊸ Qubit)
 bob (x,y) = Suspend . λ $ \b ->
-    if y then unitary X (var b) else var b `letin` \b ->
-    if x then unitary Z (var b) else var b 
+    if y then unitary PauliX (var b) else var b `letin` \b ->
+    if x then unitary PauliZ (var b) else var b 
 
 teleport :: HasQuantumDom lang
          => Lift lang (Qubit ⊸ Qubit)
@@ -193,4 +189,3 @@ teleport = Suspend . λ $ \q ->
     force bell00 `letPair` \(a,b) ->
     force alice `app` var q `app` var a >! \(x,y) ->
     force (bob (x,y)) `app` var b
-    

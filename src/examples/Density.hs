@@ -19,12 +19,17 @@ import Numeric.LinearAlgebra -- hmatrix library
 -- There is no representational difference between a regular matrix
 -- and a density matrix, but we think of density matrices as being a 
 -- special case
-type Mat = Matrix R
-type Density = Matrix R
+type Mat = Matrix C
+type Density = Matrix C
 
 -- create an nxn density matrix from the elements of the list 
-density :: Int -> [R] -> Density
+density :: Int -> [C] -> Density
 density n = n >< n
+
+ket0 :: Vector C
+ket0 = fromList [1,0]
+ket1 :: Vector C
+ket1 = fromList [0,1]
 
 density0 :: Density
 density0 = density 2 [1,0,0,0]
@@ -40,6 +45,13 @@ newDensity False = density0
 
 hadamard :: Mat
 hadamard = 1/sqrt 2 `scale` (2 >< 2) [1,1,1,-1]
+
+i :: C
+i = 0 :+ 1
+
+pauliX = ((2><2) [0,1,1,0]  :: Mat)
+pauliY = ((2><2) [0,-i,i,0] :: Mat)
+pauliZ = ((2><2) [1,0,0,-1] :: Mat)
 
 cnot :: Mat
 cnot = (4 >< 4) [1,0,0,0

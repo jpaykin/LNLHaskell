@@ -241,6 +241,9 @@ mergeMergeU SUsed   SUnused = MergeUL
 mergeMergeU SUnused SUsed   = MergeUR
 
 
+mergeFresh :: SCtx g -> Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
+mergeFresh = undefined
+
 -- Singleton Context ------------------------------------------
 
 
@@ -258,6 +261,7 @@ singletonNMergeNAdd (AddLaterS pfS) (MergeCons pfU pfM) =
   case mergeUInvL pfU of Dict -> AddLater u2 $ singletonNMergeNAdd pfS pfM
   where
     (u1,u2,u3) = mergeSUsage pfU
+
 
 
 -- Merge Usages ----------------------------------------------------

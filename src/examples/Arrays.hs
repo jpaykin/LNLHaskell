@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, ConstraintKinds,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
 --             IncoherentInstances
@@ -53,8 +53,8 @@ instance HasArrayEffect IO where
   writeArray     =  ArrayIO.writeArray
   deallocArray m =  return ()
 
-class HasArrayEffect (SigEffect sig) => HasArraySig sig  
-instance HasArrayEffect (SigEffect sig) => HasArraySig sig
+
+type HasArraySig sig = HasArrayEffect (SigEffect sig)
 
 
 -- Has Array Domain ------------------------------------------
@@ -100,13 +100,12 @@ lValToArray (VDom pfInList' v) =
 --lValToArray _ = error "Value of type Array a not derived from Arrays class"
 -}
 
-class (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
-       Domain TensorDom lang, Domain LowerDom lang, Domain LolliDom lang)
-   => HasArrayDom (lang :: Lang sig) 
-instance (HasArraySig sig, Domain OneDom lang, Domain ArrayDom lang, 
-       Domain TensorDom lang, Domain LowerDom lang, Domain LolliDom lang)
-   => HasArrayDom (lang :: Lang sig) 
-
+type HasArrayDom (lang :: Lang sig) =
+    ( HasArrayEffect (SigEffect sig)
+    , Domain ArrayDom lang
+    , Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang
+    , Domain LowerDom lang )
+     
 alloc :: HasArrayDom lang
       => Int -> a -> LExp lang 'Empty (Array a)
 alloc n a = Dom proxyArray $ Alloc n a
@@ -248,10 +247,6 @@ comp n = do
 
 
 {-
-
-
-
-
 type MyArraySig = ( '(IO, '[ ArraySig ]) :: Sig )
 
 type MyArrayDomain = ( '[ ArrayDom ] :: Dom MyArraySig )

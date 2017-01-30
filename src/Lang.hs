@@ -3,7 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables,
-             EmptyCase, RankNTypes, FlexibleContexts
+             EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds
 #-}
 
 module Lang where
@@ -33,10 +33,8 @@ class CInLang (x :: Dom sig) (lang :: Lang sig) where
 instance CInList dom lang => CInLang dom ('Lang lang) where
   pfInLang = pfInList
 
-class (CInLang dom lang, Monad (SigEffect sig))
-   => Domain (dom :: Dom sig) (lang :: Lang sig)
-instance (CInLang dom lang, Monad (SigEffect sig))
-      => Domain (dom :: Dom sig) (lang :: Lang sig)
+type Domain (dom :: Dom sig) (lang :: Lang sig) =
+  (CInLang dom lang, Monad (SigEffect sig))
 
 class Domain dom lang
    => Language (dom :: Dom sig) (lang :: Lang sig) where
@@ -88,10 +86,39 @@ lookupN (InHere _)      (ECons (EUsed v) _) = v
 lookupN (InLater _ pfI) (ECons _ g)         = lookupN pfI g
 
 eCtxMerge :: Merge g1 g2 g -> ECtx lang g -> (ECtx lang g1, ECtx lang g2)
-eCtxMerge = undefined
+eCtxMerge MergeE EEmpty = (EEmpty, EEmpty)
+eCtxMerge (MergeEL _) g = (EEmpty, g)
+eCtxMerge (MergeER _) g = (g, EEmpty)
+eCtxMerge (MergeN pfM) (EN g) = (EN g1, EN g2) where
+  (g1,g2) = eNCtxMerge pfM g
+
+eNCtxMerge :: MergeN g1 g2 g -> ENCtx lang g -> (ENCtx lang g1, ENCtx lang g2)
+eNCtxMerge (MergeEndL _) (ECons (EUsed d) g2) = (EEnd d, ECons EUnused g2)
+eNCtxMerge (MergeEndR _) (ECons (EUsed d) g1) = (ECons EUnused g1, EEnd d)
+eNCtxMerge (MergeCons pfU pfM) (ECons u g)    = (ECons u1 g1, ECons u2 g2) where
+  (u1,u2) = eUsageMerge pfU u 
+  (g1,g2) = eNCtxMerge pfM g
+
+eUsageMerge :: MergeU u1 u2 u -> EUsage lang u -> (EUsage lang u1, EUsage lang u2)
+eUsageMerge MergeUn _ = (EUnused, EUnused)
+eUsageMerge MergeUL u = (u,EUnused)
+eUsageMerge MergeUR u = (EUnused,u)
 
 addECtx :: AddCtx x s g g' -> ECtx lang g -> Data lang s -> ECtx lang g'
-addECtx = undefined
+addECtx (AddN pfA) g d = EN $ addECtxN pfA g d
+
+addECtxN :: AddCtxN x s g g' -> ECtx lang g -> Data lang s -> ENCtx lang g'
+addECtxN (AddS pfS)  _      d = singletonENCtx pfS d
+addECtxN (AddNN pfA) (EN g) d = addENCtxN pfA g d
+
+addENCtxN :: AddNCtxN x s g g' -> ENCtx lang g -> Data lang s -> ENCtx lang g'
+addENCtxN (AddHere _) (ECons EUnused g) d = ECons (EUsed d) g
+addENCtxN (AddEnd pfS) (EEnd d') d = ECons (EUsed d') $ singletonENCtx pfS d
+addENCtxN (AddLater _ pfA) (ECons u g) d = ECons u $ addENCtxN pfA g d
+
+singletonENCtx :: SingletonNCtx x s g -> Data lang s -> ENCtx lang g
+singletonENCtx AddHereS d = EEnd d
+singletonENCtx (AddLaterS pfS) d = ECons EUnused $ singletonENCtx pfS d
 
 
 -- Evaluation ---------------------------------------------
@@ -138,3 +165,11 @@ evalToValDom :: forall sig dom (lang :: Lang sig) g s.
              => Proxy dom -> ECtx lang g
              -> LExp lang g s -> SigEffect sig (ValDom dom lang s)
 evalToValDom proxy ρ e = fromJust . fromLVal proxy <$> eval' ρ e
+
+eAddFresh :: ECtx lang g 
+         -> LVal lang s
+         -> ECtx lang (Add (Fresh g) s g)
+eAddFresh = undefined
+
+eCtxToSCtx :: ECtx lang g -> SCtx g
+eCtxToSCtx = undefined
