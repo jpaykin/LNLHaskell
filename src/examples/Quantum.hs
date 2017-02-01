@@ -23,10 +23,9 @@ import Interface
 import Density
 
 -- Signature
-data QuantumSig :: TypeSig where
-  QubitSig :: QuantumSig ty
-type Qubit = ('Sig (IsInList QuantumSig (SigType sig))
-                   ('QubitSig :: QuantumSig (LType sig)) :: LType sig)
+data QuantumSig sig  = QubitSig
+type Qubit = ('LType (IsInList QuantumSig (SigType sig))
+                     ('QubitSig :: QuantumSig sig) :: LType sig)
 
 data QuantumLVal (lang :: Lang sig) :: LType sig -> * where
   -- qubit identifier 
@@ -43,6 +42,17 @@ data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
 type QuantumDom = '(QuantumLExp,QuantumLVal)
 proxyQuantum :: Proxy QuantumDom
 proxyQuantum = Proxy
+
+instance Show (Unitary s) where
+  show Hadamard = "H"
+  show PauliX   = "X"
+  show PauliY   = "Y"
+  show PauliZ   = "Z"
+instance Show (QuantumLExp lang g t) where
+  show (New b)  = "New " ++ show b
+  show (Meas q) = "Meas " ++ show q
+  show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
+  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
 
 -- Quantum Data
 
@@ -65,7 +75,7 @@ class Monad (SigEffect sig) => HasQuantumEffect sig where
                Unitary s -> Qubits s -> SigEffect sig ()
   measQubit :: QId -> SigEffect sig Bool
 
-instance HasQuantumEffect '(DensityMonad,sigs) where
+instance HasQuantumEffect ('Sig DensityMonad sigs) where
   type QUnitary _ = Mat
 
   interpU Hadamard = hadamard
@@ -83,13 +93,13 @@ instance HasQuantumEffect '(DensityMonad,sigs) where
 
 type HasQuantumDom (lang :: Lang sig) =
     ( HasQuantumEffect sig
-    , Domain QuantumDom lang
-    , Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang
-    , Domain LowerDom lang)
+    , WFDomain QuantumDom lang
+    , WFDomain OneDom lang, WFDomain TensorDom lang, WFDomain LolliDom lang
+    , WFDomain LowerDom lang)
 
 
 
-instance HasQuantumDom lang => Language QuantumDom (lang :: Lang sig) where
+instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
 
   evalDomain _ (New b)   = do
     i <- newQubit @sig b
@@ -108,10 +118,10 @@ instance HasQuantumDom lang => Language QuantumDom (lang :: Lang sig) where
 
 -- This type family should be open 
 type family Qubits (t :: LType sig) :: * 
-type instance Qubits ('Sig _ 'OneSig) = ()
-type instance Qubits ('Sig _ 'QubitSig) = QId
-type instance Qubits ('Sig _ ('TensorSig t1 t2)) = (Qubits t1, Qubits t2)
-type instance Qubits ('Sig _ ('LowerSig _)) = ()
+type instance Qubits ('LType _ 'OneSig) = ()
+type instance Qubits ('LType _ 'QubitSig) = QId
+type instance Qubits ('LType _ ('TensorSig t1 t2)) = (Qubits t1, Qubits t2)
+type instance Qubits ('LType _ ('LowerSig _)) = ()
 
 valToQubits :: forall sig (lang :: Lang sig) t.
               HasQuantumDom lang => LVal lang t -> SigEffect sig (Qubits t)

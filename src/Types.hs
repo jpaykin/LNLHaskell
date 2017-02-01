@@ -10,35 +10,39 @@ module Types where
 import Prelim
 
 import Data.Kind
-import Data.Constraint
 
-type EffectSig = * -> *
-type TypeSig = * -> *
-type Sig = (EffectSig, [TypeSig])
-type family SigEffect (sig :: Sig) :: EffectSig where
-  SigEffect '(m,_) = m
-type family SigType (sig :: Sig) :: [TypeSig] where
-  SigType '(_,tys) = tys
+-- A signature consists of a monad (in which evaluation will occur) and a list
+-- of type constructors. This way, a signature can be extended
+-- semlessly by adding a new type constructor to the signature.
+-- A type constructor (of type Sig -> *) is a way to extend the syntax of LTypes.
+-- e.g. 
+--      data LolliSig sig = LolliSig (LType sig) (LType sig)
+data Sig = Sig (* -> *) [Sig -> *]
+
+-- SigEffect and SigType project out the monad and constructors, respectively
+type family SigEffect (sig :: Sig) :: * -> * where
+  SigEffect ('Sig m _) = m
+type family SigType (sig :: Sig) :: [Sig -> *] where
+  SigType ('Sig _ tys) = tys
 
 
 data LType (sig :: Sig) where
-  Sig    :: InList ty (SigType sig) -> ty (LType sig) -> LType sig
+  LType :: InList ty (SigType sig) -> ty sig -> LType sig
 
 
 -- In lists ------------------------------------------------------
 
-class CInSig (ty :: TypeSig) (sig :: Sig)
+-- Type class that searches for a proof that ty is a type constructor in sig
+class CInSig (ty :: Sig -> *) (sig :: Sig)
 instance CInSig' (GetIndex ty (SigType sig)) ty sig => CInSig ty sig
 
-class CInSig' (i :: Nat) (ty :: TypeSig) (sig :: Sig)
-instance CInSig' 'Z ty '(m,ty ': tys)
-instance CInSig' i ty '(m,tys) => CInSig' ('S i) ty '(m, ty' ': tys)
+class CInSig' (i :: Nat) (ty :: Sig -> *) (sig :: Sig)
+instance CInSig' 'Z ty ('Sig m (ty ': tys))
+instance CInSig' i  ty ('Sig m tys) => CInSig' ('S i) ty ('Sig m (ty' ': tys))
 
-
-type Sig' (ty :: TypeSig) (tys :: [TypeSig]) = ('Sig (IsInList ty tys) 
-            :: ty (LType '(m,tys)) -> LType '(m,tys))
-
-type InSig (ty :: TypeSig) sig = 
+-- The type InSig ty sig computes a type-level proof that ty ∈ sig
+-- (if it exists)
+type InSig (ty :: Sig -> *) sig = 
     (IsInList ty (SigType sig) :: InList ty (SigType sig))
 
 

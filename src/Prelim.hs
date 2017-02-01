@@ -2,6 +2,7 @@
              TypeOperators, GADTs, TypeFamilies, UndecidableInstances,
              MultiParamTypeClasses, FlexibleInstances
 #-}
+{-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Prelim where
 
@@ -39,13 +40,13 @@ type family Times (m :: Nat) (n :: Nat) :: Nat where
 instance Num Nat where
   Z   + n   = n
   S m + n   = S (m+n)
-  Z   - n   = Z
+  Z   - _   = Z
   m   - Z   = m
   S m - S n = m - n
-  Z   * n   = Z
+  Z   * _   = Z
   S m * n   = m * n + n
   abs e     = e
-  signum e  = S Z
+  signum _  = S Z
 
   fromInteger 0 = Z
   fromInteger n = S $ fromInteger (n-1)

@@ -4,11 +4,11 @@
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
              EmptyCase
 #-}
+{-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Context where
 
 import Data.Kind
-import Data.Constraint
 
 import Prelim
 import Types
@@ -20,17 +20,22 @@ data NCtx sig = End (LType sig) | Cons (Usage sig) (NCtx sig)
 
 -- Singleton types for contexts -----------------------------------
 
-data SUsage :: forall sig. Usage sig -> * where
-  SUsed   :: forall s. SUsage ('Used s)
-  SUnused :: SUsage 'Unused
+-- Singleton contexts are paramaterized by some data (LType sig -> *)
+-- which itself is paramaterized by some linear type.
+data SCtx :: (LType sig -> *) -> Ctx sig -> * where
+  SEmpty  :: SCtx dat 'Empty
+  SN      :: SNCtx dat g -> SCtx dat ('N g)
 
-data SCtx :: Ctx sig -> * where
-  SEmpty  :: SCtx 'Empty
-  SN      :: SNCtx g -> SCtx ('N g)
+data SNCtx :: (LType sig -> *) -> NCtx sig -> * where
+  SEnd  :: dat t -> SNCtx dat ('End t)
+  SCons :: SUsage dat u -> SNCtx dat g -> SNCtx dat ('Cons u g)
 
-data SNCtx :: NCtx sig -> * where
-  SEnd  :: SNCtx ('End t)
-  SCons :: SUsage u -> SNCtx g -> SNCtx ('Cons u g)
+data SUsage :: forall sig. (LType sig -> *) -> Usage sig -> * where
+  SUsed   :: forall s dat. dat s -> SUsage dat ('Used s)
+  SUnused :: SUsage dat 'Unused
+
+data Phantom t = Phantom
+
 
 ----------------------------------------------------------
 -- Relations about contexts ------------------------------
@@ -39,9 +44,9 @@ data SNCtx :: NCtx sig -> * where
 -- Add To Context ----------------------------------------------
 
 data AddNCtxN :: Nat -> LType sig -> NCtx sig -> NCtx sig -> * where
-  AddHere  :: SNCtx g -> AddNCtxN 'Z s ('Cons 'Unused g) ('Cons ('Used s) g)
+  AddHere  :: SNCtx Phantom g -> AddNCtxN 'Z s ('Cons 'Unused g) ('Cons ('Used s) g)
   AddEnd   :: SingletonNCtx x s g  -> AddNCtxN ('S x) s ('End t) ('Cons ('Used t) g)
-  AddLater :: SUsage u -> AddNCtxN x s g g'
+  AddLater :: SUsage Phantom u -> AddNCtxN x s g g'
            -> AddNCtxN ('S x) s ('Cons u g) ('Cons u g')
 
 data AddCtxN :: Nat -> LType sig -> Ctx sig -> NCtx sig -> * where
@@ -70,13 +75,13 @@ data MergeU :: Usage sig -> Usage sig -> Usage sig -> * where
 
 data Merge :: Ctx sig -> Ctx sig -> Ctx sig -> * where
   MergeE  :: Merge 'Empty 'Empty 'Empty
-  MergeEL :: SNCtx g -> Merge 'Empty ('N g) ('N g)
-  MergeER :: SNCtx g -> Merge ('N g) 'Empty ('N g)
+  MergeEL :: SNCtx Phantom g -> Merge 'Empty ('N g) ('N g)
+  MergeER :: SNCtx Phantom g -> Merge ('N g) 'Empty ('N g)
   MergeN  :: MergeN g1 g2 g3 -> Merge ('N g1) ('N g2) ('N g3)
 
 data MergeN :: NCtx sig -> NCtx sig -> NCtx sig -> * where
-  MergeEndL :: SNCtx g2 -> MergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2)
-  MergeEndR :: SNCtx g1 -> MergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1)
+  MergeEndL :: SNCtx Phantom g2 -> MergeN ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2)
+  MergeEndR :: SNCtx Phantom g1 -> MergeN ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1)
   MergeCons :: MergeU u1 u2 u3 -> MergeN g1 g2 g3 
             -> MergeN ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3)
 
@@ -85,8 +90,8 @@ data MergeN :: NCtx sig -> NCtx sig -> NCtx sig -> * where
 
 data InN :: Nat -> LType sig -> NCtx sig -> * where
   InEnd   :: InN 'Z s ('End s)
-  InHere  :: SNCtx g    -> InN 'Z s ('Cons ('Used s) g)
-  InLater :: SUsage u   -> InN x s g  -> InN ('S x) s ('Cons u g)
+  InHere  :: SNCtx Phantom g    -> InN 'Z s ('Cons ('Used s) g)
+  InLater :: SUsage Phantom u   -> InN x s g  -> InN ('S x) s ('Cons u g)
 
 data In :: Nat -> LType sig -> Ctx sig -> * where
   In :: InN x s g -> In x s ('N g)
@@ -94,12 +99,12 @@ data In :: Nat -> LType sig -> Ctx sig -> * where
 -- Div -----------------------------------------------
 
 data Div :: Ctx sig -> Ctx sig -> Ctx sig -> * where
-  DivEmpty :: SCtx g -> Div g 'Empty g
+  DivEmpty :: SCtx Phantom g -> Div g 'Empty g
   DivN     :: DivN g1 g2 g3 -> Div ('N g1) ('N g2) g3
 
 data DivN       :: NCtx sig -> NCtx sig -> Ctx sig -> * where
   DivEndEnd     :: DivN ('End s) ('End s) 'Empty
-  DivConsEnd    :: SNCtx g -> DivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g))
+  DivConsEnd    :: SNCtx Phantom g -> DivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g))
   DivConsCons   :: DivN g1 g2 g3 
                 -> MergeU u3 u2 u1
                 -> DivN ('Cons u1 g1) ('Cons u2 g2) (ConsN u3 g3)
@@ -153,19 +158,11 @@ type family ConsN (u :: Usage sig) (g :: Ctx sig) :: Ctx sig where
   ConsN 'Unused   'Empty = 'Empty
   ConsN u         ('N g) = 'N ('Cons u g)
 
-consN :: SUsage u -> SCtx g -> SCtx (ConsN u g) 
-consN SUsed   SEmpty = SN $ SEnd 
-consN SUnused SEmpty = SEmpty
-consN u       (SN g) = SN $ SCons u g
-
 -- Singleton contexts ---------------------
 
 type family SingletonN x (s :: LType sig) :: NCtx sig where
   SingletonN x s = AddN x s 'Empty
---  SingletonN 'Z     s = 'End s
---  SingletonN ('S x) s = 'Cons 'Unused (SingletonN x s)
 type family Singleton x (s :: LType sig) :: Ctx sig where
---  Singleton x s = Add x s 'Empty
   Singleton x s = 'N (SingletonN x s)
 
 -- Merge contexts --------------------------
@@ -186,12 +183,3 @@ type family MergeU12 u1 u2 :: Usage sig where
   MergeU12 ('Used s) 'Unused   = 'Used s
   MergeU12 'Unused   ('Used s) = 'Used s
 
--- Remove contexts ----------------------------
-
-type family RemoveN (x :: Nat) (g :: NCtx sig) :: Ctx sig where
-  RemoveN 'Z     ('End s)            = 'Empty
-  RemoveN 'Z     ('Cons ('Used s) g) = 'N ('Cons 'Unused g)
-  RemoveN ('S x) ('Cons u g)         = ConsN u (RemoveN x g)
-
-type family Remove (x :: Nat) (g :: Ctx sig) :: Ctx sig where
-  Remove x ('N g) = RemoveN x g

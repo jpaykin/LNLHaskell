@@ -17,27 +17,23 @@ import Data.Proxy
 import Data.Constraint
 import System.TimeIt
 import Control.Monad (void)
+import Debug.Trace
 
 import Types
 import Context
 import Lang
 import Interface
---import Domain
 
 
 -- Signature
 -- ty will get substituted with (LType sig)
-data ArraySig :: TypeSig where
-  ArraySig :: * -> ArraySig ty
+data ArraySig sig where
+  ArraySig :: * -> ArraySig sig
 
-type Array a = ('Sig (InSig ArraySig sig) ('ArraySig a) :: LType sig)
+type Array a = ('LType (InSig ArraySig sig) ('ArraySig a) :: LType sig)
 
 -- Array Effect ----------------------------------------------------
 
---type family LArray m a = r | r -> a where
---  LArray IO a          = ArrayIO.IOArray Int a
-type family LArray' sig a where
-  LArray' sig a = LArray (SigEffect sig) a
 
 class Monad m => HasArrayEffect m where
   type family LArray m a = r | r -> a
@@ -53,9 +49,9 @@ instance HasArrayEffect IO where
   writeArray     =  ArrayIO.writeArray
   deallocArray m =  return ()
 
-
+type family LArray' sig a where
+  LArray' sig a = LArray (SigEffect sig) a
 type HasArraySig sig = HasArrayEffect (SigEffect sig)
-
 
 -- Has Array Domain ------------------------------------------
 
@@ -69,42 +65,24 @@ data ArrayLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
   Dealloc :: LExp lang g (Array a) -> ArrayLExp lang g One
   Read    :: Int -> LExp lang g (Array a) -> ArrayLExp lang g (Array a ⊗ Lower a)
   Write   :: Int -> LExp lang g (Array a) -> a -> ArrayLExp lang g (Array a)
---  Arr     :: forall sig a (lang :: Lang sig).
---             LArray' sig a -> ArrayLExp lang Empty (Array a)
 
 type ArrayDom = '(ArrayLExp,ArrayLVal)
 
 proxyArray :: Proxy ArrayDom
 proxyArray = Proxy
 
-{-
-fromArrayLExp :: forall i sig (dom :: Dom sig) g t.
-                 HasArrays i dom => ArrayLExp (LExp dom) g t -> LExp dom g t
-fromArrayLExp = Dom $ pfInList @_ @i @ArrayDom
+instance Show (ArrayLExp lang g t) where
+  show (Alloc n _) = "Alloc " ++ show n
+  show (Dealloc e) = "Dealloc " ++ show e
+  show (Read i e) = "Read " ++ show i ++ " " ++ show e
+  show (Write i e a) = "Write " ++ show i ++ " " ++ show e
 
-fromArrayLVal :: forall i sig (dom :: Dom sig) g t.
-                 HasArrays i dom => ArrayLVal (LVal dom) t -> LVal dom t
-fromArrayLVal = VDom $ pfInList @_ @i @ArrayDom
--}
-
-{-
--- As long as the HasArrays instance is the only source of Array values, 
--- this function is total.
-lValToArray :: forall i sig (dom :: Dom sig) a.
-               HasArrays i dom
-            => LVal dom (Array a) -> ArrayLVal (LVal dom) (Array a)
-lValToArray (VDom pfInList' v) = 
-  case compareInList (pfInList @_ @i @ArrayDom) pfInList' of
-    Nothing   -> error "Value of type Array a not derived from Arrays class"
-    Just Dict -> v
---lValToArray _ = error "Value of type Array a not derived from Arrays class"
--}
 
 type HasArrayDom (lang :: Lang sig) =
     ( HasArrayEffect (SigEffect sig)
-    , Domain ArrayDom lang
-    , Domain OneDom lang, Domain TensorDom lang, Domain LolliDom lang
-    , Domain LowerDom lang )
+    , WFDomain ArrayDom lang
+    , WFDomain OneDom lang, WFDomain TensorDom lang, WFDomain LolliDom lang
+    , WFDomain LowerDom lang )
      
 alloc :: HasArrayDom lang
       => Int -> a -> LExp lang 'Empty (Array a)
@@ -147,23 +125,24 @@ varray = VDom proxyArray . VArr
 
 
 instance HasArrayDom lang
-      => Language ArrayDom lang where
+      => Domain ArrayDom lang where
 
-  evalDomain _ (Alloc n a) = do
+-- "what. -- Antal"
+  evalDomain _ (Alloc n a) = do -- trace "before" $ return (error "after")
     arr <- newArray n a
-    return $ varray arr
+    pure $ varray arr
   evalDomain ρ (Dealloc e) = do
     VArr arr <- evalToValDom proxyArray ρ e
     deallocArray arr
-    return vunit
+    pure vunit
   evalDomain ρ (Read i e) = do
     VArr arr <- evalToValDom proxyArray ρ e
     a <- readArray arr i
-    return $ varray arr `vpair` vput a
+    pure $ varray arr `vpair` vput a
   evalDomain ρ (Write i e a) = do
     VArr arr <- evalToValDom proxyArray ρ e
     writeArray arr i a
-    return $ varray arr
+    pure $ varray arr
 
 -- Examples
 
@@ -196,7 +175,7 @@ toFromList :: HasArrayDom lang
            => [a] -> Lin lang [a]
 toFromList ls = toList (length ls) $ fromList ls
 
-type MyArraySig = ( '(IO, '[ ArraySig, TensorSig, OneSig, LowerSig, LolliSig ]) :: Sig)
+type MyArraySig = ( 'Sig IO '[ ArraySig, TensorSig, OneSig, LowerSig, LolliSig ] :: Sig)
 type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom, LolliDom ] :: Lang MyArraySig )
 
 
@@ -245,7 +224,7 @@ comp n = do
   where
     ls = replicate n 3
 
-
+-- ERROR: NONTERMINATING
 {-
 type MyArraySig = ( '(IO, '[ ArraySig ]) :: Sig )
 

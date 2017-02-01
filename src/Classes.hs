@@ -4,32 +4,31 @@
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
              EmptyCase
 #-}
+{-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Classes where
 
-import Data.Kind
 import Data.Constraint
 import Prelude hiding (div)
 
 import Prelim
-import Types
 import Context
 import Proofs
 
 -- Singleton instance
 
 class KnownUsage u where
-  usg :: SUsage u
+  usg :: SUsage Phantom u
 
 instance KnownUsage 'Unused where
   usg = SUnused
 instance KnownUsage ('Used s) where
-  usg = SUsed @_ @s
+  usg = SUsed @_ @_ @s Phantom
 
 class KnownCtx g where
-  ctx :: SCtx g
+  ctx :: SCtx Phantom g
 class KnownNCtx g where
-  nctx :: SNCtx g
+  nctx :: SNCtx Phantom g
 
 instance KnownCtx 'Empty where
   ctx = SEmpty
@@ -37,7 +36,7 @@ instance KnownNCtx g => KnownCtx ('N g) where
   ctx = SN nctx
 
 instance KnownNCtx ('End t) where
-  nctx = SEnd
+  nctx = SEnd Phantom
 instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
   nctx = SCons usg nctx
 
@@ -98,7 +97,7 @@ instance CSingletonNCtx x s g => CAddNCtxFlag ('S x) s ('End t) ('Cons ('Used t)
 instance CAddNCtxFlag x s g g' f => CAddNCtxFlag ('S x) s ('Cons 'Unused g) ('Cons 'Unused g') f where
   addNCtxFlag = AddLater SUnused addNCtxFlag
 instance CAddNCtxN x s g g' => CAddNCtxFlag ('S x) s ('Cons ('Used t) g) ('Cons ('Used t) g') 'False where
-  addNCtxFlag = AddLater SUsed addNCtxN
+  addNCtxFlag = AddLater (SUsed Phantom) addNCtxN
 
 
 ---------------------
