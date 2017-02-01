@@ -200,3 +200,33 @@ addSNCtxN (AddLater _ pfA) (SCons u g) v = SCons u $ addSNCtxN pfA g v
 singletonSNCtx :: SingletonNCtx x s g -> dat s -> SNCtx dat g
 singletonSNCtx AddHereS        v = SEnd v
 singletonSNCtx (AddLaterS pfS) v = SCons SUnused $ singletonSNCtx pfS v
+
+addFreshSCtx :: SCtx dat g -> dat s -> SCtx dat (Add (Fresh g) s g)
+addFreshSCtx SEmpty v = SN $ SEnd v
+addFreshSCtx (SN g) v = SN $ addFreshSNCtx g v
+
+addFreshSNCtx :: SNCtx dat g -> dat s -> SNCtx dat (AddNN (FreshN g) s g)
+addFreshSNCtx (SEnd v')            v = SCons (SUsed v') $ SEnd v
+addFreshSNCtx (SCons (SUsed v') g) v = SCons (SUsed v') $ addFreshSNCtx g v
+addFreshSNCtx (SCons SUnused    g) v = SCons (SUsed v) g
+
+mergeAddFresh :: forall s dat g.
+                 SCtx dat g -> Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
+mergeAddFresh SEmpty = MergeEL $ SEnd Phantom
+mergeAddFresh (SN g) = MergeN $ mergeAddNFresh @s g
+
+mergeAddNFresh :: forall s dat g.
+                  SNCtx dat g 
+               -> MergeN g (SingletonN (FreshN g) s) (AddNN (FreshN g) s g)
+mergeAddNFresh (SEnd _)            = MergeEndL $ SEnd Phantom
+mergeAddNFresh (SCons (SUsed _) g) = MergeCons MergeUL $ mergeAddNFresh @s g
+mergeAddNFresh (SCons SUnused   g) = MergeEndR $ datToPhantomN g
+
+datToPhantom :: SCtx dat g -> SCtx Phantom g
+datToPhantom SEmpty = SEmpty
+datToPhantom (SN g) = SN $ datToPhantomN g
+
+datToPhantomN :: SNCtx dat g -> SNCtx Phantom g
+datToPhantomN (SEnd _) = SEnd Phantom
+datToPhantomN (SCons (SUsed _) g) = SCons (SUsed Phantom) $ datToPhantomN g
+datToPhantomN (SCons SUnused g) = SCons SUnused $ datToPhantomN g

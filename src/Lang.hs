@@ -105,18 +105,18 @@ eval' ρ (Var pfS)                      =
   case lookup (singletonIn pfS) ρ of
     ExpData ρ e -> eval' ρ e
     ValData v   -> return v
-eval' ρ (Dom (proxy :: Proxy dom) e)   = trace (show e) $ evalDomain @sig @dom ρ e
+eval' ρ (Dom (proxy :: Proxy dom) e)   = evalDomain @sig @dom ρ e
 
 
 ------------------------------------------------------
 
 fromLVal :: forall sig dom (lang :: Lang sig) s.
             CInLang dom lang
-         => Proxy dom -> LVal lang s -> Maybe (ValDom dom lang s)
-fromLVal _ (VDom (proxy :: Proxy dom') v) =
+         => Proxy dom -> LVal lang s -> ValDom dom lang s
+fromLVal _ (VDom (proxy :: Proxy dom') v) = 
   case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
-    Nothing   -> Nothing
-    Just Dict -> Just v
+    Nothing   -> error "Cannot extract domain from value"
+    Just Dict -> v
 
 -- this function is partial if the value is not
 -- in the specified domain
@@ -124,6 +124,6 @@ evalToValDom :: forall sig dom (lang :: Lang sig) g s.
                 (CInLang dom lang, Monad (SigEffect sig))
              => Proxy dom -> ECtx lang g
              -> LExp lang g s -> SigEffect sig (ValDom dom lang s)
-evalToValDom proxy ρ e = fromJust . fromLVal proxy <$> eval' ρ e
+evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
 
 
