@@ -243,20 +243,6 @@ instance HasSessions lang => Domain SessionDom (lang  :: Lang sig) where
     return $ vSendEnd c
 
     
-evalApplyValue :: forall sig (lang :: Lang sig) g s t.
-                  Domain LolliDom lang
-               => ECtx lang g -> LExp lang g (s ⊸ t) -> LVal lang s 
-               -> SigEffect sig (LVal lang t)
-evalApplyValue ρ e v = eval' ρ' (Dom proxyLolli $ App pfM e x)
-  where
-    x :: Var lang (Fresh g) s
-    x = var $ knownFresh ρ
-
-    ρ' :: ECtx lang (Add (Fresh g) s g)
-    ρ' = addFreshSCtx ρ (ValData v)
-
-    pfM :: Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
-    pfM = mergeAddFresh @s ρ
     
 
 -- Examples

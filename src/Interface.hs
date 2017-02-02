@@ -14,17 +14,15 @@ import Data.Kind
 import Data.Proxy
 import Data.Singletons
 
-import Prelim
 import Types
 import Context
 import Proofs
 import Classes
 import Lang
 
-type Var lang x s = LExp lang (Singleton x s) s
-
-var :: SNat x -> Var lang x s
-var x = Var $ singSing x
+var :: forall x s g lang. CSingletonCtx x s g
+    => LExp lang g s
+var = Var $ singletonCtx @x
 
 -- Implication ----------------------------------
 
@@ -58,15 +56,13 @@ instance Show (LolliExp lang g t) where
   show (Abs pfA e) = "λ " ++ show (addToSNat pfA) ++ " . " ++ show e
   show (App _ e1 e2) = "(" ++ show e1 ++ ") (" ++ show e2 ++ ")"
 
-λ :: forall lang s t g g'. 
-     (Domain LolliDom lang, CAddCtx (Fresh g) s g g')
-  => (Var lang (Fresh g) s -> LExp lang g' t)
-  -> LExp lang g (s ⊸ t)
-λ f = Dom proxyLolli $ Abs pfA (f $ var x) where
-  pfA :: AddCtx (Fresh g) s g g'
-  pfA  = addCtx
-  x   :: SNat (Fresh g)
-  x    = addToSNat pfA
+λ :: forall lang x s t g g' g''. 
+     ( Domain LolliDom lang
+     , CAddCtx x s g g'
+     , CSingletonCtx x s g'' 
+     , x ~ Fresh g)
+  => (LExp lang g'' s -> LExp lang g' t) -> LExp lang g (s ⊸ t)
+λ f = Dom proxyLolli $ Abs (addCtx @x) (f . Var $ singletonCtx @x) 
 
 app :: (Domain LolliDom lang, CMerge g1 g2 g3)
     => LExp lang g1 (s ⊸ t)
@@ -75,12 +71,44 @@ app :: (Domain LolliDom lang, CMerge g1 g2 g3)
 e1 `app` e2 = Dom proxyLolli $ App merge e1 e2
 
 
-letin :: forall lang s t g g1 g2 g2'.
-         (Domain LolliDom lang, CAddCtx (Fresh g2) s g2 g2', CMerge g1 g2 g)
+letin :: forall lang x s t g g1 g2 g2' g2''.
+         ( Domain LolliDom lang
+         , CAddCtx x s g2 g2'
+         , CSingletonCtx x s g2''
+         , CMerge g1 g2 g
+         , x ~ Fresh g2)
       => LExp lang g1 s
-      -> (Var lang (Fresh g2) s -> LExp lang g2' t)
+      -> (LExp lang g2'' s -> LExp lang g2' t)
       -> LExp lang g t
 letin e f = λ f `app` e
+
+-- Sanity check examples 
+
+ex :: Domain LolliDom lang => LExp lang 'Empty ((s ⊸ t) ⊸ s ⊸ t)
+ex = λ $ \x -> λ $ \y -> x `app` y
+
+--ex2 :: Domain LolliDom lang => LExp lang 'Empty (s ⊸ t ⊸ s)
+--ex2 = λ $ \x -> λ $ \y -> x
+
+--ex3 :: (Domain LolliDom lang, Domain TensorDom lang) => LExp lang 'Empty (σ ⊸ σ ⊗ σ)
+--ex3 = λ $ \x -> x ⊗ x
+
+-- apply an expression to a value
+-- this is conbined with evaluation
+evalApplyValue :: forall sig (lang :: Lang sig) g s t.
+                  Domain LolliDom lang
+               => ECtx lang g -> LExp lang g (s ⊸ t) -> LVal lang s 
+               -> SigEffect sig (LVal lang t)
+evalApplyValue ρ e v = eval' ρ' $ Dom proxyLolli $ App pfM e $ Var pfS
+  where
+    pfS :: SingletonCtx (Fresh g) s (Singleton (Fresh g) s)
+    pfS = singSing $ knownFresh ρ 
+
+    ρ' :: ECtx lang (Add (Fresh g) s g)
+    ρ' = addFreshSCtx ρ (ValData v)
+
+    pfM :: Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
+    pfM = mergeAddFresh @s ρ
 
 
 -- Can we make this CBN instead of CBV? Can we have both?
@@ -173,27 +201,28 @@ instance Show (TensorExp lang g t) where
      => LExp lang g1 s1 -> LExp lang g2 s2 -> LExp lang g (s1 ⊗ s2)
 e1 ⊗ e2 = Dom proxyTensor $ Pair merge e1 e2
 
-letPair :: forall sig (lang :: Lang sig) g g1 g2 g2' g2'' s1 s2 t.
+letPair :: forall sig (lang :: Lang sig) x1 x2 g g1 g2 g2' g2'' g21 g22 s1 s2 t.
          ( Domain TensorDom lang
-         , CAddCtx (Fresh g) s1 g2'' g2'
-         , CAddCtx (Fresh2 g) s2 g2' g2
-         , CMerge g1 g2'' g)
+         , CAddCtx x1 s1 g2'' g2'
+         , CAddCtx x2 s2 g2' g2
+         , CMerge g1 g2'' g
+         , CSingletonCtx x1 s1 g21
+         , CSingletonCtx x2 s2 g22
+         , x1 ~ Fresh g
+         , x2 ~ Fresh2 g
+         )
         => LExp lang g1 (s1 ⊗ s2)
-        -> ((Var lang (Fresh g) s1, Var lang (Fresh2 g) s2) -> LExp lang g2 t)
+        -> ((LExp lang g21 s1, LExp lang g22 s2) -> LExp lang g2 t)
         -> LExp lang g t
-letPair e f = Dom proxyTensor $ LetPair pfM pfA1 pfA2 e e'
+letPair e f = Dom proxyTensor $ LetPair merge pfA1 pfA2 e e'
   where
-    pfM :: Merge g1 g2'' g
-    pfM = merge
     pfA1 :: AddCtx (Fresh g) s1 g2'' g2'
     pfA1 = addCtx
     pfA2 :: AddCtx (Fresh2 g) s2 g2' g2
     pfA2 = addCtx
 
     e' :: LExp lang g2 t
-    e' = f (var $ knownFresh g, var $ knownFresh2 g)
-    g :: SCtx Phantom g
-    (_,_,g) = mergeSCtx pfM
+    e' = f (Var $ singletonCtx @x1, Var $ singletonCtx @x2)
 
 vpair :: Domain TensorDom lang
       => LVal lang s1 -> LVal lang s2 -> LVal lang (s1 ⊗ s2)
@@ -315,26 +344,23 @@ inr :: Domain PlusDom lang
     => LExp lang g t2 -> LExp lang g (t1 ⊕ t2)
 inr e = Dom proxyPlus $ Inr e
 
-caseof :: forall lang s1 s2 g g1 g2 g21 g22 t.
-          (Domain PlusDom lang,
-           CAddCtx (Fresh g) s1 g2 g21,
-           CAddCtx (Fresh g) s2 g2 g22,
-           CMerge g1 g2 g)
+caseof :: forall lang x s1 s2 g g1 g2 g21 g22 g21' g22' t.
+          ( Domain PlusDom lang
+          , CAddCtx x s1 g2 g21, CSingletonCtx x s1 g21'
+          , CAddCtx x s2 g2 g22, CSingletonCtx x s2 g22'
+          , x ~ Fresh g
+          , CMerge g1 g2 g)
        => LExp lang g1 (s1 ⊕ s2)
-       -> (Var lang (Fresh g) s1 -> LExp lang g21 t)
-       -> (Var lang (Fresh g) s2 -> LExp lang g22 t)
+       -> (LExp lang g21' s1 -> LExp lang g21 t)
+       -> (LExp lang g22' s2 -> LExp lang g22 t)
        -> LExp lang g t
-caseof e f1 f2 = Dom proxyPlus $ Case merge pfA1 pfA2 e (f1 $ var x1) (f2 $ var x2)
+caseof e f1 f2 = Dom proxyPlus $ 
+    Case merge pfA1 pfA2 e (f1 . Var $ singletonCtx @x) (f2 . Var $ singletonCtx @x)
   where
     pfA1 :: AddCtx (Fresh g) s1 g2 g21
     pfA1 = addCtx
     pfA2 :: AddCtx (Fresh g) s2 g2 g22
     pfA2 = addCtx
-    x1 :: SNat (Fresh g)
-    x1 = addToSNat pfA1
-    x2 :: SNat (Fresh g)
-    x2 = addToSNat pfA2
-
 
 
 instance WFDomain PlusDom lang
