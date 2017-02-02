@@ -14,15 +14,15 @@ import Context
 -- Singleton Nats and Contexts ------------------------------------------------
 
 -- Extract the Singleton Nat from a proof that the nat is in a context
-inSNat :: In x s g -> SNat x
+inSNat :: In x σ g -> SNat x
 inSNat (In pfI) = inNSNat pfI
 
-inNSNat :: InN x s g -> SNat x
+inNSNat :: InN x σ g -> SNat x
 inNSNat InEnd           = SZ
 inNSNat (InHere _)      = SZ
 inNSNat (InLater _ pfI) = SS $ inNSNat pfI
 
-addToSNat :: AddCtx x s g g' -> SNat x
+addToSNat :: AddCtx x σ g g' -> SNat x
 addToSNat pfA = inSNat $ addIn pfA
 
 -- Given a usage and a context, construct the singleton context for (u:g)
@@ -76,33 +76,33 @@ knownFreshN2 (SCons (SUsed _) g) = SS $ knownFreshN2 g
 
 -- Singleton Context ----------------------------------------------
 
--- Constructs the canonical proof that (Singleton x s) is a singleton context.
-singSing :: SNat x -> SingletonCtx x s (Singleton x s)
+-- Constructs the canonical proof that (Singleton x σ) is a singleton context.
+singSing :: SNat x -> SingletonCtx x σ (Singleton x σ)
 singSing x = SingN $ singNSingN x
 
-singNSingN :: SNat x -> SingletonNCtx x s (SingletonN x s)
+singNSingN :: SNat x -> SingletonNCtx x σ (SingletonN x σ)
 singNSingN SZ     = AddHereS
 singNSingN (SS x) = AddLaterS $ singNSingN x
 
 -- In -------------------------------
 
--- The variable x is in the singleton ctx (x:s)
-singletonIn :: SingletonCtx x s g -> In x s g
+-- The variable x is in the singleton ctx (x:σ)
+singletonIn :: SingletonCtx x σ g -> In x σ g
 singletonIn (SingN pfS) = In $ singletonInN pfS
 
-singletonInN :: SingletonNCtx x s g -> InN x s g
+singletonInN :: SingletonNCtx x σ g -> InN x σ g
 singletonInN AddHereS        = InEnd
 singletonInN (AddLaterS pfS) = InLater SUnused $ singletonInN pfS
 
--- The variable x is in the context g[x↦s]
-addIn :: AddCtx x s g g' -> In x s g'
+-- The variable x is in the context g[x↦σ]
+addIn :: AddCtx x σ g g' -> In x σ g'
 addIn (AddN pfA) = In $ addInN pfA
 
-addInN :: AddCtxN x s g g' -> InN x s g'
+addInN :: AddCtxN x σ g g' -> InN x σ g'
 addInN (AddS pfS) = singletonInN pfS
 addInN (AddNN pfA)     = addNInN pfA
 
-addNInN :: AddNCtxN x s g g' -> InN x s g'
+addNInN :: AddNCtxN x σ g g' -> InN x σ g'
 addNInN (AddHere g)    = InHere g
 addNInN (AddEnd pfS)   = InLater (SUsed Phantom) $ singletonInN pfS
 addNInN (AddLater u pfA) = InLater u $ addNInN pfA
@@ -156,10 +156,10 @@ divNMerge (DivConsCons pfD pfU) = mergeCons pfU $ divNMerge pfD
 
 -- SCtxs with non-phantom data ----------------------------------
 
-lookup :: In x s g -> SCtx dat g -> dat s
+lookup :: In x σ g -> SCtx dat g -> dat σ
 lookup (In pfI) (SN g) = lookupN pfI g
 
-lookupN :: InN x s g -> SNCtx dat g -> dat s
+lookupN :: InN x σ g -> SNCtx dat g -> dat σ
 lookupN InEnd           (SEnd v)            = v
 lookupN (InHere _)      (SCons (SUsed v) _) = v
 lookupN (InLater _ pfI) (SCons _ g)         = lookupN pfI g
@@ -185,41 +185,41 @@ splitSUsage MergeUn SUnused = (SUnused, SUnused)
 splitSUsage MergeUL u       = (u,SUnused)
 splitSUsage MergeUR u       = (SUnused, u)
 
-addSCtx :: AddCtx x s g g' -> SCtx dat g -> dat s -> SCtx dat g'
+addSCtx :: AddCtx x σ g g' -> SCtx dat g -> dat σ -> SCtx dat g'
 addSCtx (AddN pfA) g v = SN $ addSCtxN pfA g v
 
-addSCtxN :: AddCtxN x s g g' -> SCtx dat g -> dat s -> SNCtx dat g'
+addSCtxN :: AddCtxN x σ g g' -> SCtx dat g -> dat σ -> SNCtx dat g'
 addSCtxN (AddS pfS) _ v = singletonSNCtx pfS v
 addSCtxN (AddNN pfA) (SN g) v = addSNCtxN pfA g v
 
-addSNCtxN :: AddNCtxN x s g g' -> SNCtx dat g -> dat s -> SNCtx dat g'
+addSNCtxN :: AddNCtxN x σ g g' -> SNCtx dat g -> dat σ -> SNCtx dat g'
 addSNCtxN (AddHere _) (SCons SUnused g) v = SCons (SUsed v) g
 addSNCtxN (AddEnd pfS) (SEnd v') v = SCons (SUsed v') $ singletonSNCtx pfS v
 addSNCtxN (AddLater _ pfA) (SCons u g) v = SCons u $ addSNCtxN pfA g v
 
-singletonSNCtx :: SingletonNCtx x s g -> dat s -> SNCtx dat g
+singletonSNCtx :: SingletonNCtx x σ g -> dat σ -> SNCtx dat g
 singletonSNCtx AddHereS        v = SEnd v
 singletonSNCtx (AddLaterS pfS) v = SCons SUnused $ singletonSNCtx pfS v
 
-addFreshSCtx :: SCtx dat g -> dat s -> SCtx dat (Add (Fresh g) s g)
+addFreshSCtx :: SCtx dat g -> dat σ -> SCtx dat (Add (Fresh g) σ g)
 addFreshSCtx SEmpty v = SN $ SEnd v
 addFreshSCtx (SN g) v = SN $ addFreshSNCtx g v
 
-addFreshSNCtx :: SNCtx dat g -> dat s -> SNCtx dat (AddNN (FreshN g) s g)
+addFreshSNCtx :: SNCtx dat g -> dat σ -> SNCtx dat (AddNN (FreshN g) σ g)
 addFreshSNCtx (SEnd v')            v = SCons (SUsed v') $ SEnd v
 addFreshSNCtx (SCons (SUsed v') g) v = SCons (SUsed v') $ addFreshSNCtx g v
 addFreshSNCtx (SCons SUnused    g) v = SCons (SUsed v) g
 
-mergeAddFresh :: forall s dat g.
-                 SCtx dat g -> Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
+mergeAddFresh :: forall σ dat g.
+                 SCtx dat g -> Merge g (Singleton (Fresh g) σ) (Add (Fresh g) σ g)
 mergeAddFresh SEmpty = MergeEL $ SEnd Phantom
-mergeAddFresh (SN g) = MergeN $ mergeAddNFresh @s g
+mergeAddFresh (SN g) = MergeN $ mergeAddNFresh @σ g
 
-mergeAddNFresh :: forall s dat g.
+mergeAddNFresh :: forall σ dat g.
                   SNCtx dat g 
-               -> MergeN g (SingletonN (FreshN g) s) (AddNN (FreshN g) s g)
+               -> MergeN g (SingletonN (FreshN g) σ) (AddNN (FreshN g) σ g)
 mergeAddNFresh (SEnd _)            = MergeEndL $ SEnd Phantom
-mergeAddNFresh (SCons (SUsed _) g) = MergeCons MergeUL $ mergeAddNFresh @s g
+mergeAddNFresh (SCons (SUsed _) g) = MergeCons MergeUL $ mergeAddNFresh @σ g
 mergeAddNFresh (SCons SUnused   g) = MergeEndR $ datToPhantomN g
 
 datToPhantom :: SCtx dat g -> SCtx Phantom g

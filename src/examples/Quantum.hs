@@ -34,21 +34,21 @@ data QuantumLVal (lang :: Lang sig) :: LType sig -> * where
 data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
   New     :: Bool -> QuantumLExp lang 'Empty Qubit
   Meas    :: LExp lang g Qubit -> QuantumLExp lang g (Lower Bool)
-  Unitary :: Unitary s -> LExp lang g s -> QuantumLExp lang g s
+  Unitary :: Unitary σ -> LExp lang g σ -> QuantumLExp lang g σ
   -- control the first expression BY the second expression
   ControlBy :: Merge g1 g2 g 
-            -> LExp lang g1 s -> LExp lang g2 Qubit -> QuantumLExp lang g (s ⊗ Qubit)
+            -> LExp lang g1 σ -> LExp lang g2 Qubit -> QuantumLExp lang g (σ ⊗ Qubit)
 
 type QuantumDom = '(QuantumLExp,QuantumLVal)
 proxyQuantum :: Proxy QuantumDom
 proxyQuantum = Proxy
 
-instance Show (Unitary s) where
+instance Show (Unitary σ) where
   show Hadamard = "H"
   show PauliX   = "X"
   show PauliY   = "Y"
   show PauliZ   = "Z"
-instance Show (QuantumLExp lang g t) where
+instance Show (QuantumLExp lang g τ) where
   show (New b)  = "New " ++ show b
   show (Meas q) = "Meas " ++ show q
   show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
@@ -57,7 +57,7 @@ instance Show (QuantumLExp lang g t) where
 -- Quantum Data
 
 -- Add more?
-data Unitary (s :: LType sig) where
+data Unitary (σ :: LType sig) where
   Hadamard :: Unitary Qubit
   PauliX   :: Unitary Qubit -- (NOT)
   PauliY   :: Unitary Qubit
@@ -67,12 +67,12 @@ data Unitary (s :: LType sig) where
 
 type QId = Int
 class Monad (SigEffect sig) => HasQuantumEffect sig where
-  type family QUnitary (s :: LType sig)
-  interpU :: forall (s :: LType sig). Unitary s -> QUnitary s
+  type family QUnitary (σ :: LType sig)
+  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary σ
 
   newQubit  :: Bool -> SigEffect sig QId
-  applyU    :: forall (s :: LType sig).
-               Unitary s -> Qubits s -> SigEffect sig ()
+  applyU    :: forall (σ :: LType sig).
+               Unitary σ -> Qubits σ -> SigEffect sig ()
   measQubit :: QId -> SigEffect sig Bool
 
 instance HasQuantumEffect ('Sig DensityMonad sigs) where
@@ -117,14 +117,14 @@ instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
     
 
 -- This type family should be open 
-type family Qubits (t :: LType sig) :: * 
+type family Qubits (τ :: LType sig) :: * 
 type instance Qubits ('LType _ 'OneSig) = ()
 type instance Qubits ('LType _ 'QubitSig) = QId
-type instance Qubits ('LType _ ('TensorSig t1 t2)) = (Qubits t1, Qubits t2)
+type instance Qubits ('LType _ ('TensorSig τ1 τ2)) = (Qubits τ1, Qubits τ2)
 type instance Qubits ('LType _ ('LowerSig _)) = ()
 
-valToQubits :: forall sig (lang :: Lang sig) t.
-              HasQuantumDom lang => LVal lang t -> SigEffect sig (Qubits t)
+valToQubits :: forall sig (lang :: Lang sig) τ.
+              HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)
 valToQubits v = case fromLVal' proxyQuantum v of 
     Just (VQubit i) -> return i
     Nothing -> case fromLVal' proxyOne v of
@@ -148,7 +148,7 @@ meas :: HasQuantumDom lang
 meas = Dom proxyQuantum . Meas
 
 unitary :: HasQuantumDom lang
-        => Unitary s -> LExp lang g s -> LExp lang g s
+        => Unitary σ -> LExp lang g σ -> LExp lang g σ
 unitary u = Dom proxyQuantum . Unitary u
 
 vqubit :: forall sig (lang :: Lang sig).
@@ -157,7 +157,7 @@ vqubit :: forall sig (lang :: Lang sig).
 vqubit = VDom proxyQuantum . VQubit
 
 controlBy :: (HasQuantumDom lang, CMerge g1 g2 g)
-          => LExp lang g1 s -> LExp lang g2 Qubit -> LExp lang g (s ⊗ Qubit)
+          => LExp lang g1 σ -> LExp lang g2 Qubit -> LExp lang g (σ ⊗ Qubit)
 controlBy e1 e2 = Dom proxyQuantum $ ControlBy merge e1 e2
 
 ----------------------------------------------------

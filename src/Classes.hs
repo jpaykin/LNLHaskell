@@ -22,8 +22,8 @@ class KnownUsage u where
 
 instance KnownUsage 'Unused where
   usg = SUnused
-instance KnownUsage ('Used s) where
-  usg = SUsed @_ @_ @s Phantom
+instance KnownUsage ('Used σ) where
+  usg = SUsed @_ @_ @σ Phantom
 
 class KnownCtx g where
   ctx :: SCtx Phantom g
@@ -35,7 +35,7 @@ instance KnownCtx 'Empty where
 instance KnownNCtx g => KnownCtx ('N g) where
   ctx = SN nctx
 
-instance KnownNCtx ('End t) where
+instance KnownNCtx ('End τ) where
   nctx = SEnd Phantom
 instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
   nctx = SCons usg nctx
@@ -43,60 +43,60 @@ instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
 
 -- In Context ---------------------------------------------
 
-class CInN x s g where
-  inNCtx :: InN x s g
+class CInN x σ g where
+  inNCtx :: InN x σ g
 
-instance CInN 'Z s ('End s) where
+instance CInN 'Z σ ('End σ) where
   inNCtx = InEnd
-instance KnownNCtx g => CInN 'Z s ('Cons ('Used s) g) where
+instance KnownNCtx g => CInN 'Z σ ('Cons ('Used σ) g) where
   inNCtx = InHere nctx
-instance (KnownUsage u, CInN x s g) => CInN ('S x) s ('Cons u g) where
+instance (KnownUsage u, CInN x σ g) => CInN ('S x) σ ('Cons u g) where
   inNCtx = InLater usg inNCtx
 
-class CIn x s g where
-  inCtx :: In x s g
+class CIn x σ g where
+  inCtx :: In x σ g
 
-instance CInN x s g => CIn x s ('N g) where
+instance CInN x σ g => CIn x σ ('N g) where
   inCtx = In inNCtx
   
 
 -- Add To Context ----------------------------------------------
 
-class CAddCtx x s g g' | x s g -> g', x g' -> s g where
-  addCtx :: AddCtx x s g g'
+class CAddCtx x σ g g' | x σ g -> g', x g' -> σ g where
+  addCtx :: AddCtx x σ g g'
 
-instance CAddCtxN x s g g' (IsSingleton g') => CAddCtx x s g ('N g') where
-  addCtx = AddN $ addCtxN @x @s @g @g' @(IsSingleton g')
+instance CAddCtxN x σ g g' (IsSingleton g') => CAddCtx x σ g ('N g') where
+  addCtx = AddN $ addCtxN @x @σ @g @g' @(IsSingleton g')
 
--- If CAddCtxN x s g g' flag then 
+-- If CAddCtxN x σ g g' flag then 
 -- flag IFF g' is a singleton context IFF g is the empty context
-class CAddCtxN x s g g' flag | x s g -> g' flag, x g' flag -> s g where
-  addCtxN :: AddCtxN x s g g'
+class CAddCtxN x σ g g' flag | x σ g -> g' flag, x g' flag -> σ g where
+  addCtxN :: AddCtxN x σ g g'
 
-instance CSingletonNCtx x s g' => CAddCtxN x s 'Empty g' 'True  where
+instance CSingletonNCtx x σ g' => CAddCtxN x σ 'Empty g' 'True  where
   addCtxN = AddS singletonNCtx
-instance CAddNCtxN x s g g' => CAddCtxN x s ('N g) g' 'False where
+instance CAddNCtxN x σ g g' => CAddCtxN x σ ('N g) g' 'False where
   addCtxN = AddNN addNCtxN
 
-class CAddNCtxN x s g g' | x s g -> g', x g' -> s g where
-  addNCtxN :: AddNCtxN x s g g'
+class CAddNCtxN x σ g g' | x σ g -> g', x g' -> σ g where
+  addNCtxN :: AddNCtxN x σ g g'
 
-instance CAddNCtxFlag x s g g' (IsDouble g') => CAddNCtxN x s g g' where
+instance CAddNCtxFlag x σ g g' (IsDouble g') => CAddNCtxN x σ g g' where
   addNCtxN = addNCtxFlag
 
--- If CAddNCtxFlag x s g g' flag then
+-- If CAddNCtxFlag x σ g g' flag then
 -- flag IFF g is a singleton context iff g' is a double context
-class CAddNCtxFlag x s g g' flag | x s g -> g' flag, x g' flag -> s g where
-  addNCtxFlag :: AddNCtxN x s g g'
+class CAddNCtxFlag x σ g g' flag | x σ g -> g' flag, x g' flag -> σ g where
+  addNCtxFlag :: AddNCtxN x σ g g'
 
 instance (KnownNCtx g, IsSingleton g ~ flag)
-    => CAddNCtxFlag 'Z s ('Cons 'Unused g) ('Cons ('Used s) g) flag where
+    => CAddNCtxFlag 'Z σ ('Cons 'Unused g) ('Cons ('Used σ) g) flag where
   addNCtxFlag = AddHere nctx
-instance CSingletonNCtx x s g => CAddNCtxFlag ('S x) s ('End t) ('Cons ('Used t) g) 'True where
+instance CSingletonNCtx x σ g => CAddNCtxFlag ('S x) σ ('End τ) ('Cons ('Used τ) g) 'True where
   addNCtxFlag = AddEnd singletonNCtx
-instance CAddNCtxFlag x s g g' f => CAddNCtxFlag ('S x) s ('Cons 'Unused g) ('Cons 'Unused g') f where
+instance CAddNCtxFlag x σ g g' f => CAddNCtxFlag ('S x) σ ('Cons 'Unused g) ('Cons 'Unused g') f where
   addNCtxFlag = AddLater SUnused addNCtxFlag
-instance CAddNCtxN x s g g' => CAddNCtxFlag ('S x) s ('Cons ('Used t) g) ('Cons ('Used t) g') 'False where
+instance CAddNCtxN x σ g g' => CAddNCtxFlag ('S x) σ ('Cons ('Used τ) g) ('Cons ('Used τ) g') 'False where
   addNCtxFlag = AddLater (SUsed Phantom) addNCtxN
 
 
@@ -109,47 +109,47 @@ type family CountN g :: Nat where
   CountN ('Cons 'Unused g)   = CountN g
 
 type family IsSingleton  g :: Bool where
-  IsSingleton ('End s)            = 'True
+  IsSingleton ('End σ)            = 'True
   IsSingleton ('Cons ('Used _) _) = 'False
   IsSingleton ('Cons 'Unused   g) = IsSingleton g
 
 type family IsDouble g :: Bool where
-  IsDouble ('End s) = 'False
+  IsDouble ('End σ) = 'False
   IsDouble ('Cons ('Used _) g) = IsSingleton g
   IsDouble ('Cons 'Unused g)   = IsDouble g
 
 class CIsSingleton g flag | g -> flag where
   isSingleton :: Dict (IsSingleton g ~ flag)
 
-instance CIsSingleton ('End s) 'True where
+instance CIsSingleton ('End σ) 'True where
   isSingleton = Dict
-instance CIsSingleton ('Cons ('Used s) g) 'False where
+instance CIsSingleton ('Cons ('Used σ) g) 'False where
   isSingleton = Dict
 instance CIsSingleton g b => CIsSingleton ('Cons 'Unused g) b where
   isSingleton = case isSingleton @g of Dict -> Dict
 
 -- Singleton Context ------------------------------------------
 
-class CSingletonCtx x s g | x s -> g, g -> x s where
-  singletonCtx :: SingletonCtx x s g
-class CSingletonNCtx x s g | x s -> g, g -> x s where
-  singletonNCtx :: SingletonNCtx x s g
+class CSingletonCtx x σ g | x σ -> g, g -> x σ where
+  singletonCtx :: SingletonCtx x σ g
+class CSingletonNCtx x σ g | x σ -> g, g -> x σ where
+  singletonNCtx :: SingletonNCtx x σ g
 
-instance CSingletonNCtx 'Z s ('End s) where
+instance CSingletonNCtx 'Z σ ('End σ) where
   singletonNCtx = AddHereS
-instance CSingletonNCtx x s g => CSingletonNCtx ('S x) s ('Cons 'Unused g) where
+instance CSingletonNCtx x σ g => CSingletonNCtx ('S x) σ ('Cons 'Unused g) where
   singletonNCtx = AddLaterS singletonNCtx
 
-instance CSingletonNCtx x s g => CSingletonCtx x s ('N g) where
+instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
   singletonCtx = SingN $ singletonNCtx
 
 
 -- Remove Context ------------------------------------------
 
-class CRemoveCtx x s g g' | x s g -> g', x s g' -> g where
-  removeCtx :: AddCtx x s g' g
+class CRemoveCtx x σ g g' | x σ g -> g', x σ g' -> g where
+  removeCtx :: AddCtx x σ g' g
 
-instance CAddCtx x s g' g => CRemoveCtx x s g g' where
+instance CAddCtx x σ g' g => CRemoveCtx x σ g g' where
   removeCtx = addCtx
 
 
@@ -161,9 +161,9 @@ class CMergeU u1 u2 u3 | u1 u2 -> u3, u1 u3 -> u2, u2 u3 -> u1 where
 
 instance CMergeU 'Unused 'Unused 'Unused where
   mergeU = MergeUn
-instance CMergeU ('Used s) 'Unused ('Used s) where
+instance CMergeU ('Used σ) 'Unused ('Used σ) where
   mergeU = MergeUL
-instance CMergeU 'Unused ('Used s) ('Used s) where
+instance CMergeU 'Unused ('Used σ) ('Used σ) where
   mergeU = MergeUR
 
 class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1 where
@@ -186,9 +186,9 @@ instance KnownNCtx g => CMergeForward ('N g) 'Empty ('N g) where
 instance CMergeNForward g1 g2 g3 => CMergeForward ('N g1) ('N g2) ('N g3) where
   mergeF = MergeN mergeNF
 
-instance KnownNCtx g2 => CMergeNForward ('End s) ('Cons 'Unused g2) ('Cons ('Used s) g2) where
+instance KnownNCtx g2 => CMergeNForward ('End σ) ('Cons 'Unused g2) ('Cons ('Used σ) g2) where
   mergeNF = MergeEndL nctx
-instance KnownNCtx g1 => CMergeNForward ('Cons 'Unused g1) ('End s) ('Cons ('Used s) g1) where
+instance KnownNCtx g1 => CMergeNForward ('Cons 'Unused g1) ('End σ) ('Cons ('Used σ) g1) where
   mergeNF = MergeEndR (nctx @g1)
 instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
       => CMergeNForward ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
@@ -210,9 +210,9 @@ instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
 class CDivN g1 g2 g3 | g1 g2 -> g3 where
   divN :: DivN g1 g2 g3
 
-instance s ~ t => CDivN ('End s) ('End t) 'Empty where
+instance σ ~ τ => CDivN ('End σ) ('End τ) 'Empty where
   divN = DivEndEnd
-instance KnownNCtx g => CDivN ('Cons ('Used s) g) ('End s) ('N ('Cons 'Unused g)) where
+instance KnownNCtx g => CDivN ('Cons ('Used σ) g) ('End σ) ('N ('Cons 'Unused g)) where
   divN = DivConsEnd nctx
 instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
       => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where

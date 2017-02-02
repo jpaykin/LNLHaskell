@@ -20,8 +20,8 @@ import Proofs
 import Classes
 import Lang
 
-var :: forall x s g lang. CSingletonCtx x s g
-    => LExp lang g s
+var :: forall x σ g lang. CSingletonCtx x σ g
+    => LExp lang g σ
 var = Var $ singletonCtx @x
 
 -- Implication ----------------------------------
@@ -29,65 +29,65 @@ var = Var $ singletonCtx @x
 data LolliSig sig where
   LolliSig :: LType sig -> LType sig -> LolliSig ty
 
-type (⊸) (s :: LType sig) (t :: LType sig) =
-  ('LType (InSig LolliSig sig) ('LolliSig s t) :: LType sig)
+type (⊸) (σ :: LType sig) (τ :: LType sig) =
+  ('LType (InSig LolliSig sig) ('LolliSig σ τ) :: LType sig)
 infixr 0 ⊸
 
 data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Abs :: AddCtx x s g g'
-      -> LExp lang g' t
-      -> LolliExp lang g (s ⊸ t)
+  Abs :: AddCtx x σ g g'
+      -> LExp lang g' τ
+      -> LolliExp lang g (σ ⊸ τ)
   App :: Merge g1 g2 g
-      -> LExp lang g1 (s ⊸ t)
-      -> LExp lang g2 s
-      -> LolliExp lang g t
+      -> LExp lang g1 (σ ⊸ τ)
+      -> LExp lang g2 σ
+      -> LolliExp lang g τ
 data LolliVal :: Lang sig -> LType sig -> * where
   -- The value is a closure
   VAbs :: ECtx lang g
-       -> AddCtx x s g g'
-       -> LExp lang g' t
-       -> LolliVal lang (s ⊸ t)
+       -> AddCtx x σ g g'
+       -> LExp lang g' τ
+       -> LolliVal lang (σ ⊸ τ)
 
 type LolliDom = '(LolliExp, LolliVal)
 proxyLolli :: Proxy LolliDom
 proxyLolli = Proxy
 
-instance Show (LolliExp lang g t) where
+instance Show (LolliExp lang g τ) where
   show (Abs pfA e) = "λ " ++ show (addToSNat pfA) ++ " . " ++ show e
   show (App _ e1 e2) = "(" ++ show e1 ++ ") (" ++ show e2 ++ ")"
 
-λ :: forall lang x s t g g' g''. 
+λ :: forall g lang x σ τ g' g''. 
      ( Domain LolliDom lang
-     , CAddCtx x s g g'
-     , CSingletonCtx x s g'' 
+     , CAddCtx x σ g g'
+     , CSingletonCtx x σ g'' 
      , x ~ Fresh g)
-  => (LExp lang g'' s -> LExp lang g' t) -> LExp lang g (s ⊸ t)
+  => (LExp lang g'' σ -> LExp lang g' τ) -> LExp lang g (σ ⊸ τ)
 λ f = Dom proxyLolli $ Abs (addCtx @x) (f . Var $ singletonCtx @x) 
 
 app :: (Domain LolliDom lang, CMerge g1 g2 g3)
-    => LExp lang g1 (s ⊸ t)
-    -> LExp lang g2 s
-    -> LExp lang g3 t
+    => LExp lang g1 (σ ⊸ τ)
+    -> LExp lang g2 σ
+    -> LExp lang g3 τ
 e1 `app` e2 = Dom proxyLolli $ App merge e1 e2
 
 
-letin :: forall lang x s t g g1 g2 g2' g2''.
+letin :: forall lang x σ τ g g1 g2 g2' g2''.
          ( Domain LolliDom lang
-         , CAddCtx x s g2 g2'
-         , CSingletonCtx x s g2''
+         , CAddCtx x σ g2 g2'
+         , CSingletonCtx x σ g2''
          , CMerge g1 g2 g
          , x ~ Fresh g2)
-      => LExp lang g1 s
-      -> (LExp lang g2'' s -> LExp lang g2' t)
-      -> LExp lang g t
+      => LExp lang g1 σ
+      -> (LExp lang g2'' σ -> LExp lang g2' τ)
+      -> LExp lang g τ
 letin e f = λ f `app` e
 
 -- Sanity check examples 
 
-ex :: Domain LolliDom lang => LExp lang 'Empty ((s ⊸ t) ⊸ s ⊸ t)
+ex :: Domain LolliDom lang => LExp lang 'Empty ((σ ⊸ τ) ⊸ σ ⊸ τ)
 ex = λ $ \x -> λ $ \y -> x `app` y
 
---ex2 :: Domain LolliDom lang => LExp lang 'Empty (s ⊸ t ⊸ s)
+--ex2 :: Domain LolliDom lang => LExp lang 'Empty (σ ⊸ τ ⊸ σ)
 --ex2 = λ $ \x -> λ $ \y -> x
 
 --ex3 :: (Domain LolliDom lang, Domain TensorDom lang) => LExp lang 'Empty (σ ⊸ σ ⊗ σ)
@@ -95,20 +95,20 @@ ex = λ $ \x -> λ $ \y -> x `app` y
 
 -- apply an expression to a value
 -- this is conbined with evaluation
-evalApplyValue :: forall sig (lang :: Lang sig) g s t.
+evalApplyValue :: forall sig (lang :: Lang sig) g σ τ.
                   Domain LolliDom lang
-               => ECtx lang g -> LExp lang g (s ⊸ t) -> LVal lang s 
-               -> SigEffect sig (LVal lang t)
+               => ECtx lang g -> LExp lang g (σ ⊸ τ) -> LVal lang σ 
+               -> SigEffect sig (LVal lang τ)
 evalApplyValue ρ e v = eval' ρ' $ Dom proxyLolli $ App pfM e $ Var pfS
   where
-    pfS :: SingletonCtx (Fresh g) s (Singleton (Fresh g) s)
+    pfS :: SingletonCtx (Fresh g) σ (Singleton (Fresh g) σ)
     pfS = singSing $ knownFresh ρ 
 
-    ρ' :: ECtx lang (Add (Fresh g) s g)
+    ρ' :: ECtx lang (Add (Fresh g) σ g)
     ρ' = addFreshSCtx ρ (ValData v)
 
-    pfM :: Merge g (Singleton (Fresh g) s) (Add (Fresh g) s g)
-    pfM = mergeAddFresh @s ρ
+    pfM :: Merge g (Singleton (Fresh g) σ) (Add (Fresh g) σ g)
+    pfM = mergeAddFresh @σ ρ
 
 
 -- Can we make this CBN instead of CBV? Can we have both?
@@ -133,7 +133,7 @@ type One = ('LType (InSig OneSig sig) 'OneSig :: LType sig)
 
 data OneExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Unit :: OneExp lang 'Empty One
-  LetUnit :: Merge g1 g2 g -> LExp lang g1 One -> LExp lang g2 t -> OneExp lang g t
+  LetUnit :: Merge g1 g2 g -> LExp lang g1 One -> LExp lang g2 τ -> OneExp lang g τ
 
 data OneVal :: forall sig. Lang sig -> LType sig -> * where
   VUnit :: OneVal lang One
@@ -143,7 +143,7 @@ type OneDom = '(OneExp,OneVal)
 proxyOne :: Proxy OneDom
 proxyOne = Proxy
 
-instance Show (OneExp lang g t) where
+instance Show (OneExp lang g τ) where
   show Unit = "()"
   show (LetUnit _ e1 e2) = "let () = " ++ show e1 ++ " in " ++ show e2
 
@@ -152,7 +152,7 @@ unit :: Domain OneDom lang
 unit = Dom proxyOne Unit
 
 letUnit :: (Domain OneDom lang, CMerge g1 g2 g)
-        => LExp lang g1 One -> LExp lang g2 t -> LExp lang g t
+        => LExp lang g1 One -> LExp lang g2 τ -> LExp lang g τ
 e1 `letUnit` e2 = Dom proxyOne $ LetUnit merge e1 e2
 
 vunit :: Domain OneDom lang
@@ -176,56 +176,56 @@ instance WFDomain OneDom lang
 
 data TensorSig sig = TensorSig (LType sig) (LType sig)
 
-type (⊗) (s :: LType sig) (t :: LType sig) = 
-     'LType (InSig TensorSig sig) ('TensorSig s t)
+type (⊗) (σ :: LType sig) (τ :: LType sig) = 
+     'LType (InSig TensorSig sig) ('TensorSig σ τ)
 
 data TensorExp :: Lang sig -> Ctx sig -> LType sig -> * where
   Pair :: Merge g1 g2 g
-       -> LExp lang g1 t1 -> LExp lang g2 t2 -> TensorExp lang g (t1 ⊗ t2)
-  LetPair :: Merge g1 g2'' g -> AddCtx x1 s1 g2'' g2' -> AddCtx x2 s2 g2' g2
-          -> LExp lang g1 (s1 ⊗ s2) -> LExp lang g2 t -> TensorExp lang g t
+       -> LExp lang g1 τ1 -> LExp lang g2 τ2 -> TensorExp lang g (τ1 ⊗ τ2)
+  LetPair :: Merge g1 g2'' g -> AddCtx x1 σ1 g2'' g2' -> AddCtx x2 σ2 g2' g2
+          -> LExp lang g1 (σ1 ⊗ σ2) -> LExp lang g2 τ -> TensorExp lang g τ
 data TensorVal :: Lang sig -> LType sig -> * where
-  VPair :: LVal lang t1 -> LVal lang t2 -> TensorVal lang (t1 ⊗ t2)
+  VPair :: LVal lang τ1 -> LVal lang τ2 -> TensorVal lang (τ1 ⊗ τ2)
 
 type TensorDom  = '(TensorExp, TensorVal)
 
 proxyTensor :: Proxy TensorDom
 proxyTensor = Proxy
 
-instance Show (TensorExp lang g t) where
+instance Show (TensorExp lang g τ) where
   show (Pair _ e1 e2) = "(" ++ show e1 ++ ", " ++ show e2 ++ ")"
   show (LetPair _ pfA1 pfA2 e e') = "let (" ++ show (addToSNat pfA1) ++ ", " ++ show (addToSNat pfA2)
     ++ ") = " ++ show e ++ " in " ++ show e'
 
 (⊗) :: (Domain TensorDom lang, CMerge g1 g2 g)
-     => LExp lang g1 s1 -> LExp lang g2 s2 -> LExp lang g (s1 ⊗ s2)
+     => LExp lang g1 σ1 -> LExp lang g2 σ2 -> LExp lang g (σ1 ⊗ σ2)
 e1 ⊗ e2 = Dom proxyTensor $ Pair merge e1 e2
 
-letPair :: forall sig (lang :: Lang sig) x1 x2 g g1 g2 g2' g2'' g21 g22 s1 s2 t.
+letPair :: forall sig (lang :: Lang sig) x1 x2 g g1 g2 g2' g2'' g21 g22 σ1 σ2 τ.
          ( Domain TensorDom lang
-         , CAddCtx x1 s1 g2'' g2'
-         , CAddCtx x2 s2 g2' g2
+         , CAddCtx x1 σ1 g2'' g2'
+         , CAddCtx x2 σ2 g2' g2
          , CMerge g1 g2'' g
-         , CSingletonCtx x1 s1 g21
-         , CSingletonCtx x2 s2 g22
+         , CSingletonCtx x1 σ1 g21
+         , CSingletonCtx x2 σ2 g22
          , x1 ~ Fresh g
          , x2 ~ Fresh2 g
          )
-        => LExp lang g1 (s1 ⊗ s2)
-        -> ((LExp lang g21 s1, LExp lang g22 s2) -> LExp lang g2 t)
-        -> LExp lang g t
+        => LExp lang g1 (σ1 ⊗ σ2)
+        -> ((LExp lang g21 σ1, LExp lang g22 σ2) -> LExp lang g2 τ)
+        -> LExp lang g τ
 letPair e f = Dom proxyTensor $ LetPair merge pfA1 pfA2 e e'
   where
-    pfA1 :: AddCtx (Fresh g) s1 g2'' g2'
+    pfA1 :: AddCtx (Fresh g) σ1 g2'' g2'
     pfA1 = addCtx
-    pfA2 :: AddCtx (Fresh2 g) s2 g2' g2
+    pfA2 :: AddCtx (Fresh2 g) σ2 g2' g2
     pfA2 = addCtx
 
-    e' :: LExp lang g2 t
+    e' :: LExp lang g2 τ
     e' = f (Var $ singletonCtx @x1, Var $ singletonCtx @x2)
 
 vpair :: Domain TensorDom lang
-      => LVal lang s1 -> LVal lang s2 -> LVal lang (s1 ⊗ s2)
+      => LVal lang σ1 -> LVal lang σ2 -> LVal lang (σ1 ⊗ σ2)
 vpair v1 v2 = VDom proxyTensor $ VPair v1 v2
 
 
@@ -249,9 +249,9 @@ instance WFDomain TensorDom lang
 -- Lift --------------------------------------------------------
 
 data Lift (lang :: Lang sig) :: LType sig -> * where
-  Suspend :: LExp lang 'Empty t -> Lift lang t
+  Suspend :: LExp lang 'Empty τ -> Lift lang τ
 
-force :: Lift lang t -> LExp lang 'Empty t
+force :: Lift lang τ -> LExp lang 'Empty τ
 force (Suspend e) = e
 
 -- Lower -------------------------------------------------------
@@ -264,8 +264,8 @@ data LowerExp :: Lang sig -> Ctx sig -> LType sig -> * where
   Put :: a -> LowerExp lang 'Empty (Lower a)
   LetBang :: Merge g1 g2 g
           -> LExp lang g1 (Lower a)
-          -> (a -> LExp lang g2 t)
-          -> LowerExp lang g t
+          -> (a -> LExp lang g2 τ)
+          -> LowerExp lang g τ
 data LowerVal :: Lang sig -> LType sig -> * where
   VPut :: a -> LowerVal lang (Lower a)
 
@@ -274,7 +274,7 @@ type LowerDom = '(LowerExp, LowerVal)
 proxyLower :: Proxy LowerDom
 proxyLower = Proxy
 
-instance Show (LowerExp lang g t) where
+instance Show (LowerExp lang g τ) where
   show (Put _) = "Put"
   show (LetBang _ e _) = show e ++ ">! ??"
 
@@ -284,8 +284,8 @@ put a = Dom proxyLower $ Put a
 
 (>!) :: (Domain LowerDom lang, CMerge g1 g2 g)
      => LExp lang g1 (Lower a)
-     -> (a -> LExp lang g2 t)
-     -> LExp lang g t
+     -> (a -> LExp lang g2 τ)
+     -> LExp lang g τ
 e >! f = Dom proxyLower $ LetBang merge e f
 
 vput :: Domain LowerDom lang
@@ -307,59 +307,59 @@ instance WFDomain LowerDom lang
 -- Additive Sums
 
 data PlusSig sig = PlusSig (LType sig) (LType sig)
-type (⊕) (s :: LType sig) (t :: LType sig) =
-    'LType (InSig PlusSig sig) ('PlusSig s t)
+type (⊕) (σ :: LType sig) (τ :: LType sig) =
+    'LType (InSig PlusSig sig) ('PlusSig σ τ)
 
 
 data PlusExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Inl  :: LExp lang g t1 -> PlusExp lang g (t1 ⊕ t2)
-  Inr  :: LExp lang g t2 -> PlusExp lang g (t1 ⊕ t2)
+  Inl  :: LExp lang g τ1 -> PlusExp lang g (τ1 ⊕ τ2)
+  Inr  :: LExp lang g τ2 -> PlusExp lang g (τ1 ⊕ τ2)
   Case :: Merge g1 g2 g
-       -> AddCtx x1 s1 g2 g21
-       -> AddCtx x2 s2 g2 g22
-       -> LExp lang g1 (s1 ⊕ s2)
-       -> LExp lang g21 t
-       -> LExp lang g22 t
-       -> PlusExp lang g t
+       -> AddCtx x1 σ1 g2 g21
+       -> AddCtx x2 σ2 g2 g22
+       -> LExp lang g1 (σ1 ⊕ σ2)
+       -> LExp lang g21 τ
+       -> LExp lang g22 τ
+       -> PlusExp lang g τ
 
 data PlusVal :: Lang sig -> LType sig -> * where
-  VInl :: LVal lang t1 -> PlusVal lang (t1 ⊕ t2)
-  VInr :: LVal lang t2 -> PlusVal lang (t1 ⊕ t2)
+  VInl :: LVal lang τ1 -> PlusVal lang (τ1 ⊕ τ2)
+  VInr :: LVal lang τ2 -> PlusVal lang (τ1 ⊕ τ2)
 
 type PlusDom = '(PlusExp, PlusVal)
 
 proxyPlus :: Proxy PlusDom
 proxyPlus = Proxy
 
-instance Show (PlusExp lang g t) where
+instance Show (PlusExp lang g τ) where
   show (Inl e) = "Inl " ++ show e
   show (Inr e) = "Inr " ++ show e
   show (Case _ _ _ _ _ _) = undefined
 
 inl :: Domain PlusDom lang
-    => LExp lang g t1 -> LExp lang g (t1 ⊕ t2)
+    => LExp lang g τ1 -> LExp lang g (τ1 ⊕ τ2)
 inl e = Dom proxyPlus $ Inl e
 
 inr :: Domain PlusDom lang
-    => LExp lang g t2 -> LExp lang g (t1 ⊕ t2)
+    => LExp lang g τ2 -> LExp lang g (τ1 ⊕ τ2)
 inr e = Dom proxyPlus $ Inr e
 
-caseof :: forall lang x s1 s2 g g1 g2 g21 g22 g21' g22' t.
+caseof :: forall lang x σ1 σ2 g g1 g2 g21 g22 g21' g22' τ.
           ( Domain PlusDom lang
-          , CAddCtx x s1 g2 g21, CSingletonCtx x s1 g21'
-          , CAddCtx x s2 g2 g22, CSingletonCtx x s2 g22'
+          , CAddCtx x σ1 g2 g21, CSingletonCtx x σ1 g21'
+          , CAddCtx x σ2 g2 g22, CSingletonCtx x σ2 g22'
           , x ~ Fresh g
           , CMerge g1 g2 g)
-       => LExp lang g1 (s1 ⊕ s2)
-       -> (LExp lang g21' s1 -> LExp lang g21 t)
-       -> (LExp lang g22' s2 -> LExp lang g22 t)
-       -> LExp lang g t
+       => LExp lang g1 (σ1 ⊕ σ2)
+       -> (LExp lang g21' σ1 -> LExp lang g21 τ)
+       -> (LExp lang g22' σ2 -> LExp lang g22 τ)
+       -> LExp lang g τ
 caseof e f1 f2 = Dom proxyPlus $ 
     Case merge pfA1 pfA2 e (f1 . Var $ singletonCtx @x) (f2 . Var $ singletonCtx @x)
   where
-    pfA1 :: AddCtx (Fresh g) s1 g2 g21
+    pfA1 :: AddCtx (Fresh g) σ1 g2 g21
     pfA1 = addCtx
-    pfA2 :: AddCtx (Fresh g) s2 g2 g22
+    pfA2 :: AddCtx (Fresh g) σ2 g2 g22
     pfA2 = addCtx
 
 
@@ -381,39 +381,39 @@ instance WFDomain PlusDom lang
 -- Additive Product
 
 data WithSig sig = WithSig (LType sig) (LType sig)
-type (&) (s :: LType sig) (t :: LType sig) = 
-    'LType (InSig WithSig sig) ('WithSig s t)
+type (&) (σ :: LType sig) (τ :: LType sig) = 
+    'LType (InSig WithSig sig) ('WithSig σ τ)
 
 data WithExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  With  :: LExp lang g t1 -> LExp lang g t2 -> WithExp lang g (t1 & t2)
-  Proj1 :: LExp lang g (t1 & t2) -> WithExp lang g t1
-  Proj2 :: LExp lang g (t1 & t2) -> WithExp lang g t2
+  With  :: LExp lang g τ1 -> LExp lang g τ2 -> WithExp lang g (τ1 & τ2)
+  Proj1 :: LExp lang g (τ1 & τ2) -> WithExp lang g τ1
+  Proj2 :: LExp lang g (τ1 & τ2) -> WithExp lang g τ2
 data WithVal :: Lang sig -> LType sig -> * where -- Lazy values
-  VWith :: ECtx lang g -> LExp lang g t1 -> LExp lang g t2 -> WithVal lang (t1 & t2)
+  VWith :: ECtx lang g -> LExp lang g τ1 -> LExp lang g τ2 -> WithVal lang (τ1 & τ2)
 
 type WithDom = '(WithExp, WithVal)
 
 proxyWith :: Proxy WithDom
 proxyWith = Proxy
 
-instance Show (WithExp lang g t) where
+instance Show (WithExp lang g τ) where
   show = undefined
 
 (&) :: Domain WithDom lang
-    => LExp lang g t1 -> LExp lang g t2 -> LExp lang g (t1 & t2)
+    => LExp lang g τ1 -> LExp lang g τ2 -> LExp lang g (τ1 & τ2)
 e1 & e2 = Dom proxyWith $ With e1 e2
 
 proj1 :: Domain WithDom lang
-      => LExp lang g (t1 & t2) -> LExp lang g t1
+      => LExp lang g (τ1 & τ2) -> LExp lang g τ1
 proj1 = Dom proxyWith . Proj1
 
 proj2 :: Domain WithDom lang
-      => LExp lang g (t1 & t2) -> LExp lang g t2
+      => LExp lang g (τ1 & τ2) -> LExp lang g τ2
 proj2 = Dom proxyWith . Proj2
 
 
 oplus :: (Domain LolliDom lang, Domain PlusDom lang, Domain WithDom lang)
-    => LExp lang 'Empty ((s1 ⊸ t) & (s2 ⊸ t) ⊸ s1 ⊕ s2 ⊸ t)
+    => LExp lang 'Empty ((σ1 ⊸ τ) & (σ2 ⊸ τ) ⊸ σ1 ⊕ σ2 ⊸ τ)
 oplus = λ $ \f -> λ $ \x -> 
   caseof x
     (\x1 -> proj1 f `app` x1)
@@ -433,27 +433,27 @@ instance WFDomain WithDom lang => Domain WithDom lang where
 -- State Monad -------------------------------------------------
 
 data LState' :: LType sig -> LType sig ~> LType sig
-type instance Apply (LState' s) t = s ⊸ s ⊗ t
+type instance Apply (LState' σ) τ = σ ⊸ σ ⊗ τ
 
-type LState s t = LState' s @@ t
+type LState σ τ = LState' σ @@ τ
 type HasLStateDom lang = (WFDomain TensorDom lang, WFDomain LowerDom lang, 
                           WFDomain OneDom lang, WFDomain LolliDom lang) 
 
 runLState :: HasLStateDom lang
-          => LinT lang (LState' s) a -> Lift lang s -> Lift lang (s ⊗ Lower a)
+          => LinT lang (LState' σ) a -> Lift lang σ -> Lift lang (σ ⊗ Lower a)
 runLState st s = Suspend $ forceT st `app` force s
 
 execLState :: HasLStateDom lang 
-           => LinT lang (LState' s) a -> Lift lang s -> Lift lang s
+           => LinT lang (LState' σ) a -> Lift lang σ -> Lift lang σ
 execLState st s = Suspend $ 
     forceT st `app` force s `letPair` \(s',a) ->
     a >! \_ ->
     s'
 
 evalLState :: HasLStateDom lang
-           => LinT lang (LState' s) a
-           -> Lift lang s
-           -> Lift lang (s ⊸ One) -- a way to eliminate the state
+           => LinT lang (LState' σ) a
+           -> Lift lang σ
+           -> Lift lang (σ ⊸ One) -- a way to eliminate the state
            -> Lin lang a
 evalLState st s f = suspendL $
     force (runLState st s) `letPair` \(s',a) ->
@@ -461,14 +461,14 @@ evalLState st s f = suspendL $
 
 -- Defunctionalization from singletons library!
 class LFunctor lang (f :: LType sig ~> LType sig) where
-  lfmap :: LExp lang 'Empty ((s ⊸ t) ⊸ f @@ s ⊸ f @@ t)
+  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
 class LFunctor lang f => LApplicative lang f where
-  lpure :: LExp lang 'Empty (t ⊸ f @@ t)
-  llift :: LExp lang 'Empty (f @@ (s ⊸ t) ⊸ f @@ s ⊸ f @@ t)
+  lpure :: LExp lang 'Empty (τ ⊸ f @@ τ)
+  llift :: LExp lang 'Empty (f @@ (σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
 class LApplicative lang m => LMonad lang m where
-  lbind :: LExp lang 'Empty (m @@ s ⊸ (s ⊸ m @@ t) ⊸ m @@ t)
+  lbind :: LExp lang 'Empty (m @@ σ ⊸ (σ ⊸ m @@ τ) ⊸ m @@ τ)
 
-instance HasLStateDom lang => LFunctor lang (LState' s) where
+instance HasLStateDom lang => LFunctor lang (LState' σ) where
   lfmap = λ $ \f -> λ $ \fs -> λ $ \r ->
     fs `app` r `letPair` \(r,s) ->
     r ⊗ (f `app` s)
@@ -476,14 +476,14 @@ instance HasLStateDom lang => LFunctor lang (LState' s) where
 instance HasLStateDom lang => LApplicative lang (LState' r) where
   lpure = λ $ \s -> λ $ \r -> r ⊗ s
 
-  llift :: forall s t. 
-           LExp lang 'Empty (LState r (s ⊸ t) ⊸ LState r s ⊸ LState r t)
+  llift :: forall σ τ. 
+           LExp lang 'Empty (LState r (σ ⊸ τ) ⊸ LState r σ ⊸ LState r τ)
   llift = λ $ \ff -> λ $ \fs -> λ $ \r ->
     ff `app` r `letPair` \ (r,f) -> 
     fs `app` r `letPair` \ (r,s) ->
     r ⊗ (f `app` s)
 
-instance HasLStateDom lang => LMonad lang (LState' s) where
+instance HasLStateDom lang => LMonad lang (LState' σ) where
   lbind = λ $ \ ms -> λ $ \ f -> λ $ \r -> 
      ms `app` r `letPair` \(r,s) -> 
      f `app` s `app` r
@@ -541,7 +541,7 @@ type MultiplicativeProductSig m = 'Sig m '[ OneSig, TensorSig, LolliSig ]
 type MultiplicativeProductDom m = ('Lang '[ OneDom, TensorDom, LolliDom ] 
     :: Lang (MultiplicativeProductSig m) )
 
-swapMP :: Monad m => Lift (MultiplicativeProductDom m) (s ⊗ t ⊸ t ⊗ s)
+swapMP :: Monad m => Lift (MultiplicativeProductDom m) (σ ⊗ τ ⊸ τ ⊗ σ)
 swapMP = Suspend . λ $ \ pr ->
     pr `letPair` \(x,y) ->
     y ⊗ x

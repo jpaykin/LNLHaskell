@@ -31,15 +31,15 @@ type (:!:) = 'SendSession
 type (:?:) = 'RecvSession
 infixr 1 :!:
 infixr 1 :?:
-type family Dual (s :: Session sig) :: Session sig where
-  Dual ('SendSession t s) = t :?: Dual s
-  Dual ('RecvSession t s) = t :!: Dual s
+type family Dual (σ :: Session sig) :: Session sig where
+  Dual ('SendSession τ σ) = τ :?: Dual σ
+  Dual ('RecvSession τ σ) = τ :!: Dual σ
   Dual 'SendEnd           = 'RecvEnd
   Dual 'RecvEnd           = 'SendEnd
 
-data SSession (s :: Session sig) where
-  SSendSession :: SSession s -> SSession (t :!: s)
-  SRecvSession :: SSession s -> SSession (t :?: s)
+data SSession (σ :: Session sig) where
+  SSendSession :: SSession σ -> SSession (τ :!: σ)
+  SRecvSession :: SSession σ -> SSession (τ :?: σ)
   SSendEnd     :: SSession 'SendEnd
   SRecvEnd :: SSession 'RecvEnd
 
@@ -58,10 +58,10 @@ instance HasSessionEffect IO where
   forkEffect a = forkIO a >> return ()
  
 
-newChannels :: forall sig (lang :: Lang sig) (s :: Session sig).
+newChannels :: forall sig (lang :: Lang sig) (σ :: Session sig).
                HasSessions lang
-            => SSession s
-            -> SigEffect sig (LVal lang (Chan s), LVal lang (Chan (Dual s)))
+            => SSession σ
+            -> SigEffect sig (LVal lang (Chan σ), LVal lang (Chan (Dual σ)))
 newChannels (SSendSession s) = do
     c <- newC
     (v1,v2) <- newChannels s
@@ -80,10 +80,10 @@ newChannels SRecvEnd = do
 
 
 
-linkChannels :: forall sig (lang :: Lang sig) (s :: Session sig).
+linkChannels :: forall sig (lang :: Lang sig) (σ :: Session sig).
                 HasSessions lang
-             => SessionLVal lang (Chan s)
-             -> SessionLVal lang (Chan (Dual s))
+             => SessionLVal lang (Chan σ)
+             -> SessionLVal lang (Chan (Dual σ))
              -> SigEffect sig ()
 linkChannels (VSendEnd c)       (VRecvEnd c')        = recvC c >>= sendC c'
 linkChannels (VRecvEnd c)       (VSendEnd c')        = recvC c' >>= sendC c
@@ -93,39 +93,39 @@ linkChannels (VRecvSession c v) (VSendSession c' v') = recvC c' >>= sendC c >>
     linkChannels (fromLVal proxySession v) (fromLVal proxySession v')
  
 
-class KnownSession (s :: Session ty) where
-  frame :: SSession s
+class KnownSession (σ :: Session ty) where
+  frame :: SSession σ
 instance KnownSession 'SendEnd where
   frame = SSendEnd
 instance KnownSession 'RecvEnd where
   frame = SRecvEnd
-instance KnownSession s => KnownSession ('SendSession t s) where
+instance KnownSession σ => KnownSession ('SendSession τ σ) where
   frame = SSendSession frame
-instance KnownSession s => KnownSession ('RecvSession t s) where
+instance KnownSession σ => KnownSession ('RecvSession τ σ) where
   frame = SRecvSession frame
 
-class (Dual (Dual s) ~ s, KnownSession s, KnownSession (Dual s)) 
-   => WFSession (s :: Session ty) 
+class (Dual (Dual σ) ~ σ, KnownSession σ, KnownSession (Dual σ)) 
+   => WFSession (σ :: Session ty) 
 instance WFSession 'SendEnd 
 instance WFSession 'RecvEnd
-instance WFSession s => WFSession ('SendSession t s) 
-instance WFSession s => WFSession ('RecvSession t s) 
+instance WFSession σ => WFSession ('SendSession τ σ) 
+instance WFSession σ => WFSession ('RecvSession τ σ) 
 
 
 -- The data type
 data SessionSig sig where
   ChannelSig :: Session sig -> SessionSig sig
 
-type Chan s = ('LType (InSig SessionSig sig) ('ChannelSig s) :: LType sig)
+type Chan σ = ('LType (InSig SessionSig sig) ('ChannelSig σ) :: LType sig)
 
 data SessionLExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
-  Send    :: LExp lang g (t ⊗ Chan (t :!: s)) -> SessionLExp lang g (Chan s)
-  Receive :: LExp lang g (Chan (t :?: s)) -> SessionLExp lang g (t ⊗ Chan s)
-  Fork    :: SSession s
-          -> LExp lang g (Chan s ⊸ Chan 'SendEnd) 
-          -> SessionLExp lang g (Chan (Dual s))
+  Send    :: LExp lang g (τ ⊗ Chan (τ :!: σ)) -> SessionLExp lang g (Chan σ)
+  Receive :: LExp lang g (Chan (τ :?: σ)) -> SessionLExp lang g (τ ⊗ Chan σ)
+  Fork    :: SSession σ
+          -> LExp lang g (Chan σ ⊸ Chan 'SendEnd) 
+          -> SessionLExp lang g (Chan (Dual σ))
   Wait    :: LExp lang g (Chan 'RecvEnd) -> SessionLExp lang g One
-  Link    :: LExp lang g (Chan s ⊗ Chan (Dual s)) 
+  Link    :: LExp lang g (Chan σ ⊗ Chan (Dual σ)) 
           -> SessionLExp lang g (Chan 'SendEnd)
 
 data SessionLVal :: forall sig. Lang sig -> LType sig -> * where
@@ -133,12 +133,12 @@ data SessionLVal :: forall sig. Lang sig -> LType sig -> * where
               C (SigEffect sig) () -> SessionLVal lang (Chan 'SendEnd)
   VRecvEnd :: forall sig (lang :: Lang sig). 
               C (SigEffect sig) () -> SessionLVal lang (Chan 'RecvEnd)
-  VSendSession :: forall sig (lang :: Lang sig) (s :: Session sig) (t :: LType sig).
-                  C (SigEffect sig) (LVal lang t) -> LVal lang (Chan s) 
-               -> SessionLVal lang (Chan (t :!: s))
-  VRecvSession :: forall sig (lang :: Lang sig) (s :: Session sig) (t :: LType sig).
-                  C (SigEffect sig) (LVal lang t) -> LVal lang (Chan s) 
-               -> SessionLVal lang (Chan (t :?: s))
+  VSendSession :: forall sig (lang :: Lang sig) (σ :: Session sig) (τ :: LType sig).
+                  C (SigEffect sig) (LVal lang τ) -> LVal lang (Chan σ) 
+               -> SessionLVal lang (Chan (τ :!: σ))
+  VRecvSession :: forall sig (lang :: Lang sig) (σ :: Session sig) (τ :: LType sig).
+                  C (SigEffect sig) (LVal lang τ) -> LVal lang (Chan σ) 
+               -> SessionLVal lang (Chan (τ :?: σ))
 
 
 type SessionDom = '(SessionLExp, SessionLVal)
@@ -146,7 +146,7 @@ type SessionDom = '(SessionLExp, SessionLVal)
 proxySession :: Proxy SessionDom
 proxySession = Proxy
 
-instance Show (SessionLExp lang g t) where
+instance Show (SessionLExp lang g τ) where
   show (Send e) = "Send(" ++ show e ++ ")"
   show (Receive e) = "Receive(" ++ show e ++ ")"
   show (Fork _ f) = "Fork(" ++ show f ++ ")"
@@ -161,23 +161,23 @@ type HasSessions (lang :: Lang sig) =
 
 
 send :: (HasSessions lang, CMerge g1 g2 g)
-     => LExp lang g1 t 
-     -> LExp lang g2 (Chan (t :!: s)) 
-     -> LExp lang g (Chan s)
+     => LExp lang g1 τ 
+     -> LExp lang g2 (Chan (τ :!: σ)) 
+     -> LExp lang g (Chan σ)
 send e e' = Dom proxySession $ Send (e ⊗ e')
 
-vSendSession :: forall sig (lang :: Lang sig) t s. 
+vSendSession :: forall sig (lang :: Lang sig) τ σ. 
                 HasSessions lang
-             => C (SigEffect sig) (LVal lang t)
-             -> LVal lang (Chan s)
-             -> LVal lang (Chan (t :!: s))
+             => C (SigEffect sig) (LVal lang τ)
+             -> LVal lang (Chan σ)
+             -> LVal lang (Chan (τ :!: σ))
 vSendSession c v = VDom proxySession $ VSendSession c v
 
-vRecvSession :: forall sig (lang :: Lang sig) t s. 
+vRecvSession :: forall sig (lang :: Lang sig) τ σ. 
                 HasSessions lang
-             => C (SigEffect sig) (LVal lang t)
-             -> LVal lang (Chan s)
-             -> LVal lang (Chan (t :?: s))
+             => C (SigEffect sig) (LVal lang τ)
+             -> LVal lang (Chan σ)
+             -> LVal lang (Chan (τ :?: σ))
 vRecvSession c v = VDom proxySession $ VRecvSession c v
 
 vSendEnd :: forall sig (lang :: Lang sig). HasSessions lang
@@ -189,18 +189,18 @@ vRecvEnd c = VDom proxySession $ VRecvEnd c
 
 
 receive :: HasSessions lang
-        => LExp lang g (Chan (t :?: s)) -> LExp lang g (t ⊗ Chan s)
+        => LExp lang g (Chan (τ :?: σ)) -> LExp lang g (τ ⊗ Chan σ)
 receive = Dom proxySession . Receive
 
-fork :: (HasSessions lang, WFSession s) 
-     => LExp lang g ((Chan (Dual s)) ⊸ Chan 'SendEnd) -> LExp lang g (Chan s)
+fork :: (HasSessions lang, WFSession σ) 
+     => LExp lang g ((Chan (Dual σ)) ⊸ Chan 'SendEnd) -> LExp lang g (Chan σ)
 fork f = Dom proxySession $ Fork frame f
 
 wait :: HasSessions lang => LExp lang g (Chan 'RecvEnd) -> LExp lang g One
 wait = Dom proxySession . Wait
 
 link :: (HasSessions lang,CMerge g1 g2 g)
-     => LExp lang g1 (Chan s) -> LExp lang g2 (Chan (Dual s))
+     => LExp lang g1 (Chan σ) -> LExp lang g2 (Chan (Dual σ))
      -> LExp lang g (Chan 'SendEnd)
 link e1 e2 = Dom proxySession $ Link (e1 ⊗ e2)
 
@@ -209,7 +209,7 @@ link e1 e2 = Dom proxySession $ Link (e1 ⊗ e2)
 -- process it classically, and then send back the result.
 processWith :: HasSessions lang
             => (a -> b)
-            -> Lift lang (Chan (Lower a :?: Lower b :!: s) ⊸ Chan s)
+            -> Lift lang (Chan (Lower a :?: Lower b :!: σ) ⊸ Chan σ)
 processWith f = Suspend . λ $ \c ->
     receive c `letPair` \(v,c) ->
     v >! \a ->
@@ -252,7 +252,7 @@ type MySessionDom = ('Lang '[ SessionDom, TensorDom, OneDom, LolliDom, PlusDom, 
 
 -- Examples from "A Semantics for Propositions as Sessions"
 m :: HasSessions lang 
-  => Lift lang (Chan (Lower (Int,Int) :?: Lower Int :!: s) ⊸ Chan s)
+  => Lift lang (Chan (Lower (Int,Int) :?: Lower Int :!: σ) ⊸ Chan σ)
 m = Suspend . λ $ \z ->
       receive z `letPair` \(v,z) ->
       v >! \(x,y) ->
@@ -299,30 +299,30 @@ transaction = suspendL $ force buyer `app` fork (force seller)
 
 -- Encoding choice
 
-type (:⊕:) (s1 :: Session sig) (s2 :: Session sig)
-  = Chan (Dual s1) ⊕ Chan (Dual s2) :!: 'SendEnd
-type (:&:) s1 s2 
-  = Chan s1 ⊕ Chan s2 :?: 'RecvEnd
+type (:⊕:) (σ1 :: Session sig) (σ2 :: Session sig)
+  = Chan (Dual σ1) ⊕ Chan (Dual σ2) :!: 'SendEnd
+type (:&:) σ1 σ2 
+  = Chan σ1 ⊕ Chan σ2 :?: 'RecvEnd
 
-selectL :: (HasSessions lang, WFSession s1)
-       => LExp lang 'Empty (Chan (s1 :⊕: s2) ⊸ Chan s1)
+selectL :: (HasSessions lang, WFSession σ1)
+       => LExp lang 'Empty (Chan (σ1 :⊕: σ2) ⊸ Chan σ1)
 selectL = λ $ \c -> fork . λ $ \x ->
    send (inl x) c
 
-selectR :: (HasSessions lang, WFSession s2)
-       => LExp lang 'Empty (Chan (s1 :⊕: s2) ⊸ Chan s2)
+selectR :: (HasSessions lang, WFSession σ2)
+       => LExp lang 'Empty (Chan (σ1 :⊕: σ2) ⊸ Chan σ2)
 selectR = λ $ \c -> fork . λ $ \x ->
    send (inr x) c
--- selectR :: (HasSessions lang, WFSession s1, WFSession s2)
---         => LExp lang g (Chan (s1 `MakeChoice` s2))
---         -> LExp lang g (Chan s2)
+-- selectR :: (HasSessions lang, WFSession σ1, WFSession σ2)
+--         => LExp lang g (Chan (σ1 `MakeChoice` σ2))
+--         -> LExp lang g (Chan σ2)
 -- selectR e = selectR' `app` e
 
 
 offer :: HasSessions lang
-      => LExp lang 'Empty (Chan (s1 :&: s2) 
-      ⊸ (Chan s1 ⊸ t) & (Chan s2 ⊸ t)
-      ⊸ t)
+      => LExp lang 'Empty (Chan (σ1 :&: σ2) 
+      ⊸ (Chan σ1 ⊸ τ) & (Chan σ2 ⊸ τ)
+      ⊸ τ)
 offer = λ $ \c -> λ $ \f ->
     receive c `letPair` \(choice, c) ->
     wait c `letUnit` 
@@ -332,9 +332,9 @@ offer = λ $ \c -> λ $ \f ->
 
 -- Either sum two numbers or negate one of the numbers
 exChoice :: HasSessions lang
-         => Lift lang (Chan ((Lower (Int,Int) :?: Lower Int :!: s)
-                         :&: (Lower Int :?: Lower Int :!: s))
-                    ⊸ Chan s)
+         => Lift lang (Chan ((Lower (Int,Int) :?: Lower Int :!: σ)
+                         :&: (Lower Int :?: Lower Int :!: σ))
+                    ⊸ Chan σ)
 exChoice = Suspend . λ $ \c -> offer `app` c `app`
            ( force (processWith (\(x,y) -> x+y))
            & force (processWith (\x -> -x))

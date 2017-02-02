@@ -71,7 +71,7 @@ type ArrayDom = '(ArrayLExp,ArrayLVal)
 proxyArray :: Proxy ArrayDom
 proxyArray = Proxy
 
-instance Show (ArrayLExp lang g t) where
+instance Show (ArrayLExp lang g τ) where
   show (Alloc n _) = "Alloc " ++ show n
   show (Dealloc e) = "Dealloc " ++ show e
   show (Read i e) = "Read " ++ show i ++ " " ++ show e
