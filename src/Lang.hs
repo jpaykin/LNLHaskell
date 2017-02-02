@@ -110,13 +110,18 @@ eval' ρ (Dom (proxy :: Proxy dom) e)   = evalDomain @sig @dom ρ e
 
 ------------------------------------------------------
 
+fromLVal' :: forall sig dom (lang :: Lang sig) s.
+            CInLang dom lang
+         => Proxy dom -> LVal lang s -> Maybe (ValDom dom lang s)
+fromLVal' _ (VDom (proxy :: Proxy dom') v) = 
+  case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
+    Nothing   -> Nothing
+    Just Dict -> Just v
+
 fromLVal :: forall sig dom (lang :: Lang sig) s.
             CInLang dom lang
          => Proxy dom -> LVal lang s -> ValDom dom lang s
-fromLVal _ (VDom (proxy :: Proxy dom') v) = 
-  case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
-    Nothing   -> error "Cannot extract domain from value"
-    Just Dict -> v
+fromLVal proxy = fromJust . fromLVal' proxy
 
 -- this function is partial if the value is not
 -- in the specified domain

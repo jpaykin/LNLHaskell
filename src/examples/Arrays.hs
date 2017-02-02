@@ -98,7 +98,7 @@ dealloc = Dom proxyArray . Dealloc
 
 deallocL :: HasArrayDom lang
          => Lift lang (Array a ⊸ One)
-deallocL = Suspend . λ $ \ arr -> dealloc $ var arr
+deallocL = Suspend $ λ dealloc
 
 read :: HasArrayDom lang
      => Int -> LExp lang g (Array a) -> LExp lang g (Array a ⊗ Lower a)
@@ -106,7 +106,7 @@ read i e = Dom proxyArray $ Read i e
 
 readM :: HasArrayDom lang
       => Int -> LinT lang (LState' (Array a)) a
-readM i = suspendT . λ $ \arr -> read i $ var arr
+readM i = suspendT $ λ $ read i
 
 write :: HasArrayDom lang
      => Int -> LExp lang g (Array a) -> a -> LExp lang g (Array a)
@@ -115,7 +115,7 @@ write i e a = Dom proxyArray $ Write i e a
 writeM :: forall sig (lang :: Lang sig) a.
           HasArrayDom lang
        => Int -> a -> LinT lang (LState' (Array a)) ()
-writeM i a = suspendT . λ $ \arr -> write i (var arr) a ⊗ put ()
+writeM i a = suspendT . λ $ \arr -> write i arr a ⊗ put ()
 
 
 varray :: forall sig (lang :: Lang sig) a.

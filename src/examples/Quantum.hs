@@ -125,13 +125,13 @@ type instance Qubits ('LType _ ('LowerSig _)) = ()
 
 valToQubits :: forall sig (lang :: Lang sig) t.
               HasQuantumDom lang => LVal lang t -> SigEffect sig (Qubits t)
-valToQubits v = case fromLVal proxyQuantum v of 
+valToQubits v = case fromLVal' proxyQuantum v of 
     Just (VQubit i) -> return i
-    Nothing -> case fromLVal proxyOne v of
+    Nothing -> case fromLVal' proxyOne v of
       Just VUnit -> return ()
-      Nothing -> case fromLVal proxyTensor v of
+      Nothing -> case fromLVal' proxyTensor v of
         Just (VPair v1 v2) -> liftA2 (,) (valToQubits v1) (valToQubits v2)
-        Nothing -> case fromLVal proxyLower v of
+        Nothing -> case fromLVal' proxyLower v of
           Just (VPut _) -> return ()
           Nothing       -> error "Cannot extract qubits from the given value"
     
@@ -171,31 +171,31 @@ plus_minus b = Suspend $ unitary Hadamard $ new b
 share :: HasQuantumDom lang
       => Lift lang (Qubit ⊸ Qubit ⊗ Qubit)
 share = Suspend . λ $ \q ->
-    new False `controlBy` var q
+    new False `controlBy` q
 
 bell00 :: HasQuantumDom lang
        => Lift lang (Qubit ⊗ Qubit)
 bell00 = Suspend $
     force (plus_minus False) `letin` \a ->
-    force share `app` var a
+    force share `app` a
     
 alice :: HasQuantumDom lang
       => Lift lang (Qubit ⊸ Qubit ⊸ Lower (Bool, Bool))
 alice = Suspend . λ $ \q -> λ $ \a ->
-    unitary PauliX (var a) `controlBy` var q `letPair` \(a,q) ->
-    meas (unitary Hadamard $ var q) >! \x ->
-    meas (var a) >! \y ->
+    unitary PauliX a `controlBy` q `letPair` \(a,q) ->
+    meas (unitary Hadamard q) >! \x ->
+    meas a >! \y ->
     put (x,y)
 
 bob :: HasQuantumDom lang
     => (Bool,Bool) -> Lift lang (Qubit ⊸ Qubit)
 bob (x,y) = Suspend . λ $ \b ->
-    if y then unitary PauliX (var b) else var b `letin` \b ->
-    if x then unitary PauliZ (var b) else var b 
+    if y then unitary PauliX b else b `letin` \b ->
+    if x then unitary PauliZ b else b 
 
 teleport :: HasQuantumDom lang
          => Lift lang (Qubit ⊸ Qubit)
 teleport = Suspend . λ $ \q ->
     force bell00 `letPair` \(a,b) ->
-    force alice `app` var q `app` var a >! \(x,y) ->
-    force (bob (x,y)) `app` var b
+    force alice `app` q `app` a >! \(x,y) ->
+    force (bob (x,y)) `app` b

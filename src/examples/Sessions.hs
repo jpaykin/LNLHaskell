@@ -211,9 +211,9 @@ processWith :: HasSessions lang
             => (a -> b)
             -> Lift lang (Chan (Lower a :?: Lower b :!: s) ⊸ Chan s)
 processWith f = Suspend . λ $ \c ->
-    receive (var c) `letPair` \(v,c) ->
-    var v >! \a ->
-    send (put $ f a) (var c)
+    receive c `letPair` \(v,c) ->
+    v >! \a ->
+    send (put $ f a) c
 
 
 instance HasSessions lang => Domain SessionDom (lang  :: Lang sig) where
@@ -247,10 +247,10 @@ evalApplyValue :: forall sig (lang :: Lang sig) g s t.
                   Domain LolliDom lang
                => ECtx lang g -> LExp lang g (s ⊸ t) -> LVal lang s 
                -> SigEffect sig (LVal lang t)
-evalApplyValue ρ e v = eval' ρ' (Dom proxyLolli $ App pfM e (var x))
+evalApplyValue ρ e v = eval' ρ' (Dom proxyLolli $ App pfM e x)
   where
-    x :: SNat (Fresh g)
-    x = knownFresh ρ
+    x :: Var lang (Fresh g) s
+    x = var $ knownFresh ρ
 
     ρ' :: ECtx lang (Add (Fresh g) s g)
     ρ' = addFreshSCtx ρ (ValData v)
@@ -268,16 +268,15 @@ type MySessionDom = ('Lang '[ SessionDom, TensorDom, OneDom, LolliDom, PlusDom, 
 m :: HasSessions lang 
   => Lift lang (Chan (Lower (Int,Int) :?: Lower Int :!: s) ⊸ Chan s)
 m = Suspend . λ $ \z ->
-      receive (var z) `letPair` \(v,z) ->
-      var v >! \(x,y) ->
-      send (put (x+y)) $ var z
+      receive z `letPair` \(v,z) ->
+      v >! \(x,y) ->
+      send (put (x+y)) z
 
 n :: HasSessions lang => Lift lang (Chan (Lower (Int,Int) :!: Lower Int :?: RecvEnd) ⊸ Lower Int)
 n = Suspend . λ $ \z ->
-      send (put (6,7)) (var z) `letin` \z ->
-      receive (var z) `letPair` \(x,z) ->
-      wait (var z) `letUnit`
-      var x
+      send (put (6,7)) z `letin` \z ->
+      receive z `letPair` \(x,z) ->
+      wait z `letUnit` x
 
 p :: HasSessions lang => Lin lang Int
 p = suspendL $ force n `app` fork (force m) 
@@ -295,18 +294,18 @@ processOrder item cc = "Processed order for " ++ item ++ "."
 seller :: HasSessions lang
        => Lift lang (Chan ServerProto ⊸ Chan 'SendEnd)
 seller = Suspend . λ $ \c ->
-    receive (var c) `letPair` \(x,c) -> var x >! \ item -> -- receive the item request
-    receive (var c) `letPair` \(y,c) -> var y >! \ cc   -> -- receive the credit card number
-    send (put $ processOrder item cc) (var c)
+    receive c `letPair` \(x,c) -> x >! \ item -> -- receive the item request
+    receive c `letPair` \(y,c) -> y >! \ cc   -> -- receive the credit card number
+    send (put $ processOrder item cc) c
 
 buyer :: HasSessions lang
       => Lift lang (Chan ClientProto ⊸ Lower String)
 buyer = Suspend . λ $ \c ->
-    send (put "Tea") (var c) `letin` \c ->
-    send (put 5555) (var c) `letin` \c ->
-    receive (var c) `letPair` \(receipt,c) ->
-    wait (var c) `letUnit` 
-    var receipt
+    send (put "Tea") c `letin` \c ->
+    send (put 5555) c `letin` \c ->
+    receive c `letPair` \(receipt,c) ->
+    wait c `letUnit` 
+    receipt
 
 transaction :: HasSessions lang 
             => Lin lang String
@@ -322,12 +321,12 @@ type (:&:) s1 s2
 selectL :: (HasSessions lang, WFSession s1)
        => LExp lang 'Empty (Chan (s1 :⊕: s2) ⊸ Chan s1)
 selectL = λ $ \c -> fork . λ $ \x ->
-   send (inl $ var x) (var c)
+   send (inl x) c
 
 selectR :: (HasSessions lang, WFSession s2)
        => LExp lang 'Empty (Chan (s1 :⊕: s2) ⊸ Chan s2)
 selectR = λ $ \c -> fork . λ $ \x ->
-   send (inr $ var x) (var c)
+   send (inr x) c
 -- selectR :: (HasSessions lang, WFSession s1, WFSession s2)
 --         => LExp lang g (Chan (s1 `MakeChoice` s2))
 --         -> LExp lang g (Chan s2)
@@ -339,9 +338,9 @@ offer :: HasSessions lang
       ⊸ (Chan s1 ⊸ t) & (Chan s2 ⊸ t)
       ⊸ t)
 offer = λ $ \c -> λ $ \f ->
-    receive (var c) `letPair` \(choice, c) ->
-    wait (var c) `letUnit` 
-    oplus `app` var f `app` var choice
+    receive c `letPair` \(choice, c) ->
+    wait c `letUnit` 
+    oplus `app` f `app` choice
   
 
 
@@ -350,7 +349,7 @@ exChoice :: HasSessions lang
          => Lift lang (Chan ((Lower (Int,Int) :?: Lower Int :!: s)
                          :&: (Lower Int :?: Lower Int :!: s))
                     ⊸ Chan s)
-exChoice = Suspend . λ $ \c -> offer `app` var c `app`
+exChoice = Suspend . λ $ \c -> offer `app` c `app`
            ( force (processWith (\(x,y) -> x+y))
            & force (processWith (\x -> -x))
            )
