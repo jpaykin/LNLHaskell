@@ -41,13 +41,17 @@ class Monad m => HasArrayEffect m where
   readArray      :: LArray m a -> Int -> m a
   writeArray     :: LArray m a -> Int -> a -> m ()
   deallocArray   :: LArray m a -> m ()
+  sizeArray      :: LArray m a -> m Int
 
 instance HasArrayEffect IO where
   type LArray IO a = ArrayIO.IOArray Int a
   newArray n     =  ArrayIO.newArray (0,n)
   readArray      =  ArrayIO.readArray
   writeArray     =  ArrayIO.writeArray
-  deallocArray m =  return ()
+  deallocArray _ =  return ()
+  sizeArray arr  = do
+    (low,high) <- ArrayIO.getBounds arr
+    return $ high - low
 
 type family LArray' sig a where
   LArray' sig a = LArray (SigEffect sig) a
@@ -65,6 +69,7 @@ data ArrayLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
   Dealloc :: LExp lang g (Array a) -> ArrayLExp lang g One
   Read    :: Int -> LExp lang g (Array a) -> ArrayLExp lang g (Array a ⊗ Lower a)
   Write   :: Int -> LExp lang g (Array a) -> a -> ArrayLExp lang g (Array a)
+  Size    :: LExp lang g (Array a) -> ArrayLExp lang g (Array a ⊗ Lower Int)
 
 type ArrayDom = '(ArrayLExp,ArrayLVal)
 
@@ -76,6 +81,7 @@ instance Show (ArrayLExp lang g τ) where
   show (Dealloc e) = "Dealloc " ++ show e
   show (Read i e) = "Read " ++ show i ++ " " ++ show e
   show (Write i e a) = "Write " ++ show i ++ " " ++ show e
+  show (Size e) = "Size " ++ show e
 
 
 type HasArrayDom (lang :: Lang sig) =
@@ -117,6 +123,12 @@ writeM :: forall sig (lang :: Lang sig) a.
        => Int -> a -> LinT lang (LState' (Array a)) ()
 writeM i a = suspendT . λ $ \arr -> write i arr a ⊗ put ()
 
+size :: HasArrayDom lang
+     => LExp lang g (Array a) -> LExp lang g (Array a ⊗ Lower Int)
+size = Dom proxyArray . Size
+
+sizeM :: HasArrayDom lang => LinT lang (LState' (Array a)) Int
+sizeM = suspendT $ λ size
 
 varray :: forall sig (lang :: Lang sig) a.
         HasArrayDom lang
@@ -143,50 +155,109 @@ instance HasArrayDom lang
     VArr arr <- evalToValDom proxyArray ρ e
     writeArray arr i a
     pure $ varray arr
+  evalDomain ρ (Size e) = do
+    VArr arr <- evalToValDom proxyArray ρ e
+    len      <- sizeArray arr
+    pure $ varray arr `vpair` vput len
+
+foldrArray :: HasArrayDom lang
+           => Lift lang (Lower a ⊸ τ ⊸ τ) 
+           -> LExp lang 'Empty (τ ⊸ Array a ⊸ Array a ⊗ τ)
+foldrArray f = λ $ \seed -> λ $ \arr -> 
+    size arr `letPair` \(arr,l) -> l >! \len ->
+    foldrArray' len f `app` seed `app` arr
+  where
+    foldrArray' :: HasArrayDom lang
+                => Int -> Lift lang (Lower a ⊸ τ ⊸ τ)
+                -> LExp lang 'Empty (τ ⊸ Array a ⊸ Array a ⊗ τ)
+    foldrArray' 0 f = λ $ \seed -> λ $ \arr -> arr ⊗ seed
+    foldrArray' n f = λ $ \seed -> λ $ \arr ->
+        read (n-1) arr `letPair` \(arr,v) ->
+        foldrArray' (n-1) f `app` (force f `app` v `app` seed) `app` arr
+        
+
+foldrArrayM :: HasArrayDom lang
+            => (a -> b -> b)
+            -> b -> LinT lang (LState' (Array a)) b
+foldrArrayM f b = suspendT . λ $ \arr ->
+    foldrArray f' `app` put b `app` arr
+  where
+    f' = Suspend . λ $ \a' -> a' >! \a ->
+                   λ $ \b' -> b' >! \b -> put $ f a b
+
 
 -- Examples
 
-fromList :: HasArrayDom lang
-         => [a] -> Lift lang (Array a)
-fromList [] = error "Cannot call fromList on an empty list"
-fromList ls@(a:as) = execLState (fromListSt 0 ls) (allocL (length ls) a)
+-- Without monad transformer
 
-fromListSt :: HasArrayDom lang
-           => Int -> [a] -> LinT lang (LState' (Array a)) ()
-fromListSt offset [] = return ()
-fromListSt offset (a:as) = do
-  writeM offset a
-  fromListSt (offset+1) as
+fromList :: forall lang a. HasArrayDom lang => [a] -> Lift lang (Array a)
+fromList ls = foldr f (allocL (length ls) $ head ls) $ zip ls [1..]
+  where
+    f :: (a,Int) -> Lift lang (Array a) -> Lift lang (Array a)
+    f (a,i) arr = Suspend $ write i (force arr) a
 
 
-toList :: HasArrayDom lang 
-       => Int -> Lift lang (Array a) -> Lin lang [a]
-toList i arr = evalLState (toList' i) arr deallocL
-
-toList' :: HasArrayDom lang
-        => Int -> LinT lang (LState' (Array a)) [a]
-toList' 0 = return []
-toList' i = do
-  a  <- readM (i-1)
-  as <- toList' (i-1)
-  return $ as ++ [a]
+toList :: forall lang a. HasArrayDom lang 
+       => Lift lang (Array a) -> Lin lang [a]
+toList arr = suspendL $ 
+    foldrArray f `app` put [] `app` force arr `letPair` \(arr,ls) ->
+    dealloc arr `letUnit` ls
+  where
+    f :: Lift lang (Lower a ⊸ Lower [a] ⊸ Lower [a])
+    f = Suspend $ lowerT2 `app` put (:)
 
 toFromList :: HasArrayDom lang
            => [a] -> Lin lang [a]
-toFromList ls = toList (length ls) $ fromList ls
+toFromList ls = toList $ fromList ls
+
+
+-- With monad transformer
+
+fromListM :: (HasArrayDom lang, Show a)
+         => [a] -> Lift lang (Array a)
+fromListM [] = error "Cannot call fromList on an empty list"
+fromListM ls@(a:as) = execLState (fromListM' $ zip ls [0..]) (allocL (length ls) a)
+
+fromListM' :: (HasArrayDom lang, Show a)
+           => [(a,Int)] -> LinT lang (LState' (Array a)) ()
+fromListM' [] = return ()
+fromListM' ((a,i):as) = do
+  writeM i a
+  fromListM' as
+
+
+toListM :: HasArrayDom lang 
+       => Lift lang (Array a) -> Lin lang [a]
+toListM arr = evalLState toListM' arr deallocL
+
+toListM' :: HasArrayDom lang
+        => LinT lang (LState' (Array a)) [a]
+toListM' = foldrArrayM (:) []
+
+toFromListM :: (HasArrayDom lang, Show a)
+           => [a] -> Lin lang [a]
+toFromListM = toList . fromListM
 
 type MyArraySig = ( 'Sig IO '[ ArraySig, TensorSig, OneSig, LowerSig, LolliSig ] :: Sig)
 type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom, LolliDom ] :: Lang MyArraySig )
 
 
-toFromListIO :: [a] -> Lin MyArrayDom [a]
-toFromListIO = toFromList
-
---main :: IO [Int]
---main = run mainL
+toFromListIO :: Show a => [a] -> Lin MyArrayDom [a]
+toFromListIO = toFromListM
 
 
--- Compare to plain IOArrays
+
+
+
+
+
+
+
+
+
+-------------------------------
+-- Compare to plain IOArrays --
+-------------------------------
 
 -- Invoke with the length of the array
 toListPlain :: Int -> LArray IO a -> IO [a]
@@ -230,6 +301,4 @@ type MyArraySig = ( '(IO, '[ ArraySig ]) :: Sig )
 
 type MyArrayDomain = ( '[ ArrayDom ] :: Dom MyArraySig )
 
-main :: Lin MyArrayDomain [Int]
-main = toFromList @'Z [1,2,3]
 -}

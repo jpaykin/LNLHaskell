@@ -459,6 +459,7 @@ evalLState st s f = suspendL $
     force (runLState st s) `letPair` \(s',a) ->
     force f `app` s' `letUnit` a
 
+
 -- Defunctionalization from singletons library!
 class LFunctor lang (f :: LType sig ~> LType sig) where
   lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
@@ -497,11 +498,16 @@ forceT (LinT e) = force e
 suspendT :: LExp lang 'Empty (m @@ Lower a) -> LinT lang m a
 suspendT = LinT . Suspend
 
-lowerT :: (WFDomain LolliDom lang, WFDomain LowerDom lang)
+lowerT :: (Domain LolliDom lang, Domain LowerDom lang)
        => LExp lang 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
 lowerT = λ $ \g -> λ $ \ x -> 
           g >! \f ->
           x >! \a -> put $ f a
+
+lowerT2 :: (Domain LolliDom lang, Domain LowerDom lang)
+        => LExp lang 'Empty (Lower (a -> b -> c) ⊸ Lower a ⊸ Lower b ⊸ Lower c)
+lowerT2 = λ $ \f -> λ $ \x -> λ $ \y ->
+    f >! \g -> x >! \a -> y >! \b -> put $ g a b
 
 instance (Domain LowerDom lang, Domain LolliDom lang, LFunctor lang f) 
       => Functor (LinT lang f) where
