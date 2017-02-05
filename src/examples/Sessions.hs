@@ -3,7 +3,8 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables, ConstraintKinds,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
+             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies,
+             MagicHash
 #-}
 -- {-# OPTIONS_GHC -Wall -Wcompat #-}
 
@@ -12,7 +13,9 @@ module Sessions where
 import Data.Kind
 import Data.Proxy
 import Control.Concurrent hiding (Chan)
+import qualified Control.Concurrent.Chan as C
 import Debug.Trace
+import GHC.Prim
 
 import Prelim
 import Types
@@ -44,67 +47,44 @@ data SSession (σ :: Session sig) where
   SRecvEnd :: SSession 'RecvEnd
 
 class Monad m => HasSessionEffect m where
-  type C m a = r | r -> a
-  newC :: m (C m a)
-  recvC :: C m a -> m a
-  sendC :: C m a -> a -> m ()
+  type C m 
+  newC :: m (C m, C m)
+  recvC :: C m -> m a
+  sendC :: C m -> a -> m ()
+  linkC :: C m -> C m -> m ()
   forkEffect :: m () -> m ()
 
 instance HasSessionEffect IO where
-  type C IO a = MVar a
-  newC = newEmptyMVar
-  recvC = takeMVar
-  sendC = putMVar
+  type C IO = (C.Chan Any, C.Chan Any)
+  newC = do
+    c1 <- C.newChan
+    c2 <- C.newChan
+    return ((c1,c2), (c2,c1))
+  recvC (cin, _) = unsafeCoerce# <$> C.readChan cin
+  sendC (_,cout) a = C.writeChan cout $ unsafeCoerce# a
+  linkC (cin1,cout1) (cin2,cout2) = do
+    forkEffect $ forwardC cout2 cin1
+    forkEffect $ forwardC cout1 cin2
+    where
+      forwardC cout cin = do
+        a <- C.readChan cout
+        C.writeChan cin a
+        forwardC cout cin
   forkEffect a = forkIO a >> return ()
  
 
-newChannels :: forall sig (lang :: Lang sig) (σ :: Session sig).
-               HasSessions lang
-            => SSession σ
-            -> SigEffect sig (LVal lang (Chan σ), LVal lang (Chan (Dual σ)))
-newChannels (SSendSession s) = do
-    c <- newC
-    (v1,v2) <- newChannels s
-    return $ (vSendSession c v1, vRecvSession c v2)
-newChannels (SRecvSession s) = do
-    c <- newC
-    (v1,v2) <- newChannels s
-    return $ (vRecvSession c v1, vSendSession c v2)
-newChannels SSendEnd = do
-    c <- newC
-    return $ (vSendEnd c, vRecvEnd c)
-newChannels SRecvEnd = do
-    c <- newC
-    return $ (vRecvEnd c, vSendEnd c)
-
-
-
-
-linkChannels :: forall sig (lang :: Lang sig) (σ :: Session sig).
-                HasSessions lang
-             => SessionLVal lang (Chan σ)
-             -> SessionLVal lang (Chan (Dual σ))
-             -> SigEffect sig ()
-linkChannels (VSendEnd c)       (VRecvEnd c')        = recvC c >>= sendC c'
-linkChannels (VRecvEnd c)       (VSendEnd c')        = recvC c' >>= sendC c
-linkChannels (VSendSession c v) (VRecvSession c' v') = recvC c >>= sendC c' >>
-    linkChannels (fromLVal proxySession v) (fromLVal proxySession v')
-linkChannels (VRecvSession c v) (VSendSession c' v') = recvC c' >>= sendC c >>
-    linkChannels (fromLVal proxySession v) (fromLVal proxySession v')
- 
-
 class KnownSession (σ :: Session ty) where
-  frame :: SSession σ
+  session :: SSession σ
 instance KnownSession 'SendEnd where
-  frame = SSendEnd
+  session = SSendEnd
 instance KnownSession 'RecvEnd where
-  frame = SRecvEnd
+  session = SRecvEnd
 instance KnownSession σ => KnownSession ('SendSession τ σ) where
-  frame = SSendSession frame
+  session = SSendSession session
 instance KnownSession σ => KnownSession ('RecvSession τ σ) where
-  frame = SRecvSession frame
+  session = SRecvSession session
 
-class (Dual (Dual σ) ~ σ, KnownSession σ, KnownSession (Dual σ)) 
+class Dual (Dual σ) ~ σ
    => WFSession (σ :: Session ty) 
 instance WFSession 'SendEnd 
 instance WFSession 'RecvEnd
@@ -121,24 +101,15 @@ type Chan σ = ('LType (InSig SessionSig sig) ('ChannelSig σ) :: LType sig)
 data SessionLExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Send    :: LExp lang g (τ ⊗ Chan (τ :!: σ)) -> SessionLExp lang g (Chan σ)
   Receive :: LExp lang g (Chan (τ :?: σ)) -> SessionLExp lang g (τ ⊗ Chan σ)
-  Fork    :: SSession σ
-          -> LExp lang g (Chan σ ⊸ Chan 'SendEnd) 
+  Fork    :: LExp lang g (Chan σ ⊸ Chan 'SendEnd) 
           -> SessionLExp lang g (Chan (Dual σ))
   Wait    :: LExp lang g (Chan 'RecvEnd) -> SessionLExp lang g One
   Link    :: LExp lang g (Chan σ ⊗ Chan (Dual σ)) 
-          -> SessionLExp lang g (Chan 'SendEnd)
+          -> SessionLExp lang g One
 
 data SessionLVal :: forall sig. Lang sig -> LType sig -> * where
-  VSendEnd :: forall sig (lang :: Lang sig). 
-              C (SigEffect sig) () -> SessionLVal lang (Chan 'SendEnd)
-  VRecvEnd :: forall sig (lang :: Lang sig). 
-              C (SigEffect sig) () -> SessionLVal lang (Chan 'RecvEnd)
-  VSendSession :: forall sig (lang :: Lang sig) (σ :: Session sig) (τ :: LType sig).
-                  C (SigEffect sig) (LVal lang τ) -> LVal lang (Chan σ) 
-               -> SessionLVal lang (Chan (τ :!: σ))
-  VRecvSession :: forall sig (lang :: Lang sig) (σ :: Session sig) (τ :: LType sig).
-                  C (SigEffect sig) (LVal lang τ) -> LVal lang (Chan σ) 
-               -> SessionLVal lang (Chan (τ :?: σ))
+  VChan :: forall sig (lang :: Lang sig) (σ :: Session sig).
+           C (SigEffect sig) -> SessionLVal lang (Chan σ)
 
 
 type SessionDom = '(SessionLExp, SessionLVal)
@@ -149,7 +120,7 @@ proxySession = Proxy
 instance Show (SessionLExp lang g τ) where
   show (Send e) = "Send(" ++ show e ++ ")"
   show (Receive e) = "Receive(" ++ show e ++ ")"
-  show (Fork _ f) = "Fork(" ++ show f ++ ")"
+  show (Fork f) = "Fork(" ++ show f ++ ")"
   show (Wait e) = "Wait(" ++ show e ++ ")"
   show (Link e) = "Link(" ++ show e ++ ")"
 
@@ -166,44 +137,26 @@ send :: (HasSessions lang, CMerge g1 g2 g)
      -> LExp lang g (Chan σ)
 send e e' = Dom proxySession $ Send (e ⊗ e')
 
-vSendSession :: forall sig (lang :: Lang sig) τ σ. 
-                HasSessions lang
-             => C (SigEffect sig) (LVal lang τ)
-             -> LVal lang (Chan σ)
-             -> LVal lang (Chan (τ :!: σ))
-vSendSession c v = VDom proxySession $ VSendSession c v
-
-vRecvSession :: forall sig (lang :: Lang sig) τ σ. 
-                HasSessions lang
-             => C (SigEffect sig) (LVal lang τ)
-             -> LVal lang (Chan σ)
-             -> LVal lang (Chan (τ :?: σ))
-vRecvSession c v = VDom proxySession $ VRecvSession c v
-
-vSendEnd :: forall sig (lang :: Lang sig). HasSessions lang
-         => C (SigEffect sig) () -> LVal lang (Chan 'SendEnd)
-vSendEnd c = VDom proxySession $ VSendEnd c
-vRecvEnd :: forall sig (lang :: Lang sig). HasSessions lang
-         => C (SigEffect sig) () -> LVal lang (Chan 'RecvEnd)
-vRecvEnd c = VDom proxySession $ VRecvEnd c
-
-
 receive :: HasSessions lang
         => LExp lang g (Chan (τ :?: σ)) -> LExp lang g (τ ⊗ Chan σ)
 receive = Dom proxySession . Receive
 
 fork :: (HasSessions lang, WFSession σ) 
      => LExp lang g ((Chan (Dual σ)) ⊸ Chan 'SendEnd) -> LExp lang g (Chan σ)
-fork f = Dom proxySession $ Fork frame f
+fork f = Dom proxySession $ Fork f
 
 wait :: HasSessions lang => LExp lang g (Chan 'RecvEnd) -> LExp lang g One
 wait = Dom proxySession . Wait
 
 link :: (HasSessions lang,CMerge g1 g2 g)
      => LExp lang g1 (Chan σ) -> LExp lang g2 (Chan (Dual σ))
-     -> LExp lang g (Chan 'SendEnd)
+     -> LExp lang g One
 link e1 e2 = Dom proxySession $ Link (e1 ⊗ e2)
 
+vchan :: forall sig (lang :: Lang sig) (σ :: Session sig).
+         HasSessions lang
+      => C (SigEffect sig) -> LVal lang (Chan σ)
+vchan = VDom proxySession . VChan
 
 -- A common operation is to receive some classical data on a channel,
 -- process it classically, and then send back the result.
@@ -218,29 +171,31 @@ processWith f = Suspend . λ $ \c ->
 
 instance HasSessions lang => Domain SessionDom (lang  :: Lang sig) where
   evalDomain ρ (Send e)   = do
-    VPair v1 v2        <- evalToValDom proxyTensor ρ e
-    VSendSession c v2' <- return $ fromLVal proxySession v2
+    VPair v1 v2 <- evalToValDom proxyTensor ρ e
+    VChan c     <- return $ fromLVal proxySession v2
     sendC c v1
-    return v2'
+    return $ vchan c
   evalDomain ρ (Receive e) = do
-    VRecvSession c v <- evalToValDom proxySession ρ e
-    v' <- recvC c
-    return $ vpair v' v
-  evalDomain ρ (Fork s f) = do
-    (v,v') <- newChannels s
+    VChan c <- evalToValDom proxySession ρ e
+    v <- recvC c
+    return $ vpair v $ vchan c
+  evalDomain ρ (Fork f) = do
+    (c,c') <- newC
     forkEffect $ do
-        VSendEnd c <- fromLVal proxySession <$> evalApplyValue ρ f v
-        sendC c ()
-    return v'
+        VChan c0 <- fromLVal proxySession <$> evalApplyValue ρ f (vchan c)
+        sendC c0 ()
+    return $ vchan c'
   evalDomain ρ (Wait e) = do
-    VRecvEnd c <- evalToValDom proxySession ρ e
+    VChan c <- evalToValDom proxySession ρ e
     () <- recvC c
     return vunit
   evalDomain ρ (Link e) = do
     VPair v1 v2 <- evalToValDom proxyTensor ρ e
-    linkChannels (fromLVal proxySession v1) (fromLVal proxySession v2) 
+    VChan c1    <- return $ fromLVal proxySession v1
+    VChan c2    <- return $ fromLVal proxySession v2
+    linkC c1 c2
     c <- newC
-    return $ vSendEnd c
+    return vunit
 
     
     
