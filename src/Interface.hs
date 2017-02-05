@@ -6,7 +6,7 @@
              EmptyCase, RankNTypes, TypeFamilyDependencies,
              ConstraintKinds
 #-}
-{-# OPTIONS_GHC -Wall -Wcompat #-}
+-- {-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Interface where
 

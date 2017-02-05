@@ -36,7 +36,6 @@ data SUsage :: forall sig. (LType sig -> *) -> Usage sig -> * where
 
 data Phantom τ = Phantom
 
-
 ----------------------------------------------------------
 -- Relations about contexts ------------------------------
 ----------------------------------------------------------
@@ -67,6 +66,14 @@ data SingletonNCtx :: Nat -> LType sig -> NCtx sig -> * where
 
 data SingletonCtx :: Nat -> LType sig -> Ctx sig -> * where
   SingN :: SingletonNCtx x σ g -> SingletonCtx x σ ('N g)
+
+instance ToInt (SingletonNCtx x s g) where
+  toInt AddHereS = 0
+  toInt (AddLaterS pfS) = 1+toInt pfS
+instance Show (SingletonCtx x s g) where
+  show (SingN pfS) = "x" ++ show (toInt pfS)
+
+  
 
 -- Merge ----------------------------------------------------
 

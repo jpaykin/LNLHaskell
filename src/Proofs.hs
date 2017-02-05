@@ -25,6 +25,7 @@ inNSNat (InLater _ pfI) = SS $ inNSNat pfI
 addToSNat :: AddCtx x σ g g' -> SNat x
 addToSNat pfA = inSNat $ addIn pfA
 
+
 -- Given a usage and a context, construct the singleton context for (u:g)
 consN :: SUsage d u -> SCtx d g -> SCtx d (ConsN u g) 
 consN (SUsed d) SEmpty = SN $ SEnd d
