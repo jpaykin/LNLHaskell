@@ -85,7 +85,7 @@ letin e f = λ f `app` e
 -- Sanity check examples 
 
 ex :: Domain LolliDom lang => LExp lang 'Empty ((σ ⊸ τ) ⊸ σ ⊸ τ)
-ex = λ $ \x -> λ $ \y -> x `app` y
+ex = λ (\x -> λ $ \y -> x `app` y)
 
 --ex2 :: Domain LolliDom lang => LExp lang 'Empty (σ ⊸ τ ⊸ σ)
 --ex2 = λ $ \x -> λ $ \y -> x
@@ -214,13 +214,8 @@ letPair :: forall sig (lang :: Lang sig) x1 x2 g g1 g2 g2' g2'' g21 g22 σ1 σ2 
         => LExp lang g1 (σ1 ⊗ σ2)
         -> ((LExp lang g21 σ1, LExp lang g22 σ2) -> LExp lang g2 τ)
         -> LExp lang g τ
-letPair e f = Dom proxyTensor $ LetPair merge pfA1 pfA2 e e'
+letPair e f = Dom proxyTensor $ LetPair merge (addCtx @x1 @_ @_ @g2') (addCtx @x2) e e'
   where
-    pfA1 :: AddCtx (Fresh g) σ1 g2'' g2'
-    pfA1 = addCtx
-    pfA2 :: AddCtx (Fresh2 g) σ2 g2' g2
-    pfA2 = addCtx
-
     e' :: LExp lang g2 τ
     e' = f (Var $ singletonCtx @x1, Var $ singletonCtx @x2)
 
@@ -607,3 +602,13 @@ run :: forall sig (lang :: Lang sig) a.
 run e = do
   VPut a <- evalToValDom proxyLower SEmpty $ forceL e
   return a
+
+-- Collections of Domains
+
+type ILL  = '[ LolliDom ]
+type MILL = TensorDom ': (OneDom ': ILL)
+type MELL = LowerDom ': MILL
+
+type family HasDomains (ls :: [Dom sig]) (lang :: Lang sig) where
+  HasDomains '[ dom ]    lang = Domain dom lang
+  HasDomains (dom ': ls) lang = (Domain dom lang, HasDomains ls lang)

@@ -5,6 +5,7 @@
              ScopedTypeVariables, ConstraintKinds,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
+{-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Quantum where
 
@@ -36,8 +37,9 @@ data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
   Meas    :: LExp lang g Qubit -> QuantumLExp lang g (Lower Bool)
   Unitary :: Unitary σ -> LExp lang g σ -> QuantumLExp lang g σ
   -- control the first expression BY the second expression
-  ControlBy :: Merge g1 g2 g 
-            -> LExp lang g1 σ -> LExp lang g2 Qubit -> QuantumLExp lang g (σ ⊗ Qubit)
+  -- only valid if the first expression represents a unitary transformation
+--  ControlBy :: Merge g1 g2 g 
+--            -> LExp lang g1 σ -> LExp lang g2 Qubit -> QuantumLExp lang g (σ ⊗ Qubit)
 
 type QuantumDom = '(QuantumLExp,QuantumLVal)
 proxyQuantum :: Proxy QuantumDom
@@ -48,22 +50,27 @@ instance Show (Unitary σ) where
   show PauliX   = "X"
   show PauliY   = "Y"
   show PauliZ   = "Z"
+  show _        = undefined
 instance Show (QuantumLExp lang g τ) where
   show (New b)  = "New " ++ show b
   show (Meas q) = "Meas " ++ show q
   show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
-  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
+--  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
 
 -- Quantum Data
 
 -- Add more?
 data Unitary (σ :: LType sig) where
-  Hadamard :: Unitary Qubit
-  PauliX   :: Unitary Qubit -- (NOT)
-  PauliY   :: Unitary Qubit
-  PauliZ   :: Unitary Qubit
+  Identity  :: Unitary σ
+  Hadamard  :: Unitary Qubit
+  PauliX    :: Unitary Qubit -- (NOT)
+  PauliY    :: Unitary Qubit
+  PauliZ    :: Unitary Qubit
+  Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
+  Transpose :: Unitary σ -> Unitary σ
 
--- Quantum Simulation Class
+control :: Unitary σ -> Unitary (Qubit ⊗ σ)
+control = Alt Identity
 
 type QId = Int
 class Monad (SigEffect sig) => HasQuantumEffect sig where
@@ -82,11 +89,13 @@ instance HasQuantumEffect ('Sig DensityMonad sigs) where
   interpU PauliX   = pauliX
   interpU PauliY   = pauliY
   interpU PauliZ   = pauliZ
---  interpU CNOT     = cnot
+  interpU (Alt u0 u1)   = 
+    density0 `tensor` interpU u0 + density1 `tensor` interpU u1
+  interpU (Transpose u) = transpose $ interpU u
 
-  newQubit  = undefined
-  applyU    = undefined
-  measQubit = undefined
+  newQubit  = newM
+  applyU u  = applyUnitaryM (interpU u)
+  measQubit = measM
   
 
 -- Language instance
@@ -113,27 +122,27 @@ instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
     qs <- valToQubits @sig v
     applyU @sig u qs
     return v 
-  evalDomain ρ (ControlBy pfM e1 e2) = undefined
     
-
+type Qubits (τ :: LType sig) = [QId]
 -- This type family should be open 
-type family Qubits (τ :: LType sig) :: * 
-type instance Qubits ('LType _ 'OneSig) = ()
-type instance Qubits ('LType _ 'QubitSig) = QId
-type instance Qubits ('LType _ ('TensorSig τ1 τ2)) = (Qubits τ1, Qubits τ2)
-type instance Qubits ('LType _ ('LowerSig _)) = ()
+-- type family Qubits (τ :: LType sig) :: * 
+-- type instance Qubits ('LType _ 'OneSig) = ()
+-- type instance Qubits ('LType _ 'QubitSig) = QId
+-- type instance Qubits ('LType _ ('TensorSig τ1 τ2)) = (Qubits τ1, Qubits τ2)
+-- type instance Qubits ('LType _ ('LowerSig _)) = ()
 
 valToQubits :: forall sig (lang :: Lang sig) τ.
               HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)
 valToQubits v = case fromLVal' proxyQuantum v of 
-    Just (VQubit i) -> return i
+    Just (VQubit i) -> return [i]
     Nothing -> case fromLVal' proxyOne v of
-      Just VUnit -> return ()
+      Just VUnit -> return []
       Nothing -> case fromLVal' proxyTensor v of
-        Just (VPair v1 v2) -> liftA2 (,) (valToQubits v1) (valToQubits v2)
-        Nothing -> case fromLVal' proxyLower v of
-          Just (VPut _) -> return ()
-          Nothing       -> error "Cannot extract qubits from the given value"
+        Just (VPair v1 v2) -> liftA2 (++) (valToQubits v1) (valToQubits v2)
+        Nothing -> return [] 
+--        case fromLVal' proxyLower v of
+--          Just (VPut _) -> return []
+--          Nothing       -> error "Cannot extract qubits from the given value"
     
   
 -- Interface for quantum data
@@ -156,9 +165,13 @@ vqubit :: forall sig (lang :: Lang sig).
        => QId -> LVal lang Qubit
 vqubit = VDom proxyQuantum . VQubit
 
-controlBy :: (HasQuantumDom lang, CMerge g1 g2 g)
-          => LExp lang g1 σ -> LExp lang g2 Qubit -> LExp lang g (σ ⊗ Qubit)
-controlBy e1 e2 = Dom proxyQuantum $ ControlBy merge e1 e2
+controlBy :: (HasQuantumDom lang)
+          => Unitary σ -> LExp lang g (Qubit ⊗ σ) -> LExp lang g (Qubit ⊗ σ)
+controlBy u e = unitary (control u) e
+
+-- first element is the control
+cnot :: HasQuantumDom lang => LExp lang g (Qubit ⊗ Qubit) -> LExp lang g (Qubit ⊗ Qubit)
+cnot = controlBy PauliX
 
 ----------------------------------------------------
 -- Teleportation -----------------------------------
@@ -171,7 +184,7 @@ plus_minus b = Suspend $ unitary Hadamard $ new b
 share :: HasQuantumDom lang
       => Lift lang (Qubit ⊸ Qubit ⊗ Qubit)
 share = Suspend . λ $ \q ->
-    new False `controlBy` q
+    cnot (q ⊗ new False)
 
 bell00 :: HasQuantumDom lang
        => Lift lang (Qubit ⊗ Qubit)
