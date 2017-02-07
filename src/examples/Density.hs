@@ -5,7 +5,6 @@
              ScopedTypeVariables, EmptyCase, FlexibleContexts, 
              RankNTypes
 #-}
--- is UndecidableSuperClasses okay?
 
 -- Implementation of density matrix interpretation of quantum computation
 module Density where
@@ -15,6 +14,7 @@ import Prelim
 import Control.Monad.State.Lazy
 import Data.List hiding (transpose)
 import Numeric.LinearAlgebra -- hmatrix library
+import Debug.Trace
 
 -- There is no representational difference between a regular matrix
 -- and a density matrix, but we think of density matrices as being a 
@@ -75,7 +75,7 @@ applyMat m ρ = transpose m <> ρ <> m
 
 -- logSize ρ is n where ρ is a 2^n x 2^n matrix
 logSize :: Mat -> Int
-logSize ρ = floor . logBase 2 $ coerceIntegral n 
+logSize ρ = floor . logBase 2 $ fromIntegral n 
   where
     (n,_) = size ρ
 
@@ -159,11 +159,6 @@ applyPermutation f d = assoc (m,n) 0 ls
     ls = [((i,j), d `atIndex` (i,f j)) | i <- [0..m-1] ,
                                          j <- [0..n-1] ]
 
-
-coerceIntegral :: (Integral a, Num b) => a -> b
-coerceIntegral = fromInteger . toInteger
-
-
 -- Applying a unitary transformation to a subset of qubits
 -- in a density matrix
 
@@ -188,4 +183,21 @@ applyUnitaryM :: Mat -> [Int] -> DensityMonad ()
 applyUnitaryM m perm = modify $ applyUnitary m perm
 
 measM :: Int -> DensityMonad Bool
-measM i = undefined
+measM i = do
+    m  <- get
+    (b,m') <- lift [ (False,applyUnitary density0 [i] m)
+                   , (True, applyUnitary density1 [i] m) ]
+    put m'
+    return b
+
+runQ :: DensityMonad a -> [(a,Mat)]
+runQ m = runStateT m (ident 1)
+
+getDensity :: DensityMonad a -> Mat
+getDensity m = foldr f nil ls
+  where
+    ls = runQ m
+    n  = logSize . snd . head $ ls -- the size of the matrices in runQ m
+
+    f (_,ρ) ρ0 = ρ + ρ0
+    nil = 1 >< 1 $ repeat 0 -- ((2^n)><(2^n)) $ repeat 0

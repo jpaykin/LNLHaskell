@@ -55,5 +55,3 @@ data Disjoint :: Nat -> Nat -> * where
 
 
 
-
-

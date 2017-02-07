@@ -54,7 +54,15 @@ instance Num Nat where
   fromInteger n = S $ fromInteger (n-1)
 
   negate n = n
-
+instance Real Nat where
+  toRational = toRational . toInt
+instance Enum Nat where
+  toEnum   = fromInteger . fromIntegral
+  fromEnum = toInt
+instance Integral Nat where
+  toInteger = fromIntegral . toInt
+  quotRem m n = let (q,r) = quotRem (fromEnum m) (fromEnum n)
+                in (toEnum q, toEnum r)
 
 -- Operations on SNats
 
@@ -209,6 +217,14 @@ instance KnownNat n => Num (BNat n) where
   abs = undefined
 
   fromInteger m = fromIntegerBNat (sNat @n) m
+instance KnownNat n => Real (BNat n) where
+  toRational = fromIntegral . toInt
+instance KnownNat n => Enum (BNat n) where
+  toEnum = fromIntegral 
+  fromEnum = toInt
+instance KnownNat n => Integral (BNat n) where
+  quotRem = undefined
+  toInteger = fromIntegral . toInt 
 
 raise :: BNat n -> BNat ('S n)
 raise = undefined

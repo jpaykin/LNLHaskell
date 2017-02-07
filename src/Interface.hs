@@ -605,6 +605,10 @@ run e = do
 
 -- Collections of Domains
 
+type ILLSig = '[ LolliSig ]
+type MILLSig = TensorSig ': (OneSig ': ILLSig)
+type MELLSig = LowerSig ': MILLSig
+
 type ILL  = '[ LolliDom ]
 type MILL = TensorDom ': (OneDom ': ILL)
 type MELL = LowerDom ': MILL

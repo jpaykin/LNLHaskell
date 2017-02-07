@@ -5,23 +5,24 @@
              ScopedTypeVariables, ConstraintKinds,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
-{-# OPTIONS_GHC -Wall -Wcompat #-}
+{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-name-shadowing #-}
 
 module Quantum where
 
 import Data.Kind
 import Data.Proxy
 import Control.Applicative
+import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
 
-import Prelim hiding (Z)
+import Prelim
 import Types
 import Context
-import Proofs
+--import Proofs
 import Lang
-import Classes
+--import Classes
 import Interface
 
-import Density
+import Density hiding (cnot)
 
 -- Signature
 data QuantumSig sig  = QubitSig
@@ -61,7 +62,7 @@ instance Show (QuantumLExp lang g τ) where
 
 -- Add more?
 data Unitary (σ :: LType sig) where
-  Identity  :: Unitary σ
+  Identity  :: KnownQubits σ => Unitary σ
   Hadamard  :: Unitary Qubit
   PauliX    :: Unitary Qubit -- (NOT)
   PauliY    :: Unitary Qubit
@@ -69,13 +70,15 @@ data Unitary (σ :: LType sig) where
   Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
   Transpose :: Unitary σ -> Unitary σ
 
-control :: Unitary σ -> Unitary (Qubit ⊗ σ)
+type KnownQubits σ = KnownNat (NumQubits σ)
+
+control :: KnownQubits σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
 control = Alt Identity
 
 type QId = Int
 class Monad (SigEffect sig) => HasQuantumEffect sig where
-  type family QUnitary (σ :: LType sig)
-  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary σ
+  type family QUnitary sig
+  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary sig
 
   newQubit  :: Bool -> SigEffect sig QId
   applyU    :: forall (σ :: LType sig).
@@ -83,14 +86,17 @@ class Monad (SigEffect sig) => HasQuantumEffect sig where
   measQubit :: QId -> SigEffect sig Bool
 
 instance HasQuantumEffect ('Sig DensityMonad sigs) where
-  type QUnitary _ = Mat
+  type QUnitary ('Sig DensityMonad sigs) = Mat
 
+  interpU :: forall (σ :: LType ('Sig DensityMonad sigs)). 
+             Unitary σ -> QUnitary ('Sig DensityMonad sigs)
+  interpU Identity = ident $ fromIntegral . toInt $ sNat @(NumQubits σ)
   interpU Hadamard = hadamard
   interpU PauliX   = pauliX
   interpU PauliY   = pauliY
   interpU PauliZ   = pauliZ
-  interpU (Alt u0 u1)   = 
-    density0 `tensor` interpU u0 + density1 `tensor` interpU u1
+  interpU (Alt (u0 :: Unitary σ') u1)   = 
+    (density0 `tensor` interpU u0) + (density1 `tensor` interpU u1)
   interpU (Transpose u) = transpose $ interpU u
 
   newQubit  = newM
@@ -143,7 +149,13 @@ valToQubits v = case fromLVal' proxyQuantum v of
 --        case fromLVal' proxyLower v of
 --          Just (VPut _) -> return []
 --          Nothing       -> error "Cannot extract qubits from the given value"
-    
+
+type family   NumQubits (τ :: LType sig) :: Nat 
+type instance NumQubits ('LType _ 'OneSig)            = 'Z
+type instance NumQubits ('LType _ 'QubitSig)          = 'S 'Z
+type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Times` NumQubits τ2
+type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
+type instance NumQubits ('LType _ ('LowerSig _))      = 'Z
   
 -- Interface for quantum data
 
@@ -165,7 +177,7 @@ vqubit :: forall sig (lang :: Lang sig).
        => QId -> LVal lang Qubit
 vqubit = VDom proxyQuantum . VQubit
 
-controlBy :: (HasQuantumDom lang)
+controlBy :: (HasQuantumDom lang, KnownQubits σ)
           => Unitary σ -> LExp lang g (Qubit ⊗ σ) -> LExp lang g (Qubit ⊗ σ)
 controlBy u e = unitary (control u) e
 
@@ -194,11 +206,11 @@ bell00 = Suspend $
     
 alice :: HasQuantumDom lang
       => Lift lang (Qubit ⊸ Qubit ⊸ Lower (Bool, Bool))
-alice = Suspend . λ $ \q -> λ $ \a ->
-    unitary PauliX a `controlBy` q `letPair` \(a,q) ->
-    meas (unitary Hadamard q) >! \x ->
-    meas a >! \y ->
-    put (x,y)
+alice = Suspend . λ $ \q -> λ $ \a -> 
+            cnot (q ⊗ a) `letPair` \(q,a) ->
+            meas (unitary Hadamard q) >! \x ->
+            meas a >! \y ->
+            put (x,y)
 
 bob :: HasQuantumDom lang
     => (Bool,Bool) -> Lift lang (Qubit ⊸ Qubit)
@@ -212,3 +224,14 @@ teleport = Suspend . λ $ \q ->
     force bell00 `letPair` \(a,b) ->
     force alice `app` q `app` a >! \(x,y) ->
     force (bob (x,y)) `app` b
+
+teleport0 :: HasQuantumDom lang => Lin lang Bool
+teleport0 = suspendL . meas $ force teleport `app` new False
+
+qflip :: HasQuantumDom lang => Lin lang Bool
+qflip = suspendL $ meas (unitary Hadamard (new False))
+    
+type MyQuantumSig = ( 'Sig DensityMonad (QuantumSig ': MELLSig) )
+type MyQuantumLang = ( 'Lang (QuantumDom ': MELL) :: Lang MyQuantumSig )
+
+
