@@ -29,8 +29,7 @@ var = Var $ singletonCtx @x
 data LolliSig sig where
   LolliSig :: LType sig -> LType sig -> LolliSig ty
 
-type (⊸) (σ :: LType sig) (τ :: LType sig) =
-  ('LType (InSig LolliSig sig) ('LolliSig σ τ) :: LType sig)
+type (⊸) (σ :: LType sig) (τ :: LType sig) = LType' sig ('LolliSig σ τ)
 infixr 0 ⊸
 
 data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
@@ -129,7 +128,7 @@ instance WFDomain LolliDom lang => Domain LolliDom lang where
 data OneSig sig where
   OneSig :: OneSig sig
 
-type One = ('LType (InSig OneSig sig) 'OneSig :: LType sig)
+type One = (LType' sig 'OneSig :: LType sig)
 
 data OneExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Unit :: OneExp lang 'Empty One
@@ -176,8 +175,7 @@ instance WFDomain OneDom lang
 
 data TensorSig sig = TensorSig (LType sig) (LType sig)
 
-type (⊗) (σ :: LType sig) (τ :: LType sig) = 
-     'LType (InSig TensorSig sig) ('TensorSig σ τ)
+type (⊗) (σ :: LType sig) (τ :: LType sig) = LType' sig ('TensorSig σ τ)
 
 data TensorExp :: Lang sig -> Ctx sig -> LType sig -> * where
   Pair :: Merge g1 g2 g
@@ -253,7 +251,7 @@ force (Suspend e) = e
 
 data LowerSig sig where
   LowerSig :: * -> LowerSig sig
-type Lower a = ('LType (InSig LowerSig sig) ('LowerSig a) :: LType sig)
+type Lower a = (LType' sig ('LowerSig a) :: LType sig)
 
 data LowerExp :: Lang sig -> Ctx sig -> LType sig -> * where
   Put :: a -> LowerExp lang 'Empty (Lower a)
@@ -302,8 +300,7 @@ instance WFDomain LowerDom lang
 -- Additive Sums
 
 data PlusSig sig = PlusSig (LType sig) (LType sig)
-type (⊕) (σ :: LType sig) (τ :: LType sig) =
-    'LType (InSig PlusSig sig) ('PlusSig σ τ)
+type (⊕) (σ :: LType sig) (τ :: LType sig) = LType' sig ('PlusSig σ τ)
 
 
 data PlusExp :: Lang sig -> Ctx sig -> LType sig -> * where
@@ -376,8 +373,7 @@ instance WFDomain PlusDom lang
 -- Additive Product
 
 data WithSig sig = WithSig (LType sig) (LType sig)
-type (&) (σ :: LType sig) (τ :: LType sig) = 
-    'LType (InSig WithSig sig) ('WithSig σ τ)
+type (&) (σ :: LType sig) (τ :: LType sig) = LType' sig ('WithSig σ τ)
 
 data WithExp :: Lang sig -> Ctx sig -> LType sig -> * where
   With  :: LExp lang g τ1 -> LExp lang g τ2 -> WithExp lang g (τ1 & τ2)
