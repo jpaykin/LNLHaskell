@@ -47,6 +47,7 @@ data LolliVal :: Lang sig -> LType sig -> * where
        -> LExp lang γ' τ
        -> LolliVal lang (σ ⊸ τ)
 
+
 type LolliDom = '(LolliExp, LolliVal)
 proxyLolli = (Proxy :: Proxy LolliDom)
 
@@ -54,7 +55,7 @@ proxyLolli = (Proxy :: Proxy LolliDom)
 instance WFDomain LolliDom lang => Domain LolliDom lang where
   evalDomain ρ (Abs pfA e) = return $ VDom proxyLolli $ VAbs ρ pfA e
   evalDomain ρ (App pfM e1 e2) = do
-      VAbs ρ' pfA e1' <- evalToValDom proxyLolli ρ1 e1
+      VDom _ (VAbs ρ' pfA e1') <- eval' ρ1 e1 --evalToValDom proxyLolli ρ1 e1
       v2              <- eval' ρ2 e2
       eval' (addSCtx pfA ρ' $ ValData v2) e1'
     where

@@ -53,6 +53,9 @@ type family ExpDom (dom :: Dom sig) :: Lang sig -> Ctx sig -> LType sig -> * whe
 type family ValDom (dom :: Dom sig) :: Lang sig -> LType sig -> * where
   ValDom '(exp,val) = val
 
+-- RDom is a runtime representation of the domain
+--data family RDom :: Dom sig -> * 
+
 
 
 
