@@ -89,14 +89,8 @@ type CInLang dom lang = CInList dom (FromLang lang)
 
 -- Evaluation Contexts ------------------------------------
 
--- Evaluation contexts map variables to either values or closures of
--- expressions. They are paramaterized by a typing context, which specifies the
--- domain of the context.
-type ECtx (lang :: Lang sig) = SCtx (Data lang)
+type ECtx (lang :: Lang sig) = SCtx (LVal lang)
 
-data Data (lang :: Lang sig) (σ :: LType sig) where
-  ValData :: LVal lang σ -> Data lang σ
-  ExpData :: ECtx lang g -> LExp lang g σ -> Data lang σ
 
 -- Evaluation ---------------------------------------------
 
@@ -111,10 +105,7 @@ eval' :: forall sig (lang :: Lang sig) (g :: Ctx sig) (σ :: LType sig).
      => ECtx lang g
      -> LExp lang g σ 
      -> SigEffect sig (LVal lang σ)
-eval' ρ (Var pfS)                      = 
-  case lookup (singletonIn pfS) ρ of
-    ExpData ρ e -> eval' ρ e
-    ValData v   -> return v
+eval' ρ (Var pfS)                      = return $ lookup (singletonIn pfS) ρ
 eval' ρ (Dom (proxy :: Proxy dom) e)   = evalDomain @sig @dom ρ e
 
 

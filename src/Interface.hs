@@ -55,9 +55,9 @@ proxyLolli = (Proxy :: Proxy LolliDom)
 instance WFDomain LolliDom lang => Domain LolliDom lang where
   evalDomain ρ (Abs pfA e) = return $ VDom proxyLolli $ VAbs ρ pfA e
   evalDomain ρ (App pfM e1 e2) = do
-      VDom _ (VAbs ρ' pfA e1') <- eval' ρ1 e1 --evalToValDom proxyLolli ρ1 e1
+      VAbs ρ' pfA e1' <- evalToValDom proxyLolli ρ1 e1
       v2              <- eval' ρ2 e2
-      eval' (addSCtx pfA ρ' $ ValData v2) e1'
+      eval' (addSCtx pfA ρ' v2) e1'
     where
       (ρ1,ρ2) = splitSCtx pfM ρ
 
@@ -115,7 +115,7 @@ evalApplyValue ρ e v = eval' ρ' $ Dom proxyLolli $ App pfM e $ Var pfS
     pfS = singSing $ knownFresh ρ 
 
     ρ' :: ECtx lang (Add (Fresh g) σ g)
-    ρ' = addFreshSCtx ρ (ValData v)
+    ρ' = addFreshSCtx ρ v
 
     pfM :: Merge g (Singleton (Fresh g) σ) (Add (Fresh g) σ g)
     pfM = mergeAddFresh @σ ρ
@@ -238,7 +238,7 @@ instance WFDomain TensorDom lang
       eval' (ρ' v1 v2) e'
     where
       (ρ1,ρ2) = splitSCtx pfM ρ 
-      ρ' v1 v2 = addSCtx pfA' (addSCtx pfA ρ2 (ValData v1)) (ValData v2)
+      ρ' v1 v2 = addSCtx pfA' (addSCtx pfA ρ2 v1) v2
 
 
 -- Lift --------------------------------------------------------
@@ -365,8 +365,8 @@ instance WFDomain PlusDom lang
   evalDomain ρ (Case pfM pfA1 pfA2 e e1 e2) = do
       v <- evalToValDom proxyPlus ρ1 e
       case v of
-        VInl v1 -> eval' (addSCtx pfA1 ρ2 (ValData v1)) e1
-        VInr v2 -> eval' (addSCtx pfA2 ρ2 (ValData v2)) e2
+        VInl v1 -> eval' (addSCtx pfA1 ρ2 v1) e1
+        VInr v2 -> eval' (addSCtx pfA2 ρ2 v2) e2
     where
       (ρ1,ρ2) = splitSCtx pfM ρ
 

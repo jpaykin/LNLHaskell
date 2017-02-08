@@ -12,7 +12,8 @@ module Quantum where
 import Data.Kind
 import Data.Proxy
 import Control.Applicative
-import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
+import Data.Singletons
+--import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
 
 import Prelim
 import Types
@@ -22,7 +23,8 @@ import Lang
 --import Classes
 import Interface
 
-import Density hiding (cnot)
+--import Density hiding (cnot)
+import LinTrans
 
 -- Signature
 data QuantumSig sig  = QubitSig
@@ -70,7 +72,7 @@ data Unitary (σ :: LType sig) where
   Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
   Transpose :: Unitary σ -> Unitary σ
 
-type KnownQubits σ = KnownNat (NumQubits σ)
+type KnownQubits σ = SingI (NumQubits σ)
 
 control :: KnownQubits σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
 control = Alt Identity
@@ -86,18 +88,18 @@ class Monad (SigEffect sig) => HasQuantumEffect sig where
   measQubit :: QId -> SigEffect sig Bool
 
 instance HasQuantumEffect ('Sig DensityMonad sigs) where
-  type QUnitary ('Sig DensityMonad sigs) = Mat
+  type QUnitary ('Sig DensityMonad sigs) = Density
 
   interpU :: forall (σ :: LType ('Sig DensityMonad sigs)). 
              Unitary σ -> QUnitary ('Sig DensityMonad sigs)
-  interpU Identity = ident $ fromIntegral . toInt $ sNat @(NumQubits σ)
+  interpU Identity = identD $ fromIntegral . toInt $ (sing :: Sing (NumQubits σ))
   interpU Hadamard = hadamard
   interpU PauliX   = pauliX
   interpU PauliY   = pauliY
   interpU PauliZ   = pauliZ
   interpU (Alt (u0 :: Unitary σ') u1)   = 
-    (density0 `tensor` interpU u0) + (density1 `tensor` interpU u1)
-  interpU (Transpose u) = transpose $ interpU u
+    (newD False `kronD` interpU u0) + (newD True `kronD` interpU u1)
+  interpU (Transpose u) = transposeD $ interpU u
 
   newQubit  = newM
   applyU u  = applyUnitaryM (interpU u)

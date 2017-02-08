@@ -14,15 +14,15 @@ import Context
 -- Singleton Nats and Contexts ------------------------------------------------
 
 -- Extract the Singleton Nat from a proof that the nat is in a context
-inSNat :: In x σ g -> SNat x
+inSNat :: In x σ g -> Sing x
 inSNat (In pfI) = inNSNat pfI
 
-inNSNat :: InN x σ g -> SNat x
+inNSNat :: InN x σ g -> Sing x
 inNSNat InEnd           = SZ
 inNSNat (InHere _)      = SZ
 inNSNat (InLater _ pfI) = SS $ inNSNat pfI
 
-addToSNat :: AddCtx x σ g g' -> SNat x
+addToSNat :: AddCtx x σ g g' -> Sing x
 addToSNat pfA = inSNat $ addIn pfA
 
 
@@ -56,20 +56,20 @@ mergeSNCtx (MergeCons pfU pfM) = case (mergeSUsage pfU, mergeSNCtx pfM) of
 -- Freshness ---------------------------------------------
 
 -- Constructs a fresh Nat that does not occur in the context g
-knownFresh :: SCtx d g -> SNat (Fresh g)
+knownFresh :: SCtx d g -> Sing (Fresh g)
 knownFresh SEmpty = SZ
 knownFresh (SN g) = knownFreshN g
 
-knownFreshN :: SNCtx d g -> SNat (FreshN g)
+knownFreshN :: SNCtx d g -> Sing (FreshN g)
 knownFreshN (SEnd _)            = SS SZ
 knownFreshN (SCons SUnused _)   = SZ
 knownFreshN (SCons (SUsed _) g) = SS $ knownFreshN g
 
-knownFresh2 :: SCtx d g -> SNat (Fresh2 g)
+knownFresh2 :: SCtx d g -> Sing (Fresh2 g)
 knownFresh2 SEmpty = SS SZ
 knownFresh2 (SN g) = knownFreshN2 g
 
-knownFreshN2 :: SNCtx d g -> SNat (FreshN2 g)
+knownFreshN2 :: SNCtx d g -> Sing (FreshN2 g)
 knownFreshN2 (SEnd _)            = SS (SS SZ)
 knownFreshN2 (SCons SUnused g)   = SS (knownFreshN g)
 knownFreshN2 (SCons (SUsed _) g) = SS $ knownFreshN2 g
@@ -78,10 +78,10 @@ knownFreshN2 (SCons (SUsed _) g) = SS $ knownFreshN2 g
 -- Singleton Context ----------------------------------------------
 
 -- Constructs the canonical proof that (Singleton x σ) is a singleton context.
-singSing :: SNat x -> SingletonCtx x σ (Singleton x σ)
+singSing :: Sing x -> SingletonCtx x σ (Singleton x σ)
 singSing x = SingN $ singNSingN x
 
-singNSingN :: SNat x -> SingletonNCtx x σ (SingletonN x σ)
+singNSingN :: Sing x -> SingletonNCtx x σ (SingletonN x σ)
 singNSingN SZ     = AddHereS
 singNSingN (SS x) = AddLaterS $ singNSingN x
 

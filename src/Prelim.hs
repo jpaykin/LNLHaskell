@@ -1,33 +1,50 @@
 {-# LANGUAGE TypeApplications, ScopedTypeVariables, TypeInType,
              TypeOperators, GADTs, TypeFamilies, UndecidableInstances,
              MultiParamTypeClasses, FlexibleInstances, AllowAmbiguousTypes,
-             InstanceSigs
+             InstanceSigs, RankNTypes
 #-}
-{-# OPTIONS_GHC -Wall -Wcompat #-}
+{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors #-}
 
 module Prelim where
 
 import Data.Kind
 import Data.Constraint
 import Data.Array
+--import GHC.TypeLits (TypeError, ErrorMessage(..))
+import Data.Type.Equality
+import Data.Singletons
 
 --------------------------------------------
 -- Nats ------------------------------------
 --------------------------------------------
 
 data Nat = Z | S Nat deriving (Eq, Ord)
-data SNat :: Nat -> * where
-  SZ :: SNat 'Z
-  SS :: SNat x -> SNat ('S x)
+--data SNat :: Nat -> * where
+--  SZ :: SNat 'Z
+--  SS :: SNat x -> SNat ('S x)
+data instance Sing (x :: Nat) where
+  SZ :: Sing Z
+  SS :: Sing x -> Sing (S x)
+instance SingI Z where
+  sing = SZ
+instance SingI x => SingI (S x) where
+  sing = SS sing
 
-
+{-
 class KnownNat n where
   sNat :: SNat n
 instance KnownNat 'Z where
   sNat = SZ
 instance KnownNat n => KnownNat ('S n) where
   sNat = SS sNat
+-}
 
+type family EqNat (m :: Nat) (n :: Nat) :: Bool where
+  EqNat Z     Z     = True
+  EqNat (S m) (S n) = EqNat m n
+  EqNat Z     (S n) = False
+  EqNat (S m) Z     = False
+type instance (m :: Nat) == (n :: Nat) = EqNat m n
 type family Plus (m :: Nat) (n :: Nat) :: Nat where
   Plus 'Z     n = n
   Plus ('S m) n = 'S (Plus m n)
@@ -38,6 +55,24 @@ type family Minus (m :: Nat) (n :: Nat) :: Nat where
 type family Times (m :: Nat) (n :: Nat) :: Nat where
   Times 'Z     n = 'Z
   Times ('S m) n = Plus n (Times m n)
+{-
+type family Div (m :: Nat) (n :: Nat) :: Nat where
+  Div m n     = If (n == Z) (TypeError (Text "Division by zero"))
+               (If (n == (S Z)) m
+               (If (m < n) Z (S ((m `Minus` n) `Div` n))))
+--  Div _ Z     = TypeError (Text "Division by zero")
+--  Div m (S Z) = m
+--  Div m n     = If (m < n) Z (S ((m `Minus` n) `Div` n))
+type family Mod (m :: Nat) (n :: Nat) :: Nat where
+  Mod _ Z     = TypeError (Text "Modulo by zero")
+  Mod _ (S Z) = Z
+  Mod m n     = If (m < n) m ((m `Minus` n) `Mod` n)
+-}
+
+type family If (b :: Bool) (t :: k) (f :: k) :: k where
+  If 'True  t f = t
+  If 'False t f = f
+
 
 instance Num Nat where
   Z   + n   = n
@@ -66,22 +101,32 @@ instance Integral Nat where
 
 -- Operations on SNats
 
-sTimes :: SNat m -> SNat n -> SNat (m `Times` n)
-sTimes = undefined
-
+type SomeSNat = SomeSing Nat
+{-
 data SomeSNat where
-  SomeSNat :: SNat n -> SomeSNat
+  SomeSNat :: Sing n -> SomeSNat
+-}
+instance Eq (SomeSing Nat) where
+  SomeSing m == SomeSing n = case eqSNat m n of 
+    Left  Dict -> True
+    Right Dict -> False
+instance Ord (SomeSing Nat) where
+  SomeSing m <= SomeSing n = 
+    if SomeSing m == SomeSing n then True
+    else case compareSNat m n of
+      Left Dict  -> True
+      Right Dict -> False
 
-instance Num SomeSNat where
-  (+) = undefined
-  (-) = undefined
-  (*) = undefined
-  abs = undefined
-  signum = undefined
+instance Num (SomeSing Nat) where
+  SomeSing m + SomeSing n = SomeSing $ plusSNat m n
+  SomeSing m - SomeSing n = SomeSing $ minusSNat m n
+  SomeSing m * SomeSing n = SomeSing $ timesSNat m n
+  abs n = n
+  signum _ = 1
   
-  fromInteger 0 = SomeSNat SZ
+  fromInteger 0 = SomeSing SZ
   fromInteger n = case fromInteger (n-1) of
-    SomeSNat n' -> SomeSNat $ SS n'
+    SomeSing n' -> SomeSing $ SS n'
 
 class ToInt a where
   toInt :: a -> Int
@@ -89,19 +134,21 @@ class ToInt a where
 instance ToInt Nat where
   toInt Z = 0
   toInt (S n) = toInt n + 1
-instance ToInt (SNat n) where
+instance ToInt (Sing (n :: Nat)) where
   toInt n = toInt $ toNat n
 
 
 instance Show Nat where
   show n = show $ toInt n
 
-toNat :: SNat n -> Nat
+toNat :: forall (n :: Nat). Sing n -> Nat
 toNat SZ = Z
 toNat (SS n) = S $ toNat n
 
-instance Show (SNat n) where
+instance forall (n :: Nat). Show (Sing n) where
   show n = show $ toNat n
+
+
 
 --------------------------------------------
 -- Maps ------------------------------------
@@ -155,7 +202,7 @@ type family (<) (m :: Nat) (n :: Nat) :: Bool where
   'S m < 'S n = m < n
 
 data BNat (n :: Nat) where
-  BNat :: (m < n) ~ 'True => SNat m -> BNat n
+  BNat :: (m < n) ~ 'True => Sing m -> BNat n
 
 instance ToInt (BNat n) where
   toInt (BNat m) = toInt m
@@ -166,76 +213,121 @@ instance Eq (BNat n) where
 instance Ord (BNat n) where
   m1 <= m2 = toInt m1 <= toInt m2
 
-compareSNat :: SNat m -> SNat n 
-            -> Either (Dict (m < n ~ 'True)) (Dict ((n < m) ~ 'False))
-compareSNat = undefined
+compareSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n 
+            -> Either (Dict (m < n ~ 'True)) (Dict ((m < n) ~ 'False))
+compareSNat SZ SZ     = Right Dict
+compareSNat SZ (SS _) = Left  Dict
+compareSNat (SS _) SZ = Right Dict
+compareSNat (SS m) (SS n) = case compareSNat m n of
+    Left  Dict -> Left  Dict
+    Right Dict -> Right Dict
 
-fromIntegerBNat :: SNat n -> Integer -> BNat n
-fromIntegerBNat n m = 
-  case fromInteger m of {SomeSNat m' ->
+
+eqSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n 
+       -> Either (Dict ((m==n) ~ 'True)) (Dict ((m == n) ~ 'False))
+eqSNat SZ SZ = Left Dict
+eqSNat SZ (SS _) = Right Dict
+eqSNat (SS _) SZ = Right Dict
+eqSNat (SS m) (SS n) = case eqSNat m n of
+    Left  Dict -> Left  Dict
+    Right Dict -> Right Dict
+
+fromIntegerBNat :: forall (n :: Nat). SingI n => Integer -> BNat n
+fromIntegerBNat m = 
+  case fromInteger m of {SomeSing m' -> 
   case compareSNat m' n of
-    Left Dict -> BNat m'
-    Right Dict -> error $ "Integer " ++ show m ++ " not less than bound " ++ show n
+           Left Dict -> BNat m'
+           Right Dict -> error $ "Cannot construct BNat: " ++ show m ++ " not less than bound " ++ show n
   }
+  where
+    n = (sing :: Sing n)
 
-ltS :: SNat x -> Dict (x < 'S x ~ 'True)
+
+bNat :: forall n. SingI n => SomeSing Nat -> BNat n
+bNat (SomeSing m) = case compareSNat m (sing :: Sing n) of
+           Left Dict -> BNat m
+           Right Dict -> error $ "Cannot construct BNat: " ++ show m ++ " not less than bound " ++ show (sing :: Sing n)
+
+ltS :: Sing x -> Dict (x < 'S x ~ 'True)
 ltS SZ = Dict
 ltS (SS x) = case ltS x of Dict -> Dict
 
-succLtTrans :: 'S x < y ~ 'True => SNat x -> SNat y -> Dict (x < y ~ 'True)
+succLtTrans :: 'S x < y ~ 'True => Sing x -> Sing y -> Dict (x < y ~ 'True)
 succLtTrans SZ (SS _) = Dict
 succLtTrans (SS x) (SS y) = case succLtTrans x y of Dict -> Dict
 
-maxBNat :: SNat n -> BNat n
+ltSTrans :: x < y ~ True => Sing x -> Sing y -> Dict (x < S y ~ True)
+ltSTrans SZ     (SS _) = Dict
+ltSTrans (SS x) (SS y) = case ltSTrans x y of Dict -> Dict
+
+maxBNat :: Sing n -> BNat n
 maxBNat SZ     = error "BNat 0 is uninhabited"
 maxBNat (SS n) = case ltS n of Dict -> BNat n
 
 
-boundBNat :: forall n m. KnownNat n => SNat m -> BNat n
-boundBNat m = case compareSNat m (sNat @n) of
+boundBNat :: forall n (m :: Nat). SingI n => Sing m -> BNat n
+boundBNat m = case compareSNat m (sing :: Sing n) of
   Left Dict -> BNat m
-  Right _   -> maxBNat $ sNat @n
+  Right _   -> maxBNat (sing :: Sing n)
 
-plusSNat :: SNat m1 -> SNat m2 -> SNat (m1 `Plus` m2)
+plusSNat :: Sing m1 -> Sing m2 -> Sing (m1 `Plus` m2)
 plusSNat SZ m2 = m2
 plusSNat (SS m1) m2 = SS $ plusSNat m1 m2
 
-minusSNat :: SNat m1 -> SNat m2 -> SNat (m1 `Minus` m2)
+minusSNat :: Sing m1 -> Sing m2 -> Sing (m1 `Minus` m2)
 minusSNat m1 SZ = m1
 minusSNat SZ _  = SZ
 minusSNat (SS m1) (SS m2) = minusSNat m1 m2
 
-timesSNat :: SNat m1 -> SNat m2 -> SNat (m1 `Times` m2)
+timesSNat :: Sing m1 -> Sing m2 -> Sing (m1 `Times` m2)
 timesSNat SZ _ = SZ
 timesSNat (SS m1) m2 = m2 `plusSNat` timesSNat m1 m2
 
-instance KnownNat n => Num (BNat n) where
+divSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n -> SomeSing Nat
+divSNat m n = divSomeSing (SomeSing m) (SomeSing n)
+
+divSomeSing :: SomeSing Nat -> SomeSing Nat -> SomeSing Nat
+divSomeSing _ n | n == 0 = error "Division by zero"
+divSomeSing m n | n == 1 = m
+divSomeSing m n | m < n  = 0
+divSomeSing m n | otherwise = 1 + ((m-n) `divSomeSing` n)
+
+modSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n -> SomeSing Nat
+modSNat m n = modSomeSing (SomeSing m) (SomeSing n)
+
+modSomeSing :: SomeSing Nat -> SomeSing Nat -> SomeSing Nat
+modSomeSing _ n | n == 0 = error "Modulo by zero"
+modSomeSing _ n | n == 1 = 0
+modSomeSing m n | m < n  = m
+modSomeSing m n | otherwise = (m-n) `modSomeSing` n
+
+instance SingI n => Num (BNat n) where
   BNat m1 + BNat m2 = boundBNat (m1 `plusSNat`  m2)
   BNat m1 - BNat m2 = boundBNat (m1 `minusSNat` m2)
   BNat m1 * BNat m2 = boundBNat (m1 `timesSNat` m2)
   signum _ = fromInteger 1 -- all nats are positive
-  abs = undefined
+  abs n = n
 
-  fromInteger m = fromIntegerBNat (sNat @n) m
-instance KnownNat n => Real (BNat n) where
+  fromInteger m = fromIntegerBNat m
+instance SingI n => Real (BNat n) where
   toRational = fromIntegral . toInt
-instance KnownNat n => Enum (BNat n) where
+instance SingI n => Enum (BNat n) where
   toEnum = fromIntegral 
   fromEnum = toInt
-instance KnownNat n => Integral (BNat n) where
-  quotRem = undefined
+instance SingI n => Integral (BNat n) where
+  quotRem (BNat i) (BNat j) = (bNat $ divSNat i j, bNat $ modSNat i j)
   toInteger = fromIntegral . toInt 
 
-raise :: BNat n -> BNat ('S n)
-raise = undefined
+raise :: Sing n -> BNat n -> BNat ('S n)
+raise n (BNat m) = case ltSTrans m n of Dict -> BNat m
 
-allBNat :: SNat n -> [BNat n]
+allBNat :: Sing n -> [BNat n]
 allBNat SZ = []
-allBNat (SS n) = BNat SZ : (raise <$> allBNat n)
+allBNat (SS n) = BNat SZ : (raise n <$> allBNat n)
 
-instance KnownNat n => Ix (BNat n) where
+instance SingI n => Ix (BNat n) where
   range :: (BNat n, BNat n) -> [BNat n]
-  range (BNat _, BNat _) = allBNat $ sNat @n
+  range (BNat _, BNat _) = allBNat (sing :: Sing n)
 
   index :: (BNat n, BNat n) -> BNat n -> Int
   index (m1,m2) m = index (toInt m1, toInt m2) $ toInt m
