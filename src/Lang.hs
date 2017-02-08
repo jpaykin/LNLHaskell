@@ -27,20 +27,19 @@ import Proofs
 -- Linear expressions consist solely of variables, and constructors added from
 -- different domains.
 data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
-  Var :: SingletonCtx x τ g -> LExp lang g τ
-  Dom :: (Domain dom lang, Show (ExpDom dom lang g τ))
+  Var :: SingletonCtx x τ γ -> LExp lang γ τ
+  Dom :: (Domain dom lang, Show (ExpDom dom lang γ τ))
       => Proxy dom 
-      -> ExpDom dom lang g τ
-      -> LExp lang g τ
+      -> ExpDom dom lang γ τ
+      -> LExp lang γ τ
+-- TODO: Any way to write Dom @dom e 
+--       instead of Dom (Proxy :: Proxy dom) e
+--       or Dom @_ @dom e
 
 -- Values are solely obtained from the domains
 data LVal :: forall sig. Lang sig -> LType sig -> * where
   VDom  :: Domain dom lang
         => Proxy dom -> ValDom dom lang σ -> LVal lang σ
-
-instance Show (LExp lang g t) where
-  show (Var pfS) = "x" ++ (show . inSNat $ singletonIn pfS)
-  show (Dom _ e) = show e
 
 -- Domains and Languages
   
@@ -54,9 +53,17 @@ type family ExpDom (dom :: Dom sig) :: Lang sig -> Ctx sig -> LType sig -> * whe
 type family ValDom (dom :: Dom sig) :: Lang sig -> LType sig -> * where
   ValDom '(exp,val) = val
 
+
+
+
+
 -- Expressions and values are indexed by languages, which are collections of
 -- individual domains. This allows domains to be easily composed.
 newtype Lang sig = Lang [Dom sig]
+
+
+
+
 
 -- A well-formed domain is one in which the effect of the signature is a monad,
 -- and the domain appears in the language
@@ -131,4 +138,14 @@ evalToValDom :: forall sig dom (lang :: Lang sig) g σ.
              -> LExp lang g σ -> SigEffect sig (ValDom dom lang σ)
 evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
 
+
+---------
+
+
+-- Show instance
+-- for debugging purposes
+
+instance Show (LExp lang γ t) where
+  show (Var pfS) = "x" ++ (show . inSNat $ singletonIn pfS)
+  show (Dom _ e) = show e
 

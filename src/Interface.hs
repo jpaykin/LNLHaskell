@@ -33,23 +33,33 @@ type (⊸) (σ :: LType sig) (τ :: LType sig) = LType' sig ('LolliSig σ τ)
 infixr 0 ⊸
 
 data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Abs :: AddCtx x σ g g'
-      -> LExp lang g' τ
-      -> LolliExp lang g (σ ⊸ τ)
-  App :: Merge g1 g2 g
-      -> LExp lang g1 (σ ⊸ τ)
-      -> LExp lang g2 σ
-      -> LolliExp lang g τ
+  Abs :: AddCtx x σ γ γ'
+      -> LExp lang γ' τ
+      -> LolliExp lang γ (σ ⊸ τ)
+  App :: Merge γ1 γ2 γ
+      -> LExp lang γ1 (σ ⊸ τ)
+      -> LExp lang γ2 σ
+      -> LolliExp lang γ τ
 data LolliVal :: Lang sig -> LType sig -> * where
   -- The value is a closure
-  VAbs :: ECtx lang g
-       -> AddCtx x σ g g'
-       -> LExp lang g' τ
+  VAbs :: ECtx lang γ
+       -> AddCtx x σ γ γ'
+       -> LExp lang γ' τ
        -> LolliVal lang (σ ⊸ τ)
 
 type LolliDom = '(LolliExp, LolliVal)
-proxyLolli :: Proxy LolliDom
-proxyLolli = Proxy
+proxyLolli = (Proxy :: Proxy LolliDom)
+
+-- Can we make this CBN instead of CBV? Can we have both?
+instance WFDomain LolliDom lang => Domain LolliDom lang where
+  evalDomain ρ (Abs pfA e) = return $ VDom proxyLolli $ VAbs ρ pfA e
+  evalDomain ρ (App pfM e1 e2) = do
+      VAbs ρ' pfA e1' <- evalToValDom proxyLolli ρ1 e1
+      v2              <- eval' ρ2 e2
+      eval' (addSCtx pfA ρ' $ ValData v2) e1'
+    where
+      (ρ1,ρ2) = splitSCtx pfM ρ
+
 
 instance Show (LolliExp lang g τ) where
   show (Abs pfA e) = "λ " ++ show (addToSNat pfA) ++ " . " ++ show e
@@ -110,15 +120,6 @@ evalApplyValue ρ e v = eval' ρ' $ Dom proxyLolli $ App pfM e $ Var pfS
     pfM = mergeAddFresh @σ ρ
 
 
--- Can we make this CBN instead of CBV? Can we have both?
-instance WFDomain LolliDom lang => Domain LolliDom lang where
-  evalDomain ρ (Abs pfA e) = return $ VDom proxyLolli $ VAbs ρ pfA e
-  evalDomain ρ (App pfM e1 e2) = do
-      VAbs ρ' pfA e1' <- evalToValDom proxyLolli ρ1 e1
-      v2              <- eval' ρ2 e2
-      eval' (addSCtx pfA ρ' $ ValData v2) e1'
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
 
 
 -- DEFINING DOMAINS ---------------------------------
