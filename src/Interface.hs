@@ -91,6 +91,15 @@ letin :: forall lang x σ τ g g1 g2 g2' g2''.
       -> LExp lang g τ
 letin e f = λ f `app` e
 
+compose :: Domain LolliDom lang
+        => LExp lang 'Empty ((τ ⊸ ρ) ⊸ (σ ⊸ τ) ⊸ σ ⊸ ρ)
+compose = λ $ \e1 -> λ $ \e2 -> λ $ \s -> e1 `app` (e2 `app` s)
+
+-- comp :: (Domain LolliDom lang, CMerge g1 g2 g)
+--      => LExp lang g1 (τ ⊸ ρ) -> LExp lang g2 (σ ⊸ τ)
+--      -> LExp lang g (σ ⊸ ρ)
+-- comp e1 e2 = compose `app` e1 `app` e2
+
 -- Sanity check examples 
 
 ex :: Domain LolliDom lang => LExp lang 'Empty ((σ ⊸ τ) ⊸ σ ⊸ τ)
@@ -231,6 +240,11 @@ instance WFDomain TensorDom lang
     where
       (ρ1,ρ2)  = splitSCtx pfM ρ 
       ρ' v1 v2 = addSCtx pfA' (addSCtx pfA ρ2 v1) v2
+
+-- Bottom ------------------------------------------
+
+data BotSig sig = BotSig
+type Bot = (LType' sig 'BotSig :: LType sig)
 
 
 -- Lift --------------------------------------------------------
