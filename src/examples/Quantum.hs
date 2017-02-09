@@ -72,37 +72,55 @@ data Unitary (σ :: LType sig) where
   Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
   Transpose :: Unitary σ -> Unitary σ
 
+
 type KnownQubits σ = SingI (NumQubits σ)
+
+unitarySing :: Unitary σ -> Sing (NumQubits σ)
+unitarySing Identity = sing
+unitarySing Hadamard = SS SZ
+unitarySing PauliX   = SS SZ
+unitarySing PauliY   = SS SZ
+unitarySing PauliZ   = SS SZ
+unitarySing (Alt u0 _)    = SS $ unitarySing u0
+unitarySing (Transpose u) = unitarySing u
+
+
 
 control :: KnownQubits σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
 control = Alt Identity
 
 type QId = Int
 class Monad (SigEffect sig) => HasQuantumEffect sig where
-  type family QUnitary sig
-  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary sig
+  type family QUnitary (σ :: LType sig)
+  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary σ
 
   newQubit  :: Bool -> SigEffect sig QId
   applyU    :: forall (σ :: LType sig).
                Unitary σ -> Qubits σ -> SigEffect sig ()
   measQubit :: QId -> SigEffect sig Bool
 
+
 instance HasQuantumEffect ('Sig DensityMonad sigs) where
-  type QUnitary ('Sig DensityMonad sigs) = Density
+--  type QUnitary ('Sig DensityMonad sigs) = Density
+  type QUnitary (σ :: LType ('Sig DensityMonad sigs)) 
+    = Matrix (Two `RaisePower` NumQubits σ) (Two `RaisePower` NumQubits σ)
 
   interpU :: forall (σ :: LType ('Sig DensityMonad sigs)). 
-             Unitary σ -> QUnitary ('Sig DensityMonad sigs)
-  interpU Identity = identD $ fromIntegral . toInt $ (sing :: Sing (NumQubits σ))
+             Unitary σ -> QUnitary σ
+  interpU Identity = ident
   interpU Hadamard = hadamard
   interpU PauliX   = pauliX
   interpU PauliY   = pauliY
   interpU PauliZ   = pauliZ
-  interpU (Alt (u0 :: Unitary σ') u1)   = 
-    (newD False `kronD` interpU u0) + (newD True `kronD` interpU u1)
-  interpU (Transpose u) = transposeD $ interpU u
+  interpU (Alt (u0 :: Unitary σ') u1) = 
+    withSingI (SS (SS SZ) `raisePowerSNat` unitarySing (Alt u0 u1)) $ 
+    withSingI (SS (SS SZ) `raisePowerSNat` unitarySing u0) $
+      (newD False `kron` interpU u0) + (newD True `kron` interpU u1)
+  interpU (Transpose u) = transpose $ interpU u
 
   newQubit  = newM
-  applyU u  = applyUnitaryM (interpU u)
+  applyU u  = withSingI (SS (SS SZ) `raisePowerSNat` unitarySing u) $ 
+                applyUnitaryM (interpU u)
   measQubit = measM
   
 
@@ -155,8 +173,8 @@ valToQubits v = case fromLVal' proxyQuantum v of
 type family   NumQubits (τ :: LType sig) :: Nat 
 type instance NumQubits ('LType _ 'OneSig)            = 'Z
 type instance NumQubits ('LType _ 'QubitSig)          = 'S 'Z
-type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Times` NumQubits τ2
-type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
+type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Plus` NumQubits τ2
+--type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
 type instance NumQubits ('LType _ ('LowerSig _))      = 'Z
   
 -- Interface for quantum data

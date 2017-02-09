@@ -7,7 +7,7 @@
 
 module Prelim where
 
-import Data.Kind
+--import Data.Kind
 import Data.Constraint
 import Data.Array
 --import GHC.TypeLits (TypeError, ErrorMessage(..))
@@ -55,6 +55,9 @@ type family Minus (m :: Nat) (n :: Nat) :: Nat where
 type family Times (m :: Nat) (n :: Nat) :: Nat where
   Times 'Z     n = 'Z
   Times ('S m) n = Plus n (Times m n)
+type family RaisePower (m :: Nat) (n :: Nat) :: Nat where
+  m `RaisePower` Z = S Z
+  m `RaisePower` S n = m `Times` (m `RaisePower` n)
 {-
 type family Div (m :: Nat) (n :: Nat) :: Nat where
   Div m n     = If (n == Z) (TypeError (Text "Division by zero"))
@@ -98,6 +101,48 @@ instance Integral Nat where
   toInteger = fromIntegral . toInt
   quotRem m n = let (q,r) = quotRem (fromEnum m) (fromEnum n)
                 in (toEnum q, toEnum r)
+
+-- Proofs about nats
+
+{-
+plus0r :: forall n. Sing n -> Dict (Plus n Z ~ n)
+plus0r SZ = Dict
+plus0r (SS n) = case plus0r n of Dict -> Dict
+
+plusSr :: Sing m -> Sing n -> Dict (Plus m (S n) ~ S (Plus m n))
+plusSr = undefined
+
+times1r :: forall n. Sing n -> Dict (Times n (S Z) ~ n)
+times1r = undefined
+
+timesAssoc :: Sing m -> Sing n -> Sing p 
+           -> Dict (Times m (Times n p) ~ Times (Times m n) p)
+timesAssoc = undefined
+
+timesSymm :: Sing m -> Sing n -> Dict (Times m n ~ Times n m)
+timesSymm = undefined
+
+-- really want SMT plugin here
+raisePowerPlus :: forall m n1 n2. Sing m -> Sing n1 -> Sing n2
+                -> Dict (((m `RaisePower` n1 ) `Times` (m `RaisePower` n2) )
+                        ~ (m `RaisePower` (n1 `Plus` n2)))
+raisePowerPlus m SZ n2 = case plus0r (raisePowerSNat m n2) of Dict -> Dict
+raisePowerPlus m n1 SZ = case plus0r n1 of {Dict ->
+                         case times1r (raisePowerSNat m n1) of {Dict -> 
+                         Dict }}
+raisePowerPlus m (SS n1) (SS n2) = 
+  case plusSr n1 n2             of {Dict -> 
+  case timesAssoc m mn1 (timesSNat m mn2) of {Dict -> 
+  case timesAssoc mn1 m mn2     of {Dict -> 
+  case timesSymm mn1 m          of {Dict ->
+  case timesAssoc m mn1 mn2     of {Dict -> 
+  case raisePowerPlus m n1 n2   of {Dict -> 
+    Dict
+  }}}}}}
+  where
+    mn1 = raisePowerSNat m n1
+    mn2 = raisePowerSNat m n2
+-}
 
 -- Operations on SNats
 
@@ -283,8 +328,14 @@ timesSNat :: Sing m1 -> Sing m2 -> Sing (m1 `Times` m2)
 timesSNat SZ _ = SZ
 timesSNat (SS m1) m2 = m2 `plusSNat` timesSNat m1 m2
 
+raisePowerSNat :: Sing m -> Sing n -> Sing (m `RaisePower` n)
+raisePowerSNat _ SZ = SS SZ
+raisePowerSNat m (SS n) = m `timesSNat` (m `raisePowerSNat` n)
+
+
 divSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n -> SomeSing Nat
 divSNat m n = divSomeSing (SomeSing m) (SomeSing n)
+
 
 divSomeSing :: SomeSing Nat -> SomeSing Nat -> SomeSing Nat
 divSomeSing _ n | n == 0 = error "Division by zero"
@@ -323,7 +374,7 @@ raise n (BNat m) = case ltSTrans m n of Dict -> BNat m
 
 allBNat :: Sing n -> [BNat n]
 allBNat SZ = []
-allBNat (SS n) = BNat SZ : (raise n <$> allBNat n)
+allBNat (SS n) = (raise n <$> allBNat n) ++ [maxBNat $ SS n]
 
 instance SingI n => Ix (BNat n) where
   range :: (BNat n, BNat n) -> [BNat n]

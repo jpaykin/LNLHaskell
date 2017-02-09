@@ -11,11 +11,51 @@ module LinTrans where
 
 import Prelim
 
-import Data.Complex
+import qualified Data.Complex as C 
+import Data.Complex (Complex(..))
 import Control.Monad.State.Lazy
 import Data.Singletons
 
-type ℂ = Complex Double
+-- I don't like the show instance for ℂ
+newtype ℂ = ℂ (Complex Double)
+
+liftC :: (Complex Double -> Complex Double) -> ℂ -> ℂ
+liftC f (ℂ c) = ℂ $ f c
+
+i :: ℂ
+i = ℂ $ 0 :+ 1
+conjugate = liftC C.conjugate
+instance Num ℂ where
+  ℂ m + ℂ n = ℂ $ m + n
+  ℂ m - ℂ n = ℂ $ m - n
+  ℂ m * ℂ n = ℂ $ m * n
+  abs = liftC abs
+  signum = liftC signum
+  fromInteger = ℂ . fromInteger 
+instance Fractional ℂ where
+  fromRational = ℂ . fromRational
+  ℂ m / ℂ n    = ℂ $ m / n
+instance Floating ℂ where
+  pi    = ℂ $ pi
+  exp   = liftC exp
+  log   = liftC log
+  sin   = liftC sin
+  cos   = liftC cos
+  asin  = liftC asin
+  acos  = liftC acos
+  atan  = liftC atan
+  sinh  = liftC sinh
+  cosh  = liftC cosh
+  asinh = liftC asinh
+  acosh = liftC acosh
+  atanh = liftC atanh
+instance Show ℂ where
+  show (ℂ (α :+ β)) =   if β == 0 then show α 
+                        else if α == 0 then show β ++ "i"
+                        else show α ++ " + " ++ show β ++ "i"
+
+
+
 type Matrix m n = (BNat m,BNat n) -> ℂ
 
 matrix :: forall m n. (SingI m, SingI n) => [ℂ] -> Matrix m n
@@ -23,8 +63,16 @@ matrix ls (i,j) = ls !! (n * fromIntegral i + fromIntegral j)
   where
     n = toInt (sing :: Sing n)
 
+rows :: forall m n. (SingI m, SingI n) => Matrix m n -> [[ℂ]]
+rows mat = fmap f $ allBNat (sing :: Sing m)
+  where
+    f i = fmap (\j -> mat (i,j)) $ allBNat (sing :: Sing n)
+
+showRows :: (SingI m, SingI n) => Matrix m n -> [String]
+showRows mat = show <$> rows mat
+
 instance (SingI m, SingI n) => Show (Matrix m n) where
-  show = undefined
+  show mat = unlines $ showRows mat
 
 ident :: Matrix m m
 ident (i,j) = if i==j then 1 else 0
@@ -72,6 +120,7 @@ trace mat = foldr f 0 ls
 
 --------------------------------------------------------------------
 
+-- BUG HERE, I THINK
 -- expand applies the matrix when the map is defined, is the identity elsewhere
 expand :: Matrix m m -> (BNat p -> Maybe (BNat m)) -> Matrix p p
 expand mat f (i,j) = case (f i, f j) of
@@ -95,7 +144,8 @@ listToMap ls n = fromIntegral <$> (listToMap' ls $ fromIntegral n)
 
 data Density where
   Density :: SingI n => Matrix n n -> Density
-
+instance Show Density where
+  show (Density m) = show m
 
 size :: forall m. SingI m => Matrix m m -> Int
 size _ = toInt (sing :: Sing m)
@@ -116,6 +166,9 @@ type Two = S (S Z)
 type Three = S Two
 type Four = S Three
 
+square :: forall n. SingI n => [ℂ] -> Matrix n n
+square ls = matrix ls
+
 density0 :: Matrix Two Two
 density0 = matrix [1,0
                   ,0,0]
@@ -124,23 +177,23 @@ density1 :: Matrix Two Two
 density1 = matrix [0,0
                   ,0,1]
 
-hadamard = Density . matrix @Two $ [1/sqrt 2, 1/sqrt 2
-                                   ,1/sqrt 2, -1/sqrt 2]
-i :: ℂ
-i = 0 :+ 1
+hadamard = square @Two $ [1/sqrt 2, 1/sqrt 2
+                         ,1/sqrt 2, -1/sqrt 2]
 
-pauliX = Density . matrix @Two $ [0,1,1,0]
-pauliY = Density . matrix @Two $ [0,-i,i,0]
-pauliZ = Density . matrix @Two $ [1,0,0,-1]
+ 
 
-cnotD = Density . matrix @Four $ [1,0,0,0
-                                 ,0,1,0,0
-                                 ,0,0,0,1
-                                 ,0,0,1,0]
+pauliX = square @Two $ [0,1,1,0]
+pauliY = square @Two $ [0,-i,i,0]
+pauliZ = square @Two $ [1,0,0,-1]
 
-newD :: Bool -> Density
-newD True  = Density density1
-newD False = Density density0
+cnotD  = square @Four $ [1,0,0,0
+                        ,0,1,0,0
+                        ,0,0,0,1
+                        ,0,0,1,0]
+
+newD :: Bool -> Matrix Two Two
+newD True = density1
+newD False = density0 
 
 densityI :: Sing m -> Matrix m m -> Density
 densityI m mat = withSingI m $ Density mat
@@ -160,11 +213,11 @@ applyMatrixD mat perm (Density ρ) =
 newM :: Bool -> DensityMonad Int
 newM b = do
     ρ <- get
-    put $ ρ `kronD` newD b
+    put $ ρ `kronD` (Density $ newD b)
     return $ sizeD ρ
 
-applyUnitaryM :: Density -> [Int] -> DensityMonad ()
-applyUnitaryM (Density mat) ls = get >>= \ρ -> put $ applyMatrixD mat ls ρ
+applyUnitaryM :: SingI m => Matrix m m -> [Int] -> DensityMonad ()
+applyUnitaryM mat ls = get >>= \ρ -> put $ applyMatrixD mat ls ρ
 
 measM :: Int -> DensityMonad Bool
 measM i = do
