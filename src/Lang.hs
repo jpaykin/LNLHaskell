@@ -14,6 +14,7 @@ import Data.Constraint
 import Data.Proxy
 import Data.Maybe
 import Debug.Trace
+import GHC.TypeLits (Symbol(..))
 
 import Prelim
 import Types
@@ -28,18 +29,27 @@ import Proofs
 -- different domains.
 data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Var :: SingletonCtx x τ γ -> LExp lang γ τ
-  Dom :: (Domain dom lang, Show (ExpDom dom lang γ τ))
+  Dom :: (Domain dom lang, Show (ExpDom dom lang γ τ)) -- debugging
       => Proxy dom 
       -> ExpDom dom lang γ τ
       -> LExp lang γ τ
--- TODO: Any way to write Dom @dom e 
---       instead of Dom (Proxy :: Proxy dom) e
---       or Dom @_ @dom e
 
 -- Values are solely obtained from the domains
 data LVal :: forall sig. Lang sig -> LType sig -> * where
   VDom  :: Domain dom lang
         => Proxy dom -> ValDom dom lang σ -> LVal lang σ
+
+dom :: forall dom lang γ σ. (Domain dom lang, Show (ExpDom dom lang γ σ) )
+    => ExpDom dom lang γ σ -> LExp lang γ σ
+dom e = Dom (Proxy @dom) e
+
+vdom :: forall dom lang σ. Domain dom lang => ValDom dom lang σ -> LVal lang σ
+vdom v = VDom (Proxy :: Proxy dom) v
+
+
+
+
+
 
 -- Domains and Languages
   
@@ -52,9 +62,9 @@ type family ExpDom (dom :: Dom sig) :: Lang sig -> Ctx sig -> LType sig -> * whe
   ExpDom '(exp,val) = exp
 type family ValDom (dom :: Dom sig) :: Lang sig -> LType sig -> * where
   ValDom '(exp,val) = val
+--type family TyDom (dom :: Dom sig) :: Sig -> * where
+--  TyDom ('(ty,_,_) :: Dom sig) = ty 
 
--- RDom is a runtime representation of the domain
---data family RDom :: Dom sig -> * 
 
 
 
@@ -111,26 +121,29 @@ eval' ρ (Dom (proxy :: Proxy dom) e)   = evalDomain @sig @dom ρ e
 
 ------------------------------------------------------
 
-fromLVal' :: forall sig dom (lang :: Lang sig) σ.
-            CInLang dom lang
-         => Proxy dom -> LVal lang σ -> Maybe (ValDom dom lang σ)
-fromLVal' _ (VDom (proxy :: Proxy dom') v) = 
-  case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
-    Nothing   -> Nothing
-    Just Dict -> Just v
 
-fromLVal :: forall sig dom (lang :: Lang sig) σ.
-            CInLang dom lang
-         => Proxy dom -> LVal lang σ -> ValDom dom lang σ
-fromLVal proxy = fromJust . fromLVal' proxy
+
+toDomain' :: forall dom lang σ.
+             WFDomain dom lang
+           => LVal lang σ -> Maybe (ValDom dom lang σ)
+toDomain' (VDom (proxy :: Proxy dom') v) = -- cast @_ @(ValDom dom lang σ) v
+  case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
+--  case eqT @dom @dom' of
+    Just Dict -> Just v
+    Nothing   -> Nothing
+
+toDomain :: forall dom lang σ.
+          WFDomain dom lang
+       => LVal lang σ -> ValDom dom lang σ
+toDomain = fromJust . (toDomain' @dom)
 
 -- this function is partial if the value is not
 -- in the specified domain
-evalToValDom :: forall sig dom (lang :: Lang sig) g σ.
-                (CInLang dom lang, Monad (SigEffect sig))
-             => Proxy dom -> ECtx lang g
-             -> LExp lang g σ -> SigEffect sig (ValDom dom lang σ)
-evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
+-- evalToValDom :: forall sig dom (lang :: Lang sig) g σ.
+--                 (WFDomain dom lang, Monad (SigEffect sig), Typeable σ)
+--              => Proxy dom -> ECtx lang g
+--              -> LExp lang g σ -> SigEffect sig (ValDom dom lang σ)
+-- evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
 
 
 ---------

@@ -30,7 +30,7 @@ import Interface
 data ArraySig sig where
   ArraySig :: * -> ArraySig sig
 
-type Array a = ('LType (InSig ArraySig sig) ('ArraySig a) :: LType sig)
+type Array a = (LType' sig ('ArraySig a) :: LType sig)
 
 -- Array Effect ----------------------------------------------------
 
@@ -144,19 +144,19 @@ instance HasArrayDom lang
     arr <- newArray n a
     pure $ varray arr
   evalDomain ρ (Dealloc e) = do
-    VArr arr <- evalToValDom proxyArray ρ e
+    VArr arr <- toDomain @ArrayDom <$> eval' ρ e
     deallocArray arr
     pure vunit
   evalDomain ρ (Read i e) = do
-    VArr arr <- evalToValDom proxyArray ρ e
+    VArr arr <- toDomain @ArrayDom <$> eval' ρ e
     a <- readArray arr i
     pure $ varray arr `vpair` vput a
   evalDomain ρ (Write i e a) = do
-    VArr arr <- evalToValDom proxyArray ρ e
+    VArr arr <- toDomain @ArrayDom <$> eval' ρ e
     writeArray arr i a
     pure $ varray arr
   evalDomain ρ (Size e) = do
-    VArr arr <- evalToValDom proxyArray ρ e
+    VArr arr <- toDomain @ArrayDom <$> eval' ρ e
     len      <- sizeArray arr
     pure $ varray arr `vpair` vput len
 

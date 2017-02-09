@@ -20,7 +20,7 @@ import Proofs
 import Classes
 
 data RefSig sig = RefSig (LType sig)
-type Ref σ = ('LType (InSig RefSig sig) ('RefSig σ) :: LType sig)
+type Ref (σ :: LType sig) = LType' sig ('RefSig σ)
 
 data RefLExp lang γ τ where
   New :: LExp lang γ τ -> RefLExp lang γ (Ref τ)
@@ -31,7 +31,7 @@ data RefLVal lang τ where
   VRef :: IORef (LVal lang τ) -> RefLVal lang (Ref τ)
 
 type RefDom = '(RefLExp, RefLVal)
-proxyRef = (Proxy :: Proxy RefDom)
+
 type HasRefDom (lang :: Lang sig) = ( SigEffect sig ~ IO
                                     , WFDomain RefDom lang
                                     , Domain TensorDom lang
@@ -43,9 +43,9 @@ instance HasRefDom lang => Domain RefDom lang where
     v <- eval' ρ e
     vref <$> newIORef v
   evalDomain ρ (Update pfM f e) = do
-      VRef r     <- evalToValDom proxyRef ρ2 e
+      VRef r     <- toDomain @RefDom <$> eval' ρ2 e
       v          <- readIORef r
-      VPair v' t <- fromLVal proxyTensor <$> evalApplyValue ρ1 f v
+      VPair v' t <- toDomain @TensorDom <$> evalApplyValue ρ1 f v
       writeIORef r v'
       return $ vref r `vpair` t
     where
@@ -53,14 +53,14 @@ instance HasRefDom lang => Domain RefDom lang where
 
 
 new :: Domain RefDom lang => LExp lang γ τ -> LExp lang γ (Ref τ)
-new = Dom proxyRef . New
+new = dom @RefDom . New
 update :: (Domain RefDom lang, CMerge γ1 γ2 γ)
        => LExp lang γ1 (σ ⊸ σ ⊗ τ)
        -> LExp lang γ2 (Ref σ) -> LExp lang γ (Ref σ ⊗ τ)
-update f r = Dom proxyRef $ Update merge f r
+update f r = dom @RefDom $ Update merge f r
 
 vref :: Domain RefDom lang => IORef (LVal lang τ) -> LVal lang (Ref τ)
-vref = VDom proxyRef . VRef
+vref = vdom @RefDom . VRef
 
 instance Show (RefLExp lang γ τ) where
   show _ = undefined

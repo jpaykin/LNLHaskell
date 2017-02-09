@@ -96,7 +96,7 @@ instance WFSession σ => WFSession ('RecvSession τ σ)
 data SessionSig sig where
   ChannelSig :: Session sig -> SessionSig sig
 
-type Chan σ = ('LType (InSig SessionSig sig) ('ChannelSig σ) :: LType sig)
+type Chan (σ :: Session sig) = LType' sig ('ChannelSig σ)
 
 data SessionLExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
   Send    :: LExp lang g (τ ⊗ Chan (τ :!: σ)) -> SessionLExp lang g (Chan σ)
@@ -113,9 +113,6 @@ data SessionLVal :: forall sig. Lang sig -> LType sig -> * where
 
 
 type SessionDom = '(SessionLExp, SessionLVal)
-
-proxySession :: Proxy SessionDom
-proxySession = Proxy
 
 instance Show (SessionLExp lang g τ) where
   show (Send e) = "Send(" ++ show e ++ ")"
@@ -135,28 +132,28 @@ send :: (HasSessions lang, CMerge g1 g2 g)
      => LExp lang g1 τ 
      -> LExp lang g2 (Chan (τ :!: σ)) 
      -> LExp lang g (Chan σ)
-send e e' = Dom proxySession $ Send (e ⊗ e')
+send e e' = dom @SessionDom $ Send (e ⊗ e')
 
 receive :: HasSessions lang
         => LExp lang g (Chan (τ :?: σ)) -> LExp lang g (τ ⊗ Chan σ)
-receive = Dom proxySession . Receive
+receive = dom @SessionDom . Receive
 
 fork :: (HasSessions lang, WFSession σ) 
      => LExp lang g ((Chan (Dual σ)) ⊸ Chan 'SendEnd) -> LExp lang g (Chan σ)
-fork f = Dom proxySession $ Fork f
+fork f = dom @SessionDom $ Fork f
 
 wait :: HasSessions lang => LExp lang g (Chan 'RecvEnd) -> LExp lang g One
-wait = Dom proxySession . Wait
+wait = dom @SessionDom . Wait
 
 link :: (HasSessions lang,CMerge g1 g2 g)
      => LExp lang g1 (Chan σ) -> LExp lang g2 (Chan (Dual σ))
      -> LExp lang g One
-link e1 e2 = Dom proxySession $ Link (e1 ⊗ e2)
+link e1 e2 = dom @SessionDom $ Link (e1 ⊗ e2)
 
 vchan :: forall sig (lang :: Lang sig) (σ :: Session sig).
          HasSessions lang
       => C (SigEffect sig) -> LVal lang (Chan σ)
-vchan = VDom proxySession . VChan
+vchan = vdom @SessionDom . VChan
 
 -- A common operation is to receive some classical data on a channel,
 -- process it classically, and then send back the result.
@@ -171,28 +168,28 @@ processWith f = Suspend . λ $ \c ->
 
 instance HasSessions lang => Domain SessionDom (lang  :: Lang sig) where
   evalDomain ρ (Send e)   = do
-    VPair v1 v2 <- evalToValDom proxyTensor ρ e
-    VChan c     <- return $ fromLVal proxySession v2
+    VPair v1 v2 <- toDomain @TensorDom <$> eval' ρ e
+    VChan c     <- return $ toDomain @SessionDom v2
     sendC c v1
     return $ vchan c
   evalDomain ρ (Receive e) = do
-    VChan c <- evalToValDom proxySession ρ e
+    VChan c <- toDomain @SessionDom <$> eval' ρ e
     v <- recvC c
     return $ vpair v $ vchan c
   evalDomain ρ (Fork f) = do
     (c,c') <- newC
     forkEffect $ do
-        VChan c0 <- fromLVal proxySession <$> evalApplyValue ρ f (vchan c)
+        VChan c0 <- toDomain @SessionDom <$> evalApplyValue ρ f (vchan c)
         sendC c0 ()
     return $ vchan c'
   evalDomain ρ (Wait e) = do
-    VChan c <- evalToValDom proxySession ρ e
+    VChan c <- toDomain @SessionDom <$> eval' ρ e
     () <- recvC c
     return vunit
   evalDomain ρ (Link e) = do
-    VPair v1 v2 <- evalToValDom proxyTensor ρ e
-    VChan c1    <- return $ fromLVal proxySession v1
-    VChan c2    <- return $ fromLVal proxySession v2
+    VPair v1 v2 <- toDomain @TensorDom <$> eval' ρ e
+    VChan c1    <- return $ toDomain @SessionDom v1
+    VChan c2    <- return $ toDomain @SessionDom v2
     linkC c1 c2
     c <- newC
     return vunit

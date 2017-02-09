@@ -10,7 +10,6 @@
 module Quantum where
 
 import Data.Kind
-import Data.Proxy
 import Control.Applicative
 import Data.Singletons
 --import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
@@ -18,9 +17,7 @@ import Data.Singletons
 import Prelim
 import Types
 import Context
---import Proofs
 import Lang
---import Classes
 import Interface
 
 --import Density hiding (cnot)
@@ -45,8 +42,6 @@ data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
 --            -> LExp lang g1 σ -> LExp lang g2 Qubit -> QuantumLExp lang g (σ ⊗ Qubit)
 
 type QuantumDom = '(QuantumLExp,QuantumLVal)
-proxyQuantum :: Proxy QuantumDom
-proxyQuantum = Proxy
 
 instance Show (Unitary σ) where
   show Hadamard = "H"
@@ -140,7 +135,7 @@ instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
     i <- newQubit @sig b
     return $ vqubit i
   evalDomain ρ (Meas e)  = do
-    VQubit i <- evalToValDom proxyQuantum ρ e
+    VQubit i <- toDomain @QuantumDom <$> eval' ρ e
     b <- measQubit @sig i
     return $ vput b
   evalDomain ρ (Unitary u e) = do
@@ -159,11 +154,11 @@ type Qubits (τ :: LType sig) = [QId]
 
 valToQubits :: forall sig (lang :: Lang sig) τ.
               HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)
-valToQubits v = case fromLVal' proxyQuantum v of 
+valToQubits v = case toDomain' @QuantumDom v of
     Just (VQubit i) -> return [i]
-    Nothing -> case fromLVal' proxyOne v of
+    Nothing -> case toDomain' @OneDom v of
       Just VUnit -> return []
-      Nothing -> case fromLVal' proxyTensor v of
+      Nothing -> case toDomain' @TensorDom v of
         Just (VPair v1 v2) -> liftA2 (++) (valToQubits v1) (valToQubits v2)
         Nothing -> return [] 
 --        case fromLVal' proxyLower v of
@@ -181,21 +176,21 @@ type instance NumQubits ('LType _ ('LowerSig _))      = 'Z
 
 new :: HasQuantumDom lang
     => Bool -> LExp lang 'Empty Qubit
-new = Dom proxyQuantum . New
+new = dom @QuantumDom . New
 
 
 meas :: HasQuantumDom lang
      => LExp lang g Qubit -> LExp lang g (Lower Bool)
-meas = Dom proxyQuantum . Meas
+meas = dom @QuantumDom . Meas
 
 unitary :: HasQuantumDom lang
         => Unitary σ -> LExp lang g σ -> LExp lang g σ
-unitary u = Dom proxyQuantum . Unitary u
+unitary u = dom @QuantumDom . Unitary u
 
 vqubit :: forall sig (lang :: Lang sig).
           HasQuantumDom lang
        => QId -> LVal lang Qubit
-vqubit = VDom proxyQuantum . VQubit
+vqubit = vdom @QuantumDom . VQubit
 
 controlBy :: (HasQuantumDom lang, KnownQubits σ)
           => Unitary σ -> LExp lang g (Qubit ⊗ σ) -> LExp lang g (Qubit ⊗ σ)
