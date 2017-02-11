@@ -44,14 +44,16 @@ data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
 type QuantumDom = '(QuantumLExp,QuantumLVal)
 
 instance Show (Unitary σ) where
+  show Identity = "I"
   show Hadamard = "H"
   show PauliX   = "X"
   show PauliY   = "Y"
   show PauliZ   = "Z"
-  show _        = undefined
+  show (Alt u0 u1) = "(" ++ show u0 ++ " ⊕ " ++ show u1 ++ ")"
+  show (Transpose u) = show u ++ "†"
 instance Show (QuantumLExp lang g τ) where
-  show (New b)  = "New " ++ show b
-  show (Meas q) = "Meas " ++ show q
+  show (New b)  = "New(" ++ show b ++ ")"
+  show (Meas q) = "Meas(" ++ show q ++ ")"
   show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
 --  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
 
@@ -70,12 +72,12 @@ data Unitary (σ :: LType sig) where
 
 type KnownQubits σ = SingI (NumQubits σ)
 
-unitarySing :: Unitary σ -> Sing (NumQubits σ)
+unitarySing :: forall σ. Unitary σ -> Sing (NumQubits σ)
 unitarySing Identity = sing
-unitarySing Hadamard = SS SZ
-unitarySing PauliX   = SS SZ
-unitarySing PauliY   = SS SZ
-unitarySing PauliZ   = SS SZ
+unitarySing Hadamard = one
+unitarySing PauliX   = one
+unitarySing PauliY   = one
+unitarySing PauliZ   = one
 unitarySing (Alt u0 _)    = SS $ unitarySing u0
 unitarySing (Transpose u) = unitarySing u
 
@@ -98,7 +100,7 @@ class Monad (SigEffect sig) => HasQuantumEffect sig where
 instance HasQuantumEffect ('Sig DensityMonad sigs) where
 --  type QUnitary ('Sig DensityMonad sigs) = Density
   type QUnitary (σ :: LType ('Sig DensityMonad sigs)) 
-    = Matrix (Two `RaisePower` NumQubits σ) (Two `RaisePower` NumQubits σ)
+    = Squared (NumQubits σ)
 
   interpU :: forall (σ :: LType ('Sig DensityMonad sigs)). 
              Unitary σ -> QUnitary σ
@@ -108,14 +110,16 @@ instance HasQuantumEffect ('Sig DensityMonad sigs) where
   interpU PauliY   = pauliY
   interpU PauliZ   = pauliZ
   interpU (Alt (u0 :: Unitary σ') u1) = 
-    withSingI (SS (SS SZ) `raisePowerSNat` unitarySing (Alt u0 u1)) $ 
-    withSingI (SS (SS SZ) `raisePowerSNat` unitarySing u0) $
+    withSingI (two `raiseToSNat` unitarySing (Alt u0 u1)) $ 
+    withSingI (two `raiseToSNat` unitarySing u0) $
       (newD False `kron` interpU u0) + (newD True `kron` interpU u1)
   interpU (Transpose u) = transpose $ interpU u
 
   newQubit  = newM
-  applyU u  = withSingI (SS (SS SZ) `raisePowerSNat` unitarySing u) $ 
-                applyUnitaryM (interpU u)
+  applyU :: forall (σ :: LType ('Sig DensityMonad sigs)).
+            Unitary σ -> Qubits σ -> DensityMonad ()
+  applyU u  = withSingI (unitarySing u) $ 
+                applyUnitaryM @(NumQubits σ) (interpU u)
   measQubit = measM
   
 

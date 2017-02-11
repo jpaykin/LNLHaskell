@@ -15,6 +15,12 @@ import qualified Data.Complex as C
 import Data.Complex (Complex(..))
 import Control.Monad.State.Lazy
 import Data.Singletons
+import Data.Maybe (fromJust)
+import Data.Tuple (swap)
+import Unsafe.Coerce
+import Data.Constraint (Dict(..))
+import Data.List ( (\\) )
+
 
 -- I don't like the show instance for ℂ
 newtype ℂ = ℂ (Complex Double)
@@ -57,6 +63,7 @@ instance Show ℂ where
 
 
 type Matrix m n = (BNat m,BNat n) -> ℂ
+type Squared n = Matrix (Two `RaiseTo` n) (Two `RaiseTo` n)
 
 matrix :: forall m n. (SingI m, SingI n) => [ℂ] -> Matrix m n
 matrix ls (i,j) = ls !! (n * fromIntegral i + fromIntegral j)
@@ -79,8 +86,9 @@ ident (i,j) = if i==j then 1 else 0
 
 transpose :: Matrix m n -> Matrix n m
 transpose mat (i,j) = conjugate $ mat (j,i)
+
 transposeD :: Density -> Density 
-transposeD (Density ρ) = Density $ transpose ρ
+transposeD (Density m ρ) = Density m $ transpose ρ
 
 pruneRows :: Sing m -> Matrix (S m) n -> Matrix m n
 pruneRows m mat (i,j) = mat (raise m i,j)
@@ -105,12 +113,13 @@ mult mat1 mat2 (i,j) = dot sing (row i mat1) (col j mat2)
 
 kron :: forall m1 m2 n1 n2. (SingI m1, SingI n1, SingI m2, SingI n2)
      => Matrix m1 n1 -> Matrix m2 n2 -> Matrix (m1 `Times` m2) (n1 `Times` n2)
-kron mat1 mat2 (BNat i,BNat j) = mat1 (bNat i1, bNat j1) * mat2 (bNat i2,bNat j2)
+kron mat1 mat2 (BNat i,BNat j) = 
+    mat1 (bNat i1, bNat j1) * mat2 (bNat i2,bNat j2)
   where
     i1 = i `divSNat` (sing :: Sing m2)
-    i2 = i `modSNat` (sing :: Sing n2)
-    j1 = j `divSNat` (sing :: Sing m2)
-    j2 = j `divSNat` (sing :: Sing n2)
+    i2 = i `modSNat` (sing :: Sing m2)
+    j1 = j `divSNat` (sing :: Sing n2)
+    j2 = j `modSNat` (sing :: Sing n2)
 
 trace :: forall m. SingI m => Matrix m m -> ℂ
 trace mat = foldr f 0 ls
@@ -120,6 +129,7 @@ trace mat = foldr f 0 ls
 
 --------------------------------------------------------------------
 
+{-
 -- BUG HERE, I THINK
 -- expand applies the matrix when the map is defined, is the identity elsewhere
 expand :: Matrix m m -> (BNat p -> Maybe (BNat m)) -> Matrix p p
@@ -130,44 +140,96 @@ expand mat f (i,j) = case (f i, f j) of
 applyMatrix :: SingI p 
             => Matrix m m -> (BNat p -> Maybe (BNat m)) -> Matrix p p -> Matrix p p
 applyMatrix mat f ρ = expand (transpose mat) f `mult` ρ `mult` expand mat f
+-}
 
 
+{-
 listToMap :: forall p m. (SingI p, SingI m) => [Int] -> BNat p -> Maybe (BNat m)
 listToMap ls n = fromIntegral <$> (listToMap' ls $ fromIntegral n)
   where
     listToMap' :: [Int] -> Int -> Maybe Int
     listToMap' ls i | i < length ls = Just $ ls !! i
     listToMap' ls i | otherwise     = Nothing
+-}
 
+-- produces an association list
+listToAssoc :: forall n. SingI n => [Int] -> [(BNat n, BNat n)]
+listToAssoc ls = (fromIntegral <$> [0..n]) `zip` (fromIntegral <$> pad ls)
+  where
+    n = maxBNat (sing :: Sing n)
+
+pad :: [Int] -> [Int]
+pad ls = ls ++ ([0..] \\ ls)
+
+mkPermutation :: [(BNat n,BNat n)] -> BNat n -> BNat n
+mkPermutation ls i = 
+  case lookup i ls of
+    Just i' -> i'
+    Nothing -> error $ "Permutation " ++ show ls 
+                        ++ " not well defined at index " ++ show i
+
+permute :: forall m. SingI m => [(BNat m, BNat m)] -> Matrix m m -> Matrix m m
+permute ls mat (i,j) = mat (mkPermutation ls i, mkPermutation ls j)
+
+expand :: forall m n. (SingI m, SingI n) 
+       => [(BNat (m `Times` n), BNat (m `Times` n))] 
+       -> Matrix m m -> Matrix (m `Times` n) (m `Times` n)
+expand ls mat = withSingI (timesSNat (sing :: Sing m) (sing :: Sing n)) $ 
+                  permute ls $ mat `kron` ident @n
+
+applyMatrix :: forall m p. (SingI m, SingI p, (p < m) ~ 'False)
+            => Squared m -> [Int] -> Squared p -> Squared p
+applyMatrix mat ls ρ = 
+  case raiseToPlus two m minus of {Dict ->
+  case plusMinus m p of {Dict -> 
+  withSingI (raiseToSNat two m) $
+  withSingI (raiseToSNat two minus) $ 
+  withSingI (raiseToSNat two p) $
+     expand @(Two `RaiseTo` m) @(Two `RaiseTo` (p `Minus` m)) 
+            (swap <$> ls') (transpose mat) 
+     `mult` ρ 
+     `mult` expand @(Two `RaiseTo` m) @(Two `RaiseTo` (p `Minus` m)) ls' mat
+  }}
+  where
+    ls' :: [(BNat (Two `RaiseTo` p), BNat (Two `RaiseTo` p))]
+    ls' = withSingI (raiseToSNat two p) $ listToAssoc ls
+    m = (sing :: Sing m)
+    p = (sing :: Sing p)
+    minus :: Sing (p `Minus` m)
+    minus = minusSNat p m
 
 --------------------------------------------------------------
 
 data Density where
-  Density :: SingI n => Matrix n n -> Density
+  Density :: Sing n -> Squared n -> Density
 instance Show Density where
-  show (Density m) = show m
+  show (Density n m) = withSingI (two `raiseToSNat` n) $ show m
 
 size :: forall m. SingI m => Matrix m m -> Int
 size _ = toInt (sing :: Sing m)
+logsizeD :: Density -> Int
+logsizeD (Density n mat) = toInt n
 sizeD :: Density -> Int
-sizeD (Density mat) = size mat
+sizeD ρ = 2 ^ logsizeD ρ
+
 
 
 kronD :: Density -> Density -> Density
-kronD (Density mat1) (Density mat2) = kronD' mat1 mat2
+kronD (Density m mat1) (Density n mat2) = kronD' m n mat1 mat2
   where
-    kronD' :: forall m n. (SingI m, SingI n) => Matrix m m -> Matrix n n 
-           -> Density -- Matrix (m `Times` n) (m `Times n`)
-    kronD' mat1 mat2 = withSingI (timesSNat (sing :: Sing m) (sing :: Sing n)) $
-                       Density $ mat1 `kron` mat2
+    kronD' :: forall m n. Sing m -> Sing n -> Squared m -> Squared n 
+           -> Density
+    kronD' m n mat1 mat2 = 
+      withSingI (raiseToSNat two n) $ 
+      withSingI (raiseToSNat two m) $ 
+      withSingI (raiseToSNat two (plusSNat m n)) $
+      case raiseToPlus two m n of 
+        Dict -> Density (m `plusSNat` n) $ mat1 `kron` mat2
 
 -- Some matrices
-type Two = S (S Z)
-type Three = S Two
-type Four = S Three
 
-square :: forall n. SingI n => [ℂ] -> Matrix n n
-square ls = matrix ls
+square :: forall n. SingI n => [ℂ] -> Squared n
+square ls = withSingI (two `raiseToSNat` (sing :: Sing n)) $ matrix ls
 
 density0 :: Matrix Two Two
 density0 = matrix [1,0
@@ -177,58 +239,61 @@ density1 :: Matrix Two Two
 density1 = matrix [0,0
                   ,0,1]
 
-hadamard = square @Two $ [1/sqrt 2, 1/sqrt 2
+hadamard = square @One $ [1/sqrt 2, 1/sqrt 2
                          ,1/sqrt 2, -1/sqrt 2]
 
  
 
-pauliX = square @Two $ [0,1,1,0]
-pauliY = square @Two $ [0,-i,i,0]
-pauliZ = square @Two $ [1,0,0,-1]
+pauliX = square @One $ [0,1,1,0]
+pauliY = square @One $ [0,-i,i,0]
+pauliZ = square @One $ [1,0,0,-1]
 
-cnotD  = square @Four $ [1,0,0,0
-                        ,0,1,0,0
-                        ,0,0,0,1
-                        ,0,0,1,0]
+cnotD  = square @Two $ [1,0,0,0
+                       ,0,1,0,0
+                       ,0,0,0,1
+                       ,0,0,1,0]
 
 newD :: Bool -> Matrix Two Two
 newD True = density1
 newD False = density0 
 
-densityI :: Sing m -> Matrix m m -> Density
-densityI m mat = withSingI m $ Density mat
+--densityI :: Sing m -> Matrix m m -> Density
+--densityI m mat = withSingI m $ Density m mat
 
 identD :: Int -> Density
 identD n = case fromIntegral @_ @(SomeSing Nat) n of 
-             SomeSing n' -> densityI n' ident
+             SomeSing n' -> Density n' ident
 
 type DensityMonad = StateT Density []
 
-applyMatrixD :: SingI m => Matrix m m -> [Int] -> Density -> Density
-applyMatrixD mat perm (Density ρ) = 
-    Density $ applyMatrix mat (listToMap perm) ρ
-
+applyMatrixD :: forall m. SingI m => Squared m -> [Int] -> Density -> Density
+applyMatrixD mat perm (Density (p :: Sing p) ρ) = 
+  case compareSNat p (sing :: Sing m) of
+    -- p < m
+    Left Dict -> error "Cannot apply matrix to state: matrix too large"
+    -- m <= p
+    Right Dict -> withSingI p $ Density p $ applyMatrix @m @p mat perm ρ
 
 
 newM :: Bool -> DensityMonad Int
 newM b = do
     ρ <- get
-    put $ ρ `kronD` (Density $ newD b)
+    put $ ρ `kronD` (Density one $ newD b)
     return $ sizeD ρ
 
-applyUnitaryM :: SingI m => Matrix m m -> [Int] -> DensityMonad ()
-applyUnitaryM mat ls = get >>= \ρ -> put $ applyMatrixD mat ls ρ
+applyUnitaryM :: forall m. SingI m => Squared m -> [Int] -> DensityMonad ()
+applyUnitaryM mat ls = get >>= \ρ -> put $ applyMatrixD @m mat ls ρ
 
 measM :: Int -> DensityMonad Bool
 measM i = do
     ρ <- get
-    (b,ρ') <- lift [ (False, applyMatrixD density0 [i] ρ)
-                   , (True,  applyMatrixD density1 [i] ρ) ]
+    (b,ρ') <- lift [ (False, applyMatrixD @One density0 [i] ρ)
+                   , (True,  applyMatrixD @One density1 [i] ρ) ]
     put ρ'
     return b
 
 runQ :: DensityMonad a -> [(a,Density)]
-runQ m = runStateT m (Density @(S Z) ident)
+runQ m = runStateT m (Density SZ ident)
 
 -- todo: getDensity :: DensityMoand a -> Density
 
@@ -240,5 +305,34 @@ instance (SingI m, SingI n) => Num (Matrix m n) where
   abs mat (i,j) = abs $ mat(i,j)
   signum mat = undefined -- trace mat
   fromInteger n = matrix . repeat $ fromIntegral n
---instance Num Density where
---  Density mat1 + Density mat2 = Density $ mat1 + mat2
+instance Num Density where
+  Density n1 mat1 + Density n2 mat2 = 
+    withSingI (two `raiseToSNat` n1) $
+    withSingI (two `raiseToSNat` n2) $
+    case eqSNat n1 n2 of 
+      Left Dict -> Density n1 $ mat1 + mat2
+      Right _   -> error $ "Cannot add mismatched matrices " 
+                            ++ show mat1 ++ " and " ++ show mat2
+  _ - _ = undefined
+  _ * _ = undefined
+  abs _ = undefined
+  signum = undefined
+  fromInteger n = undefined
+
+nil :: Int -> Density
+nil n = case fromIntegral n of
+          SomeSing n' -> withSingI (two `raiseToSNat` n') $
+                         Density n' . matrix $ fromIntegral <$> repeat 0
+
+getDensity :: DensityMonad a -> Density
+getDensity m = foldr f (nil n) ls
+  where
+    ls = runQ m
+    n = logsizeD . snd $ head ls
+--    nil = case fromIntegral n of 
+--            SomeSing n' -> withSingI (two `raiseToSNat` n') $
+--                           Density n' . matrix $ fromIntegral <$> [0..]
+    f (_,ρ) ρ0 = ρ + ρ0
+
+instance Show (DensityMonad a) where
+  show = show . getDensity

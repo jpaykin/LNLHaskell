@@ -107,6 +107,14 @@ data InN :: Nat -> LType sig -> NCtx sig -> * where
 data In :: Nat -> LType sig -> Ctx sig -> * where
   In :: InN x σ g -> In x σ ('N g)
 
+instance Show (In x σ γ) where
+  show (In pfI) = "x" ++ show (toInt pfI)
+instance ToInt (InN x s γ) where
+  toInt InEnd = 0
+  toInt (InHere _) = 0
+  toInt (InLater _ pfI) = 1 + toInt pfI
+
+
 -- Div -----------------------------------------------
 
 data Div :: Ctx sig -> Ctx sig -> Ctx sig -> * where

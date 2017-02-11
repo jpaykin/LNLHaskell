@@ -13,6 +13,7 @@ import Data.Array
 --import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Type.Equality
 import Data.Singletons
+import Unsafe.Coerce
 
 --------------------------------------------
 -- Nats ------------------------------------
@@ -55,17 +56,33 @@ type family Minus (m :: Nat) (n :: Nat) :: Nat where
 type family Times (m :: Nat) (n :: Nat) :: Nat where
   Times 'Z     n = 'Z
   Times ('S m) n = Plus n (Times m n)
-type family RaisePower (m :: Nat) (n :: Nat) :: Nat where
-  m `RaisePower` Z = S Z
-  m `RaisePower` S n = m `Times` (m `RaisePower` n)
+type family RaiseTo (m :: Nat) (n :: Nat) :: Nat where
+  m `RaiseTo` Z = S Z
+  m `RaiseTo` S n = m `Times` (m `RaiseTo` n)
+
+-- Some Nats
+type One   = S Z
+type Two   = S One
+type Three = S Two
+type Four  = S Three
+
+one :: Sing One
+one = SS SZ
+two :: Sing Two
+two = SS one
+three :: Sing Three
+three = SS two
+four :: Sing Four
+four = SS three
+
 {-
 type family Div (m :: Nat) (n :: Nat) :: Nat where
-  Div m n     = If (n == Z) (TypeError (Text "Division by zero"))
-               (If (n == (S Z)) m
-               (If (m < n) Z (S ((m `Minus` n) `Div` n))))
---  Div _ Z     = TypeError (Text "Division by zero")
---  Div m (S Z) = m
---  Div m n     = If (m < n) Z (S ((m `Minus` n) `Div` n))
+--  Div m n     = If (n == Z) (TypeError (Text "Division by zero"))
+--               (If (n == (S Z)) m
+--               (If (m < n) Z (S ((m `Minus` n) `Div` n))))
+  Div _ Z     = TypeError (Text "Division by zero")
+  Div m (S Z) = m
+  Div m n     = If (m < n) Z (S ((m `Minus` n) `Div` n))
 type family Mod (m :: Nat) (n :: Nat) :: Nat where
   Mod _ Z     = TypeError (Text "Modulo by zero")
   Mod _ (S Z) = Z
@@ -103,45 +120,59 @@ instance Integral Nat where
                 in (toEnum q, toEnum r)
 
 -- Proofs about nats
+-- using unsafeCoerce for efficiency, but may uncomment out proofs to check typing
 
-{-
 plus0r :: forall n. Sing n -> Dict (Plus n Z ~ n)
-plus0r SZ = Dict
-plus0r (SS n) = case plus0r n of Dict -> Dict
+plus0r _ = unsafeCoerce (Dict :: Dict ())
+--plus0r SZ = Dict
+--plus0r (SS n) = case plus0r n of Dict -> Dict
 
 plusSr :: Sing m -> Sing n -> Dict (Plus m (S n) ~ S (Plus m n))
-plusSr = undefined
+plusSr _ _ = unsafeCoerce (Dict :: Dict ())
+--plusSr SZ _ = Dict
+--plusSr (SS m) n = case plusSr m n of Dict -> Dict
+
+plusMinus :: (n < m) ~ False 
+          => Sing m -> Sing n -> Dict (Plus m (Minus n m) ~ n)
+plusMinus _ _ = unsafeCoerce (Dict :: Dict ())
+--plusMinus SZ SZ = Dict
+--plusMinus SZ (SS _) = Dict
+--plusMinus (SS m) (SS n) = case plusMinus m n of Dict -> Dict
 
 times1r :: forall n. Sing n -> Dict (Times n (S Z) ~ n)
-times1r = undefined
+times1r _ = unsafeCoerce (Dict :: Dict ())
+--times1r SZ = Dict
+--times1r (SS n) = case times1r n of Dict -> Dict
 
 timesAssoc :: Sing m -> Sing n -> Sing p 
            -> Dict (Times m (Times n p) ~ Times (Times m n) p)
-timesAssoc = undefined
+timesAssoc _ _ _ = unsafeCoerce (Dict :: Dict ())
 
 timesSymm :: Sing m -> Sing n -> Dict (Times m n ~ Times n m)
-timesSymm = undefined
+timesSymm _ _ = unsafeCoerce (Dict :: Dict ())
 
 -- really want SMT plugin here
-raisePowerPlus :: forall m n1 n2. Sing m -> Sing n1 -> Sing n2
-                -> Dict (((m `RaisePower` n1 ) `Times` (m `RaisePower` n2) )
-                        ~ (m `RaisePower` (n1 `Plus` n2)))
-raisePowerPlus m SZ n2 = case plus0r (raisePowerSNat m n2) of Dict -> Dict
-raisePowerPlus m n1 SZ = case plus0r n1 of {Dict ->
-                         case times1r (raisePowerSNat m n1) of {Dict -> 
+raiseToPlus :: forall m n1 n2. Sing m -> Sing n1 -> Sing n2
+                -> Dict (((m `RaiseTo` n1 ) `Times` (m `RaiseTo` n2) )
+                        ~ (m `RaiseTo` (n1 `Plus` n2)))
+raiseToPlus _ _ _ = unsafeCoerce (Dict :: Dict ())
+{-
+raiseToPlus m SZ n2 = case plus0r (raiseToSNat m n2) of Dict -> Dict
+raiseToPlus m n1 SZ = case plus0r n1 of {Dict ->
+                         case times1r (raiseToSNat m n1) of {Dict -> 
                          Dict }}
-raisePowerPlus m (SS n1) (SS n2) = 
+raiseToPlus m (SS n1) (SS n2) = 
   case plusSr n1 n2             of {Dict -> 
   case timesAssoc m mn1 (timesSNat m mn2) of {Dict -> 
   case timesAssoc mn1 m mn2     of {Dict -> 
   case timesSymm mn1 m          of {Dict ->
   case timesAssoc m mn1 mn2     of {Dict -> 
-  case raisePowerPlus m n1 n2   of {Dict -> 
+  case raiseToPlus m n1 n2   of {Dict -> 
     Dict
   }}}}}}
   where
-    mn1 = raisePowerSNat m n1
-    mn2 = raisePowerSNat m n2
+    mn1 = raiseToSNat m n1
+    mn2 = raiseToSNat m n2
 -}
 
 -- Operations on SNats
@@ -161,6 +192,8 @@ instance Ord (SomeSing Nat) where
     else case compareSNat m n of
       Left Dict  -> True
       Right Dict -> False
+instance Show (SomeSing Nat) where
+  show (SomeSing n) = show n
 
 instance Num (SomeSing Nat) where
   SomeSing m + SomeSing n = SomeSing $ plusSNat m n
@@ -269,7 +302,7 @@ compareSNat (SS m) (SS n) = case compareSNat m n of
 
 
 eqSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n 
-       -> Either (Dict ((m==n) ~ 'True)) (Dict ((m == n) ~ 'False))
+       -> Either (Dict (m~n, (m==n) ~ 'True)) (Dict ((m == n) ~ 'False))
 eqSNat SZ SZ = Left Dict
 eqSNat SZ (SS _) = Right Dict
 eqSNat (SS _) SZ = Right Dict
@@ -328,9 +361,9 @@ timesSNat :: Sing m1 -> Sing m2 -> Sing (m1 `Times` m2)
 timesSNat SZ _ = SZ
 timesSNat (SS m1) m2 = m2 `plusSNat` timesSNat m1 m2
 
-raisePowerSNat :: Sing m -> Sing n -> Sing (m `RaisePower` n)
-raisePowerSNat _ SZ = SS SZ
-raisePowerSNat m (SS n) = m `timesSNat` (m `raisePowerSNat` n)
+raiseToSNat :: Sing m -> Sing n -> Sing (m `RaiseTo` n)
+raiseToSNat _ SZ = SS SZ
+raiseToSNat m (SS n) = m `timesSNat` (m `raiseToSNat` n)
 
 
 divSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n -> SomeSing Nat
@@ -342,6 +375,8 @@ divSomeSing _ n | n == 0 = error "Division by zero"
 divSomeSing m n | n == 1 = m
 divSomeSing m n | m < n  = 0
 divSomeSing m n | otherwise = 1 + ((m-n) `divSomeSing` n)
+
+
 
 modSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n -> SomeSing Nat
 modSNat m n = modSomeSing (SomeSing m) (SomeSing n)

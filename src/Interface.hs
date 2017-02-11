@@ -62,7 +62,7 @@ instance WFDomain LolliDom lang => Domain LolliDom lang where
 
 
 instance Show (LolliExp lang g τ) where
-  show (Abs pfA e) = "λ " ++ show (addToSNat pfA) ++ " . " ++ show e
+  show (Abs pfA e) = "λ " ++ show (addIn pfA) ++ " . " ++ show e
   show (App _ e1 e2) = "(" ++ show e1 ++ ") (" ++ show e2 ++ ")"
 
 λ :: forall g lang x σ τ g' g''. 
@@ -195,7 +195,7 @@ type TensorDom  = '(TensorExp, TensorVal)
 
 instance Show (TensorExp lang g τ) where
   show (Pair _ e1 e2) = "(" ++ show e1 ++ ", " ++ show e2 ++ ")"
-  show (LetPair _ pfA1 pfA2 e e') = "let (" ++ show (addToSNat pfA1) ++ ", " ++ show (addToSNat pfA2)
+  show (LetPair _ pfA1 pfA2 e e') = "let (" ++ show (addIn pfA1) ++ ", " ++ show (addIn pfA2)
     ++ ") = " ++ show e ++ " in " ++ show e'
 
 (⊗) :: (Domain TensorDom lang, CMerge g1 g2 g)
@@ -430,7 +430,8 @@ type family Bang (lang :: Lang sig) (a :: LType sig) :: LType sig where
   Bang lang a = Lower (Lift lang a)
 data Lin lang a where
   Lin :: Lift lang (Lower a) -> Lin lang a
-
+instance Show (Lin lang a) where
+  show (Lin (Suspend e)) = show e
 
 
 instance Domain LowerDom lang => Functor (Lin lang) where

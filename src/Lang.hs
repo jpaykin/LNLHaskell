@@ -155,4 +155,3 @@ toDomain = fromJust . (toDomain' @dom)
 instance Show (LExp lang γ t) where
   show (Var pfS) = "x" ++ (show . inSNat $ singletonIn pfS)
   show (Dom _ e) = show e
-
