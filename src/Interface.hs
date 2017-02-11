@@ -14,6 +14,7 @@ import Data.Kind
 import Data.Proxy
 import Data.Singletons
 
+import Prelim hiding (One)
 import Types
 import Context
 import Proofs
@@ -631,3 +632,64 @@ swapMP = Suspend . λ $ \ pr ->
     y ⊗ x
 
 -}
+
+-- Patterns
+
+-- class Pat' (lang :: Lang sig) (γ :: Ctx sig) (σ :: LType sig) (γ' :: Ctx sig) pat where
+--   pat :: pat -> LExp lang γ' σ
+-- instance CSingletonCtx (Fresh γ) σ γ' => Pat' lang γ σ  γ' (LExp lang γ' σ) where
+--   pat e = e
+-- instance (Pat' lang γ1 σ1 γ1' pat1, Pat' lang γ2 σ2 γ2' pat2, CMerge γ1 γ1' γ2, CMerge γ1' γ2' γ', τ ~ 'LType inSig ('TensorSig σ1 σ2))
+--       => Pat' (lang :: Lang sig) γ1 τ γ' (pat1,pat2) where
+--   pat (e1,e2) = pat e1 ⊗ pat e2
+
+class LTypeEq (σ :: LType sig) (τ :: LType sig)
+
+class Pat (lang :: Lang sig) (γ :: Ctx sig) (σ :: LType sig) pat 
+    | sig pat -> γ where
+  pat :: pat -> LExp lang γ σ
+  caseof' :: (CMerge γ2 γ γ2', CMerge γ2' γ1 γ')
+          => LExp lang γ1 σ -> (pat -> LExp lang γ2' τ) -> LExp lang γ' τ
+
+--instance Pat lang γ σ (LExp lang γ σ) where
+--  pat = id
+instance ( WFDomain OneDom lang, τ ~ One ) 
+        => Pat (lang :: Lang sig) ('Empty :: Ctx sig) τ () where
+  pat () = unit
+  caseof' e f = e `letUnit` (f ())
+
+instance ( WFDomain TensorDom lang, τ ~ (σ1 ⊗ σ2), CMerge γ1 γ2 γ
+         , Pat lang γ1 σ1 pat1, Pat lang γ2 σ2 pat2)
+        => Pat lang γ τ (pat1,pat2) where
+  pat (p1,p2) = pat @lang @γ1 @σ1 p1 ⊗ pat @lang @γ2 @σ2 p2
+  caseof' = undefined
+--  caseof' e f = e `letPair`  \(x1,x2) ->
+--                x1 `caseof'` \pat1 ->
+--                x2 `caseof'` \pat2 ->
+--                f (pat1,pat2)
+
+instance ( WFDomain PlusDom lang, τ ~ (σ1 ⊕ σ2)
+         , Pat lang γ σ1 pat1, Pat lang γ σ2 pat2 )
+        => Pat lang γ τ (Either pat1 pat2) where
+  pat (Left  p) = inl $ pat p
+  pat (Right p) = inr $ pat p
+  caseof' = undefined
+--  caseof' e f = caseof e (\x -> x `caseof'` \pat -> f (Left pat))
+--                         (\x -> x `caseof'` \pat -> f (Right pat))
+
+--instance (τ ~ Bot) => Pat lang Empty τ (LExp lang 'Empty τ) where
+--  pat = id
+--  caseof' e f = 
+
+instance ( WFDomain LowerDom lang, CInList τ '[ Lower a, σ1 & σ2, Bot, σ1 ⊸ σ2 ])
+        => Pat lang γ τ (LExp lang γ τ) where
+  pat = id
+  caseof' e f = undefined -- f e
+
+-- Example programs
+
+λ' f = λ $ \x -> x `caseof'` f
+
+--foo :: (WFDomain LolliDom lang, WFDomain TensorDom lang) 
+--    => Lift lang (σ ⊗ τ ⊸ τ ⊗ σ)
+--foo = Suspend $ λ' $ \(x,y) -> y ⊗ x
