@@ -245,7 +245,21 @@ type MyArrayDom = ( 'Lang '[ ArrayDom, TensorDom, OneDom, LowerDom, LolliDom ] :
 toFromListIO :: Show a => [a] -> Lin MyArrayDom [a]
 toFromListIO = toFromListM
 
+-- Reverse
 
+reverse :: LinT lang (LState' (Array a)) ()
+reverse = sizeM >>= \n -> reverse' 0 (n-1)
+  where
+    -- reverse' i j reverses the array between indices i and j, inclusive
+    reverse' :: Int -> Int -> LinT lang (LState' (Array a)) ()
+    reverse' i j | i >= j    = return ()
+    reverse' i j | otherwise = do
+        x <- readM i
+        y <- readM j
+        writeM i y
+        writeM j x
+        reverse' (i+1) (j-1)
+    
 
 
 
