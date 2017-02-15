@@ -28,7 +28,7 @@ var = Var $ singletonCtx @x
 -- Implication ----------------------------------
 
 data LolliSig sig where
-  LolliSig :: LType sig -> LType sig -> LolliSig ty
+  LolliSig :: LType sig -> LType sig -> LolliSig sig
 
 type (⊸) (σ :: LType sig) (τ :: LType sig) = LType' sig ('LolliSig σ τ)
 infixr 0 ⊸
