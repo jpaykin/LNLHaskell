@@ -485,7 +485,9 @@ run e = do
 
 -- Defunctionalization from singletons library!
 class LFunctor lang (f :: LType sig ~> LType sig) where
-  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
+--  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
+  lfmap :: CMerge γ1 γ2 γ 
+        => LExp lang γ1 (σ ⊸ τ) -> LExp lang γ2 (f @@ σ) -> LExp lang γ (f @@ τ)
 class LFunctor lang f => LApplicative lang f where
   lpure :: LExp lang 'Empty (τ ⊸ f @@ τ)
   llift :: LExp lang 'Empty (f @@ (σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
@@ -516,7 +518,7 @@ lowerT2 = λ $ \f -> λ $ \x -> λ $ \y ->
 instance (Domain LowerDom lang, Domain LolliDom lang, LFunctor lang f) 
       => Functor (LinT lang f) where
   fmap (g :: a -> b) (x :: LinT lang f a) = 
-    suspendT $ lfmap @lang @f `app` (lowerT `app` put g) `app` forceT x
+    suspendT $ lfmap @lang @f (lowerT `app` put g) (forceT x)
 instance (Domain LowerDom lang, Domain LolliDom lang, LApplicative lang f) 
       => Applicative (LinT lang f) where
   pure a = suspendT $ lpure @lang @f `app` put a
@@ -525,8 +527,9 @@ instance (Domain LowerDom lang, Domain LolliDom lang, LApplicative lang f)
   g <*> a = suspendT $ foo `app` forceT a
     where
       g' :: LExp lang 'Empty (f @@ (Lower a ⊸ Lower b))
-      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
-            `app` lowerT `app` forceT g
+--      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
+--            `app` lowerT `app` forceT g
+      g' = lfmap @lang @f (lowerT @lang @a @b) (forceT g)
       foo :: LExp lang 'Empty (f @@ (Lower a) ⊸ f @@ (Lower b))
       foo = llift @lang @f @(Lower a) @(Lower b) `app` g'
 
@@ -574,9 +577,14 @@ evalLState st s f = suspendL $
 
 
 instance HasLStateDom lang => LFunctor lang (LState' σ) where
-  lfmap = λ $ \f -> λ $ \fs -> λ $ \r ->
-    fs `app` r `letPair` \(r,s) ->
-    r ⊗ (f `app` s)
+  lfmap :: forall γ1 γ2 γ τ1 τ2. CMerge γ1 γ2 γ 
+        => LExp lang γ1 (τ1 ⊸ τ2) -> LExp lang γ2 (LState σ τ1) -> LExp lang γ (LState σ τ2)
+  lfmap f fs = force lfmap' `app` f `app` fs
+    where
+      lfmap' :: Lift lang ((τ1 ⊸ τ2) ⊸ LState σ τ1 ⊸ LState σ τ2)
+      lfmap' = Suspend . λ $ \f -> λ $ \fs -> λ $ \r ->
+        fs `app` r `letPair` \(r,s) ->
+        r ⊗ (f `app` s)
 
 instance HasLStateDom lang => LApplicative lang (LState' r) where
   lpure = λ $ \s -> λ $ \r -> r ⊗ s

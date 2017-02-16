@@ -115,8 +115,8 @@ eval' :: forall sig (lang :: Lang sig) (g :: Ctx sig) (σ :: LType sig).
      => ECtx lang g
      -> LExp lang g σ 
      -> SigEffect sig (LVal lang σ)
-eval' ρ (Var pfS)                      = return $ lookup (singletonIn pfS) ρ
-eval' ρ (Dom (proxy :: Proxy dom) e)   = evalDomain @sig @dom ρ e
+eval' ρ (Var pfS)                      = trace (show pfS) $ return $ lookup (singletonIn pfS) ρ
+eval' ρ (Dom (proxy :: Proxy dom) e)   = trace (show e) $ evalDomain @sig @dom ρ e
 
 
 ------------------------------------------------------

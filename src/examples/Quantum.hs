@@ -149,12 +149,6 @@ instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
     return v 
     
 type Qubits (τ :: LType sig) = [QId]
--- This type family should be open 
--- type family Qubits (τ :: LType sig) :: * 
--- type instance Qubits ('LType _ 'OneSig) = ()
--- type instance Qubits ('LType _ 'QubitSig) = QId
--- type instance Qubits ('LType _ ('TensorSig τ1 τ2)) = (Qubits τ1, Qubits τ2)
--- type instance Qubits ('LType _ ('LowerSig _)) = ()
 
 valToQubits :: forall sig (lang :: Lang sig) τ.
               HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)

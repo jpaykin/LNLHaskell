@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase
+             EmptyCase, FlexibleContexts
 #-}
 {-# OPTIONS_GHC -Wall -Wcompat #-}
 
@@ -144,13 +144,6 @@ instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
   singletonCtx = SingN $ singletonNCtx
 
 
--- Remove Context ------------------------------------------
-
-class CRemoveCtx x σ g g' | x σ g -> g', x σ g' -> g where
-  removeCtx :: AddCtx x σ g' g
-
-instance CAddCtx x σ g' g => CRemoveCtx x σ g g' where
-  removeCtx = addCtx
 
 
 -- Merge ----------------------------------------------------
@@ -166,10 +159,12 @@ instance CMergeU ('Used σ) 'Unused ('Used σ) where
 instance CMergeU 'Unused ('Used σ) ('Used σ) where
   mergeU = MergeUR
 
-class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1 where
+class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2, WFCtx g1, WFCtx g2, WFCtx g3) 
+    => CMerge g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1 where
   merge :: Merge g1 g2 g3
 
-instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2) => CMerge g1 g2 g3 where
+instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2, WFCtx g1, WFCtx g2, WFCtx g3) 
+    => CMerge g1 g2 g3 where
   merge = divMerge div
 
 class CMergeForward g1 g2 g3 | g1 g2 -> g3 where
@@ -195,9 +190,19 @@ instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
   mergeNF = MergeCons mergeU mergeNF
 
 
+class (CDiv γ 'Empty γ, CDiv  γ γ 'Empty, KnownCtx γ, CMergeForward 'Empty γ γ, CMergeForward γ 'Empty γ) => WFCtx γ 
+class (CDivN γ γ 'Empty, KnownNCtx γ) => WFNCtx γ
+
+instance WFCtx 'Empty
+instance WFNCtx γ => WFCtx ('N γ)
+instance WFNCtx ('End σ)
+instance WFNCtx γ => WFNCtx ('Cons 'Unused γ)
+instance WFNCtx γ => WFNCtx ('Cons ('Used σ) γ)
+
+
 -- Div ---------------------------------------
 
-class CDiv g1 g2 g3 | g1 g2 -> g3 where
+class CDiv g1 g2 g3 | g1 g2 -> g3, g2 g3 -> g1 where
   div :: Div g1 g2 g3
 
 instance CDiv 'Empty 'Empty 'Empty where
@@ -207,7 +212,7 @@ instance KnownNCtx g => CDiv ('N g) 'Empty ('N g) where
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
   div = DivN divN
 
-class CDivN g1 g2 g3 | g1 g2 -> g3 where
+class CDivN g1 g2 g3 | g1 g2 -> g3, g2 g3 -> g1 where
   divN :: DivN g1 g2 g3
 
 instance σ ~ τ => CDivN ('End σ) ('End τ) 'Empty where
