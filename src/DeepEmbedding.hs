@@ -5,6 +5,7 @@
              ScopedTypeVariables,
              EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds
 #-}
+{-# OPTIONS -fconstraint-solver-iterations=5 #-}
 
 module DeepEmbedding where
 
@@ -16,7 +17,7 @@ import Data.Maybe
 import Debug.Trace
 import GHC.TypeLits (Symbol(..))
 
-import Prelim
+import Prelim hiding (One)
 import Types
 import Classes
 --import Proofs
@@ -29,21 +30,24 @@ import Tagless
 
 -- Linear expressions consist solely of variables, and constructors added from
 -- different domains.
-data LExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
-  Var :: CSingletonCtx x τ γ => LExp lang γ τ
-  Dom :: (Domain dom lang) --, Show (dom lang γ τ)) -- debugging
-      => Proxy dom 
-      -> dom lang γ τ
-      -> LExp lang γ τ
+data LExp :: forall sig. Ctx sig -> LType sig -> * where
+  Var :: CSingletonCtx x τ γ => LExp γ τ
+  Dom :: forall sig (dom :: Dom sig) (γ :: Ctx sig) (τ :: LType sig).
+         Domain dom --, Show (dom lang γ τ)) -- debugging
+      => Proxy dom
+      -> dom LExp γ τ
+      -> LExp γ τ
 
-dom :: forall dom lang γ σ. (Domain dom lang) --, Show (dom lang γ σ) )
-    => dom lang γ σ -> LExp lang γ σ
-dom e = Dom (Proxy @dom) e
+dom :: forall dom γ σ. Domain dom => dom LExp γ σ -> LExp γ σ
+dom = Dom (Proxy :: Proxy dom)
+--dom :: forall dom lang γ σ. (Domain dom lang) --, Show (dom lang γ σ) )
+--    => dom lang γ σ -> LExp lang γ σ
+--dom e = Dom (Proxy @dom) e
 
 -- Expressions and values are indexed by languages, which are collections of
 -- individual domains. This allows domains to be easily composed.
-type Dom sig = Lang sig -> Exp sig
-newtype Lang sig = Lang [Dom sig]
+type Dom sig = Exp sig -> Exp sig
+--newtype Lang sig = Lang [Dom sig]
 
 
 
@@ -51,14 +55,16 @@ newtype Lang sig = Lang [Dom sig]
 
 -- A well-formed domain is one in which the effect of the signature is a monad,
 -- and the domain appears in the language
-type WFDomain (dom :: Dom sig) (lang :: Lang sig) = 
-    (CInLang dom lang, Monad (SigEffect sig))
+--type WFDomain (dom :: Dom sig) (lang :: Lang sig) = 
+--    (CInLang dom lang, Monad (SigEffect sig))
 
 -- The domain type class characterizes well-formed domains in which
 -- expressions in the domain evaluate to values in the langauge,
 -- under the monad
-class WFDomain dom lang => Domain (dom :: Dom sig) (lang :: Lang sig) where
-  evalDomain  :: dom lang g σ
+--class WFDomain dom lang => Domain (dom :: Dom sig) (lang :: Lang sig) where
+class Domain (dom :: Dom sig) where
+  evalDomain  :: Monad (SigEffect sig)
+              => dom LExp g σ
               -> CtxVal g
               -> SigEffect sig (LVal σ)
 
@@ -66,11 +72,11 @@ class WFDomain dom lang => Domain (dom :: Dom sig) (lang :: Lang sig) where
 -- Evaluation ---------------------------------------------
 -----------------------------------------------------------
 
-instance Eval (LExp (lang :: Lang sig)) where
-  eval :: forall γ τ. Monad (SigEffect sig)
-       => LExp lang γ τ -> CtxVal γ -> SigEffect sig (LVal τ)
+instance Eval (LExp :: Exp sig) where
+  eval :: forall (γ :: Ctx sig) τ. Monad (SigEffect sig)
+       => LExp γ τ -> CtxVal γ -> SigEffect sig (LVal τ)
   eval Var                          γ = return $ singletonInv @_ @_ @τ @γ γ
-  eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain @_ @dom e γ
+  eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain e γ
 
 -----------------------------------------------------------
 -- Interface-----------------------------------------------
@@ -78,42 +84,104 @@ instance Eval (LExp (lang :: Lang sig)) where
 
 data VarName x σ = VarName
 
-instance HasVar (LExp lang) where
+instance HasVar LExp where
   var = Var
 
-data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
+-- Lolli -------------------------------------------------
+
+data LolliExp :: forall sig. Exp sig -> Exp sig where
   Abs :: CAddCtx x σ γ γ'
-      => VarName x σ -> Proxy '(γ,γ')
-      -> LExp lang γ' τ
-      -> LolliExp lang γ (σ ⊸ τ)
+      => VarName x σ
+      -> exp γ' τ
+      -> LolliExp exp γ (σ ⊸ τ)
   App :: CMerge γ1 γ2 γ
-      => Proxy '(γ1,γ2)
-      -> LExp lang γ1 (σ ⊸ τ)
-      -> LExp lang γ2 σ
-      -> LolliExp lang γ τ
+      => exp γ1 (σ ⊸ τ)
+      -> exp γ2 σ
+      -> LolliExp exp γ τ
 
-instance Domain LolliExp lang => HasLolli (LExp lang) where
-  λ       :: forall x σ γ γ' γ'' τ.
+instance HasLolli LExp where
+  λ       :: forall x sig (σ :: LType sig) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-          => (LExp lang γ'' σ -> LExp lang γ' τ) -> LExp lang γ (σ ⊸ τ)
-  λ f     = dom @LolliExp $ Abs (VarName @x) Proxy (f Var)
-  e1 ^ e2 = dom @LolliExp $ App Proxy e1 e2
+          => (LExp γ'' σ -> LExp γ' τ) -> LExp γ (σ ⊸ τ)
+  λ f     = dom @LolliExp $ Abs (VarName @x) (f Var)
+  e1 ^ e2 = dom @LolliExp $ App e1 e2
 
-instance WFDomain LolliExp lang => Domain LolliExp (lang :: Lang sig) where
-  evalDomain (Abs (VarName :: VarName x σ) (Proxy :: Proxy '(γ,γ')) e) γ = 
-    return $ \s -> eval e (add @_ @x @σ @γ @γ' s γ)
-  evalDomain (App (Proxy :: Proxy '(γ1,γ2)) f e) γ = do
-      f' <- eval @sig f γ1
-      x  <- eval @sig e γ2
+instance Domain LolliExp where
+  evalDomain (Abs (VarName :: VarName x σ) (e :: LExp γ' τ)) γ = 
+    return $ \s -> eval e (add @_ @x @σ @_ @γ' s γ)
+  evalDomain (App (f :: LExp γ1 (σ ⊸ τ)) (e :: LExp γ2 σ)) γ = do
+      f' <- eval f γ1
+      x  <- eval e γ2
       f' x
     where
       (γ1,γ2) = split @_ @γ1 @γ2 γ
 
+-- One -------------------------------------------------
+
+data OneExp :: forall sig. Exp sig -> Exp sig where
+  Unit :: OneExp exp 'Empty One
+  LetUnit :: CMerge γ1 γ2 γ => exp γ1 One -> exp γ2 τ -> OneExp exp γ τ
+
+instance HasOne LExp where
+  unit = dom @OneExp Unit
+  letUnit e1 e2 = dom @OneExp $ LetUnit e1 e2
+
+instance Domain OneExp where
+  evalDomain Unit () = return ()
+  evalDomain (LetUnit (e1 :: LExp γ1 One) (e2 :: LExp γ2 τ)) ρ = do
+      () <- eval e1 ρ1
+      eval e2 ρ2
+    where
+      (ρ1,ρ2) = split @_ @γ1 @γ2 ρ
+
+-- Tensor -------------------------------------------------
+
+data TensorExp :: forall sig. Exp sig -> Exp sig where
+  Pair :: CMerge γ1 γ2 γ
+       => exp γ1 τ1 -> exp γ2 τ2 -> TensorExp exp γ (τ1 ⊗ τ2)
+  LetPair :: ( CMerge γ1 γ2 γ
+             , CAddCtx x1 σ1 γ2 γ2', CAddCtx x2 σ2 γ2' γ2'' )
+          => VarName x1 σ1 -> VarName x2 σ2 -> Proxy γ2'
+          -> exp γ1 (σ1 ⊗ σ2)
+          -> exp γ2'' τ
+          -> TensorExp exp γ τ
+
+{-
+instance HasTensor LExp where
+  e1 ⊗ e2 = dom @TensorExp $ Pair e1 e2
+
+  letPair :: forall x1 x2 sig (σ1 :: LType sig) σ2 τ γ1 γ2 γ γ2' γ2'' γ21 γ22.
+             ( CMerge γ1 γ2 γ
+             , CAddCtx x1 σ1 γ2 γ2'
+             , CAddCtx x2 σ2 γ2' γ2''
+             , CSingletonCtx x1 σ1 γ21
+             , CSingletonCtx x2 σ2 γ22
+             , x1 ~ Fresh γ, x2 ~ Fresh2 γ )
+      => LExp γ1 (σ1 ⊗ σ2)
+      -> ((LExp γ21 σ1, LExp γ22 σ2) -> LExp γ2'' τ)
+      -> LExp γ τ
+  letPair e f = dom @TensorExp $ 
+                LetPair (VarName @x1) (VarName @x2) (Proxy :: Proxy γ2') e e'
+    where
+      e' :: LExp γ2 τ
+      e' = f (var @_ @_ @x1 @σ1 @γ21 ,var @_ @_ @x2 @σ2 @γ22)
+-}
+instance Domain TensorExp
+
+
+-- Bottom -------------------------------------------------
+
+-- Plus -------------------------------------------------
+
+-- With -------------------------------------------------
+
+-- Lower -------------------------------------------------
+
 ------------------------------------------------------------------------
 
-type family FromLang (lang :: Lang sig) :: [Dom sig] where
-   FromLang ('Lang lang) = lang
-type CInLang dom lang = CInList dom (FromLang lang)
+--type family FromLang (lang :: Lang sig) :: [Dom sig] where
+--   FromLang ('Lang lang) = lang
+--type CInLang dom lang = CInList dom (FromLang lang)
 
 
 

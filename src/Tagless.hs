@@ -1,7 +1,7 @@
 {-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
+             InstanceSigs, TypeApplications, 
              ScopedTypeVariables,
              EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds,
              TypeFamilyDependencies, LambdaCase
@@ -23,7 +23,7 @@ import Data.Kind
 data LolliSig sig = Lolli (LType sig) (LType sig)
 
 -- 2) embed it into LType
-type (σ :: LType sig) ⊸ τ = MkLType sig ('Lolli σ τ)
+type (σ :: LType sig) ⊸ (τ :: LType sig) = MkLType sig ('Lolli σ τ)
 infixr 0 ⊸
 
 -- 3) define an LVal instance
@@ -38,7 +38,6 @@ class HasLolli (exp :: Exp sig) where
 
 
 
-
 -- One -----------------------------------------------
 data OneSig ty = OneSig
 type One = (MkLType sig 'OneSig :: LType sig)
@@ -48,7 +47,6 @@ class HasOne (exp :: Exp sig) where
   unit :: exp Empty One
   letUnit :: CMerge γ1 γ2 γ 
           => exp γ1 One -> exp γ2 τ -> exp γ τ
-
 
 
 -- Tensor ---------------------------------------------  
@@ -70,6 +68,8 @@ class HasTensor (exp :: Exp sig) where
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
+
+{-
 
 
 -- Bottom -------------------------------------------
@@ -129,12 +129,13 @@ data Lift (exp :: Exp sig) (τ :: LType sig) where
   Suspend :: exp 'Empty τ -> Lift exp τ
 force :: Lift exp τ -> exp 'Empty τ
 force (Suspend e) = e
-
+-}
 
 ---------------------------------------------------------------
 -- Examples ---------------------------------------------------
 ---------------------------------------------------------------
 
+{-
 id :: HasLolli exp => Lift exp (σ ⊸ σ)
 id = Suspend . λ $ \x -> x
 
@@ -147,6 +148,7 @@ uncurryL = Suspend . λ $ \f -> λ $ \x ->
     f ^ x1 ^ x2
 uncurry :: (HasLolli exp,HasTensor exp,WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
 uncurry e = force uncurryL ^ e
+-}
 
 --compose :: (HasLolli exp,CMerge γ1 γ2 γ)
 --        => exp γ1 (τ ⊸ ρ) -> exp γ2 (σ ⊸ τ) -> exp γ (σ ⊸ ρ)
@@ -160,6 +162,7 @@ uncurry e = force uncurryL ^ e
 class HasVar (exp :: Exp sig) where
   var :: forall x σ γ. CSingletonCtx x σ γ => exp γ σ
 
+{-
 data Bang a = Bang a
 type family Pat (σ :: LType sig) where
     Pat ('LType _ ('TensorSig σ τ)) = (Pat σ, Pat τ)
@@ -171,6 +174,8 @@ type family Pat (σ :: LType sig) where
 class FreshCtx (γ :: Ctx sig) (σ :: LType sig) (γ' :: Ctx sig)
 instance (pf ~ IsInSig TensorSig sig, FreshCtx γ σ1 γ0, FreshCtx γ0 σ2 γ')
       => FreshCtx (γ :: Ctx sig) ('LType pf ('TensorSig σ1 σ2)) γ'
+-}
+
 
 --type family   FreshCtx (γ :: Ctx sig) (σ :: LType sig) :: Ctx sig where
 --    FreshCtx γ ('LType _ ('TensorSig σ τ)) = FreshCtx (FreshCtx γ σ) τ
@@ -182,13 +187,14 @@ instance (pf ~ IsInSig TensorSig sig, FreshCtx γ σ1 γ0, FreshCtx γ0 σ2 γ')
 --type Matchable (exp :: Exp sig) σ = 
 --    (WFCtx (FreshCtx 'Empty σ), Matchable' exp (FreshCtx 'Empty σ) σ (Pat σ))
 
+{-
 type Matchable exp σ = Matchable' exp σ (Pat σ)
 -- essentially saying that pat ≅ exp (FreshCtx Empty σ) σ
 class Matchable' (exp :: Exp sig) σ pat where
   pat   :: FreshCtx 'Empty σ γ => pat -> exp γ σ
   λcase :: (FreshCtx γ σ γ')
         => (pat -> exp γ' τ) -> exp γ (σ ⊸ τ)
-
+-}
 
 -- γ0 is a context of variables not to use
 -- class HasLolli exp 
