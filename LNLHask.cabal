@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src, src/examples
-  exposed-modules:     Lib, Prelim, Types, Context, Proofs, Classes, Lang, Interface
+  exposed-modules:     Lib, Prelim, Types, Context, Classes, Tagless, ShallowEmbedding, DeepEmbedding
   build-depends:       base >= 4.7 && < 5
                      , template-haskell == 2.11.*
                      , constraints >= 0.8

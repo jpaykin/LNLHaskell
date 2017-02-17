@@ -3,7 +3,7 @@
              MultiParamTypeClasses, FlexibleInstances, AllowAmbiguousTypes,
              InstanceSigs, RankNTypes
 #-}
-{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors #-}
+--{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors #-}
 
 module Prelim where
 
