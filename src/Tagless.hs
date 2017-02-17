@@ -160,43 +160,62 @@ uncurry e = force uncurryL ^ e
 class HasVar (exp :: Exp sig) where
   var :: forall x σ γ. CSingletonCtx x σ γ => exp γ σ
 
-
-type family Pat (σ :: LType sig)
-type instance Pat ('LType _ ('TensorSig σ τ)) = (Pat σ, Pat τ)
-type instance Pat ('LType _ ('PlusSig σ τ))   = Either (Pat σ) (Pat τ)
+data Bang a = Bang a
+type family Pat (σ :: LType sig) where
+    Pat ('LType _ ('TensorSig σ τ)) = (Pat σ, Pat τ)
+    Pat ('LType _ ('PlusSig σ τ))   = Either (Pat σ) (Pat τ)
+    Pat ('LType _ ('LowerSig a))    = Bang a
+--  Pat _                           = 
 
 -- FreshCtx γ σ is a context γ extended with fresh variables for every pattern variable in σ
-type family FreshCtx (γ :: Ctx sig) (σ :: LType sig) :: Ctx sig
-type instance FreshCtx γ ('LType _ ('TensorSig σ τ)) = FreshCtx (FreshCtx γ σ) τ
-type instance FreshCtx γ ('LType _ 'OneSig)          = AddFresh γ One
+class FreshCtx (γ :: Ctx sig) (σ :: LType sig) (γ' :: Ctx sig)
+instance (pf ~ IsInSig TensorSig sig, FreshCtx γ σ1 γ0, FreshCtx γ0 σ2 γ')
+      => FreshCtx (γ :: Ctx sig) ('LType pf ('TensorSig σ1 σ2)) γ'
+
+--type family   FreshCtx (γ :: Ctx sig) (σ :: LType sig) :: Ctx sig where
+--    FreshCtx γ ('LType _ ('TensorSig σ τ)) = FreshCtx (FreshCtx γ σ) τ
+--    FreshCtx γ ('LType _ ('PlusSig σ τ))   = FreshCtx (FreshCtx γ σ) τ
+--    FreshCtx γ σ                           = AddFresh γ σ
 
 --class (Matchable' exp (Div γout γin) σ (Pat σ), CMerge γin (Div γout γin) γout) 
 --    => Matchable exp γin γout σ 
-type Matchable exp γ σ = Matchable' exp (Div (FreshCtx γ σ) γ) γ σ (Pat σ)
+--type Matchable (exp :: Exp sig) σ = 
+--    (WFCtx (FreshCtx 'Empty σ), Matchable' exp (FreshCtx 'Empty σ) σ (Pat σ))
+
+type Matchable exp σ = Matchable' exp σ (Pat σ)
+-- essentially saying that pat ≅ exp (FreshCtx Empty σ) σ
+class Matchable' (exp :: Exp sig) σ pat where
+  pat   :: FreshCtx 'Empty σ γ => pat -> exp γ σ
+  λcase :: (FreshCtx γ σ γ')
+        => (pat -> exp γ' τ) -> exp γ (σ ⊸ τ)
+
 
 -- γ0 is a context of variables not to use
-class HasLolli exp 
-   => Matchable' (exp :: Exp sig) (γ :: Ctx sig) (γ0 :: Ctx sig) (σ :: LType sig) (pat :: Type) where
-  pat   :: pat -> exp γ σ
-  λcase :: CMerge γ γ0 γ' => (pat -> exp γ' τ) -> exp γ0 (σ ⊸ τ)
+-- class HasLolli exp 
+--    => Matchable' (exp :: Exp sig) (γ :: Ctx sig)
+--                  (σ :: LType sig) (pat :: Type) where
+--   pat   :: pat -> exp γ σ
+--   λcase :: forall γ0 γ' τ. 
+--            CMerge γ γ0 γ' => (pat -> exp γ' τ) -> exp γ0 (σ ⊸ τ)
 
 --  match :: (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
 --        => exp γ1 σ -> (pat -> exp γ2' τ) -> exp γ' τ
 --  match e f = λcase f ^ e
 
-instance ( CMerge γ1 γ2 γ, HasTensor exp
-         , Matchable' exp γ1 γ0 σ1 pat1, Matchable' exp γ2 γ0 σ2 pat2
-         , τ ~ (σ1 ⊗ σ2) )
-      => Matchable' (exp :: Exp sig) γ γ0 τ (pat1,pat2) where
-  pat (p1,p2) = (pat @_ @_ @γ1 @γ0 @σ1 p1) ⊗ (pat @_ @_ @γ2 @γ0 @σ2 p2)
+--instance ( CMerge γ1 γ2 γ, HasTensor exp
+--         , Matchable' exp γ1 σ1 pat1, Matchable' exp γ2 σ2 pat2
+--         , τ ~ (σ1 ⊗ σ2) )
+--      => Matchable' (exp :: Exp sig) γ τ (pat1,pat2) where
 
-  λcase :: forall γ' ρ.
-           CMerge γ0 γ γ' => ((pat1,pat2) -> exp γ' ρ) -> exp γ0 (σ1 ⊗ σ2 ⊸ ρ)
-  λcase f = uncurry f'
---    uncurry @exp $ λcase (\p1 -> λcase @_ @exp (\p2 -> f (p1,p2)))
-    where
-      f' :: exp γ0 (σ1 ⊸ σ2 ⊸ ρ)
-      f' = undefined -- λcase @_ @exp @γ1 @σ1 @pat1 $ \p1 -> _
+--   pat (p1,p2) = (pat @_ @_ @γ1 @σ1 p1) ⊗ (pat @_ @_ @γ2 @σ2 p2)
+
+--   λcase :: forall γ0 γ' ρ.
+--            CMerge γ0 γ γ' => ((pat1,pat2) -> exp γ' ρ) -> exp γ0 (σ1 ⊗ σ2 ⊸ ρ)
+--   λcase f = uncurry f'
+ --    uncurry @exp $ λcase (\p1 -> λcase @_ @exp (\p2 -> f (p1,p2)))
+--     where
+---       f' :: exp γ0 (σ1 ⊸ σ2 ⊸ ρ)
+--       f' = undefined -- λcase @_ @exp @γ1 @σ1 @pat1 $ \p1 -> _
     
 
 --  match :: forall γ1 γ2 γ' γ2' τ. (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
@@ -215,9 +234,7 @@ instance ( CMerge γ1 γ2 γ, HasTensor exp
 
 -- Example programs
 
---λ' :: (HasLolli exp, Matchable exp γ' σ)
---   => (Pat σ -> exp γ' τ) -> exp γ τ
---λ' f = λ $ \x -> x `match` f
-
---foo :: HasTensor exp => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
---foo = Suspend . λcase $ \(x,y) -> y ⊗ x
+--foo :: forall sig (exp :: Exp sig) σ τ. 
+--       (HasTensor exp, Matchable exp σ, Matchable exp τ)
+--    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
+--foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x

@@ -10,6 +10,7 @@ module Types where
 import Prelim
 
 import Data.Kind
+import GHC.TypeLits (TypeError, ErrorMessage(..))
 
 
 data LType (sig :: Sig) where
@@ -125,14 +126,20 @@ type family AddFreshN γ σ where
   AddFreshN ('Cons ('Just τ) γ) σ = 'Cons ('Just τ) (AddFreshN γ σ)
 
 type family Div (γ :: Ctx sig) (γ0 :: Ctx sig) = (r :: Ctx sig) where
-  Div γ γ = 'Empty
+--  Div γ γ = 'Empty
   Div γ 'Empty = γ
-  Div ('N γ) ('N γ0) = 'N (DivN γ γ0)
-type family DivN (γ :: NCtx sig) (γ0 :: NCtx sig) = (r :: NCtx sig) where
-  DivN ('Cons ('Just σ) γ) ('End σ) = 'Cons 'Nothing γ
-  DivN ('Cons ('Just σ) γ) ('Cons ('Just σ) γ0) = 'Cons ('Just σ) (DivN γ γ0)
-  DivN ('Cons 'Nothing  γ) ('Cons 'Nothing  γ0) = 'Cons 'Nothing  (DivN γ γ0)
-  
+  Div ('N γ) ('N γ0) = DivN γ γ0
+  Div γ      γ0      = TypeError
+    (ShowType γ0 :<>: Text " must be a subcontext of " :<>: ShowType γ)
+
+type family DivN (γ :: NCtx sig) (γ0 :: NCtx sig) = (r :: Ctx sig) where
+  DivN ('End _)            ('End _)             = 'Empty
+  DivN ('Cons ('Just _) γ) ('End _)             = 'N ('Cons 'Nothing γ)
+  DivN ('Cons ('Just _) γ) ('Cons ('Just _) γ0) = ConsN 'Nothing  (DivN γ γ0)
+  DivN ('Cons ('Just σ) γ) ('Cons 'Nothing γ0)  = ConsN ('Just σ) (DivN γ γ0)
+  DivN ('Cons 'Nothing  γ) ('Cons 'Nothing  γ0) = ConsN 'Nothing  (DivN γ γ0)
+  DivN γ                   γ0                   = TypeError
+    (ShowType γ0 :<>: Text " must be a subcontext of " :<>: ShowType γ)
 
 -- Instances ----------------------------------------- 
 
