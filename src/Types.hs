@@ -14,8 +14,8 @@ import GHC.TypeLits (TypeError, ErrorMessage(..))
 
 
 data LType (sig :: Sig) where
-  -- ty :: Sig -> *
-  LType :: InSig ty sig -> ty sig -> LType sig
+  -- ty :: * -> *
+  LType :: InSig ty sig -> ty (LType sig) -> LType sig
 
 -- Example of such a ty :: Sig -> *:
 -- 
@@ -26,7 +26,7 @@ data LType (sig :: Sig) where
 
 
 -- We can get around providing the proof that ty is in the signature
-type MkLType sig (σ :: ty sig) = 'LType (IsInSig ty sig) σ
+type MkLType sig (σ :: ty (LType sig)) = 'LType (IsInSig ty sig) σ
 
 
 
@@ -39,14 +39,15 @@ type MkLType sig (σ :: ty sig) = 'LType (IsInSig ty sig) σ
 -- A type constructor (of type Sig -> *) is a way to extend the syntax of LTypes.
 -- e.g. 
 --      data LolliSig sig = LolliSig (LType sig) (LType sig)
-data Sig = Sig (* -> *) [Sig -> *]
+type Sig = (Type -> Type, [Type -> Type])
+--data Sig = Sig (Type -> Type) [Type -> Type]
 
 -- SigEffect and SigType project out the monad and constructors, respectively
 -- (Sig should be a type level record)
-type family SigEffect (sig :: Sig) :: * -> * where
-  SigEffect ('Sig m _) = m
-type family SigType (sig :: Sig) :: [Sig -> *] where
-  SigType ('Sig _ tys) = tys
+type family SigEffect (sig :: Sig) :: Type -> Type where
+  SigEffect '(m,_) = m
+type family SigType (sig :: Sig) :: [Type -> Type] where
+  SigType '(_,tys) = tys
 
 
 
@@ -60,16 +61,16 @@ type family SigType (sig :: Sig) :: [Sig -> *] where
 type InSig ty sig = InList ty (SigType sig)
 
 -- Type class that searches for a proof that ty is a type constructor in sig
-class CInSig (ty :: Sig -> *) (sig :: Sig)
+class CInSig (ty :: Type -> Type) (sig :: Sig)
 instance CInSig' (GetIndex ty (SigType sig)) ty sig => CInSig ty sig
 
-class CInSig' (i :: Nat) (ty :: Sig -> *) (sig :: Sig)
-instance CInSig' 'Z ty ('Sig m (ty ': tys))
-instance CInSig' i  ty ('Sig m tys) => CInSig' ('S i) ty ('Sig m (ty' ': tys))
+class CInSig' (i :: Nat) (ty :: Type -> Type) (sig :: Sig)
+instance CInSig' 'Z ty '(m,ty ': tys)
+instance CInSig' i  ty '(m,tys) => CInSig' ('S i) ty '(m,ty' ': tys)
 
 -- The type InSig ty sig computes a type-level proof that ty ∈ sig
 -- (if it exists)
-type IsInSig (ty :: Sig -> *) sig = 
+type IsInSig (ty :: Type -> Type) sig = 
     (IsInList ty (SigType sig) :: InList ty (SigType sig))
 
 

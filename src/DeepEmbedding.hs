@@ -75,7 +75,7 @@ class Domain (dom :: Dom sig) where
 instance Eval (LExp :: Exp sig) where
   eval :: forall (γ :: Ctx sig) τ. Monad (SigEffect sig)
        => LExp γ τ -> CtxVal γ -> SigEffect sig (LVal τ)
-  eval Var                          γ = return $ singletonInv @_ @_ @τ @γ γ
+  eval Var                          γ = return γ
   eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain e γ
 
 -----------------------------------------------------------
@@ -140,32 +140,36 @@ data TensorExp :: forall sig. Exp sig -> Exp sig where
   Pair :: CMerge γ1 γ2 γ
        => exp γ1 τ1 -> exp γ2 τ2 -> TensorExp exp γ (τ1 ⊗ τ2)
   LetPair :: ( CMerge γ1 γ2 γ
-             , CAddCtx x1 σ1 γ2 γ2', CAddCtx x2 σ2 γ2' γ2'' )
-          => VarName x1 σ1 -> VarName x2 σ2 -> Proxy γ2'
+             , CSingletonCtx x1 σ1 γ21
+             , CAddCtx x2 σ2 γ21 γ22
+             , CMerge γ2 γ22 γ2'' )
+--             , CAddCtx x1 σ1 γ2 γ2', CAddCtx x2 σ2 γ2' γ2'' )
+          => VarName x1 σ1 -> VarName x2 σ2 -- -> Proxy γ2'
           -> exp γ1 (σ1 ⊗ σ2)
           -> exp γ2'' τ
           -> TensorExp exp γ τ
 
-{-
+
 instance HasTensor LExp where
   e1 ⊗ e2 = dom @TensorExp $ Pair e1 e2
 
-  letPair :: forall x1 x2 sig (σ1 :: LType sig) σ2 τ γ1 γ2 γ γ2' γ2'' γ21 γ22.
+  letPair :: forall x1 x2 sig (σ1 :: LType sig) σ2 τ γ1 γ2 γ γ2'' γ21 γ22.
              ( CMerge γ1 γ2 γ
-             , CAddCtx x1 σ1 γ2 γ2'
-             , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
-             , CSingletonCtx x2 σ2 γ22
+             , CAddCtx x2 σ2 γ21 γ22
+             , CMerge γ2 γ22 γ2''
              , x1 ~ Fresh γ, x2 ~ Fresh2 γ )
       => LExp γ1 (σ1 ⊗ σ2)
       -> ((LExp γ21 σ1, LExp γ22 σ2) -> LExp γ2'' τ)
       -> LExp γ τ
-  letPair e f = dom @TensorExp $ 
-                LetPair (VarName @x1) (VarName @x2) (Proxy :: Proxy γ2') e e'
+  letPair e f = Dom (Proxy :: Proxy TensorExp) $
+                LetPair (VarName @x1) (VarName @x2) e $ f(x1,x2)
     where
-      e' :: LExp γ2 τ
-      e' = f (var @_ @_ @x1 @σ1 @γ21 ,var @_ @_ @x2 @σ2 @γ22)
--}
+      x1 :: LExp γ21 σ1
+      x1 = Var @x1
+      x2 :: LExp γ22 σ2
+      x2 = Var @x2
+
 instance Domain TensorExp
 
 

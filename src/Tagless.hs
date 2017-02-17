@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, UndecidableInstances,
              EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds,
              TypeFamilyDependencies, LambdaCase
 #-}
@@ -20,20 +20,23 @@ import Data.Kind
 -- For each domain:
 
 -- 1) Declare a data type
-data LolliSig sig = Lolli (LType sig) (LType sig)
+data LolliSig ty = Lolli ty ty
 
 -- 2) embed it into LType
 type (σ :: LType sig) ⊸ (τ :: LType sig) = MkLType sig ('Lolli σ τ)
 infixr 0 ⊸
 
 -- 3) define an LVal instance
-type instance LVal ('LType _ ('Lolli σ τ) :: LType sig) = LVal σ -> SigEffect sig (LVal τ)
+type instance LVal ('LType _ ('Lolli (σ :: LType sig) (τ :: LType sig))) = 
+    LVal σ -> SigEffect sig (LVal τ)
 
 -- 4) Define an interface
 class HasLolli (exp :: Exp sig) where
-  λ :: (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
+  λ :: forall x (σ :: LType sig) (γ :: Ctx sig) (γ' :: Ctx sig) (γ'' :: Ctx sig) (τ :: LType sig).
+       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
     => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
-  (^) :: CMerge γ1 γ2 γ
+  (^) :: forall (γ1 :: Ctx sig) (γ2 :: Ctx sig) (γ :: Ctx sig) (σ :: LType sig) (τ :: LType sig).
+         CMerge γ1 γ2 γ
       => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
@@ -44,22 +47,34 @@ type One = (MkLType sig 'OneSig :: LType sig)
 type instance LVal ('LType _ 'OneSig) = ()
 
 class HasOne (exp :: Exp sig) where
-  unit :: exp Empty One
+  unit :: exp (Empty :: Ctx sig) (One :: LType sig)
   letUnit :: CMerge γ1 γ2 γ 
           => exp γ1 One -> exp γ2 τ -> exp γ τ
 
 
 -- Tensor ---------------------------------------------  
 
-data TensorSig sig = TensorSig (LType sig) (LType sig)
-type (σ1 :: LType sig) ⊗ (σ2 :: LType sig) = MkLType sig ('TensorSig σ1 σ2)
-type instance LVal ('LType _ ('TensorSig σ1 σ2) :: LType sig) = (LVal σ1, LVal σ2)
 
-class HasTensor (exp :: Exp sig) where
-  (⊗) :: CMerge γ1 γ2 γ
+data TensorSig ty = TensorSig ty ty
+type (σ1 :: LType sig) ⊗ (σ2 :: LType sig) = MkLType sig ('TensorSig σ1 σ2)
+--type instance LVal ('LType _ ('TensorSig (σ1 :: LType sig) (σ2 :: LType sig))) 
+--              = (LVal σ1, LVal σ2)
+
+-- Exp sig = Ctx sig -> LType sig -> Type
+class HasTensor sig (exp :: Exp sig) where
+  (⊗) :: forall (γ1 :: Ctx sig) (γ2 :: Ctx sig) (γ :: Ctx sig) (τ1 :: LType sig) (τ2 :: LType sig).
+         CMerge γ1 γ2 γ
       => exp γ1 τ1 -> exp γ2 τ2 -> exp γ (τ1 ⊗ τ2)
-  letPair :: forall x1 x2 (σ1 :: LType sig) σ2 τ γ1 γ2 γ γ2' γ2'' γ21 γ22.
+  letPair :: forall x1 x2 (σ1 :: LType sig) (σ2 :: LType sig) (τ :: LType sig) 
+                    (γ1 :: Ctx sig) (γ2 :: Ctx sig) (γ2' :: Ctx sig) (γ :: Ctx sig) 
+                    (γ2'' :: Ctx sig) (γ21 :: Ctx sig) (γ22 :: Ctx sig).
              ( CMerge γ1 γ2 γ
+--             , CSingletonCtx x1 σ1 γ21
+--             , CAddCtx x2 σ2 γ21 γ22
+--             , CMerge γ2 γ22 γ2''
+-- I had these constraints, but they cause ghc to go into an infinite loop. 
+-- Changing them to the constraints above fixed the problem for now.
+-- commit aae5b092da006826b5886c67d822760a23198721
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
@@ -69,7 +84,8 @@ class HasTensor (exp :: Exp sig) where
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
 
-{-
+
+
 
 
 -- Bottom -------------------------------------------
@@ -81,7 +97,7 @@ type instance LVal ('LType _ 'BottomSig) = Void
 
 -- Additive Sum ---------------------------------------
 
-data PlusSig sig = PlusSig (LType sig) (LType sig)
+data PlusSig ty = PlusSig ty ty
 type (⊕) (σ :: LType sig) (τ :: LType sig) = MkLType sig ('PlusSig σ τ)
 type instance LVal ('LType _ ('PlusSig σ τ)) = Either (LVal σ) (LVal τ)
 
@@ -102,7 +118,7 @@ class HasPlus (exp :: Exp sig) where
 
 -- Additive Product -------------------------------------
 
-data WithSig sig = WithSig (LType sig) (LType sig)
+data WithSig ty = WithSig ty ty
 type (σ :: LType sig) & (τ :: LType sig) = MkLType sig ('WithSig σ τ)
 type instance LVal ('LType _ ('WithSig σ τ)) = (LVal σ, LVal τ)
 
@@ -129,7 +145,6 @@ data Lift (exp :: Exp sig) (τ :: LType sig) where
   Suspend :: exp 'Empty τ -> Lift exp τ
 force :: Lift exp τ -> exp 'Empty τ
 force (Suspend e) = e
--}
 
 ---------------------------------------------------------------
 -- Examples ---------------------------------------------------
@@ -160,7 +175,8 @@ uncurry e = force uncurryL ^ e
 ---------------------------------------------------------------
 
 class HasVar (exp :: Exp sig) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => exp γ σ
+  var :: forall x (σ :: LType sig) (γ :: Ctx sig). 
+         CSingletonCtx x σ γ => exp γ σ
 
 {-
 data Bang a = Bang a

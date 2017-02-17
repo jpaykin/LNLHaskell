@@ -1,8 +1,8 @@
 {-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase, FlexibleContexts
+             InstanceSigs, TypeApplications, ScopedTypeVariables,
+             EmptyCase, FlexibleContexts, UndecidableInstances
 #-}
 {-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
                                -fno-warn-redundant-constraints #-}
@@ -15,33 +15,6 @@ import Prelim
 --import Context
 import Types
 --import Proofs
-
--- Singleton instance
-
-{-
-class KnownUsage u where
-  usg :: SUsage Phantom u
-
-instance KnownUsage 'Nothing where
-  usg = SNothing
-instance KnownUsage ('Used σ) where
-  usg = SUsed @_ @_ @σ Phantom
-
-class KnownCtx g where
-  ctx :: SCtx Phantom g
-class KnownNCtx g where
-  nctx :: SNCtx Phantom g
-
-instance KnownCtx 'Empty where
-  ctx = SEmpty
-instance KnownNCtx g => KnownCtx ('N g) where
-  ctx = SN nctx
-
-instance KnownNCtx ('End τ) where
-  nctx = SEnd Phantom
-instance (KnownUsage u, KnownNCtx g) => KnownNCtx ('Cons u g) where
-  nctx = SCons usg nctx
--}
 
 -- In Context ---------------------------------------------
 
@@ -59,60 +32,37 @@ instance CInN x σ g => CIn x σ ('N g)
 
 class CAddCtx (x :: Nat) (σ :: LType sig) (γ :: Ctx sig) (γ' :: Ctx sig) | x σ γ -> γ', x γ' -> σ γ
   where
-    add :: LVal σ -> CtxVal γ -> CtxVal γ'
-    remove :: CtxVal γ' -> (LVal σ, CtxVal γ)
+    add    :: LVal σ -> CtxVal γ -> CtxVal γ'
+--    remove :: CtxVal γ' -> (LVal σ, CtxVal γ)
+instance CAddCtxN x (σ :: LType sig) (γ :: Ctx sig) (γ' :: NCtx sig) (CountN γ')
+      => CAddCtx x σ γ ('N γ') 
+  where
+    add    = addN @sig @x @σ @γ @γ' @(CountN γ')
+--    remove = removeN @sig @x @σ @γ @γ' @(CountN γ')
 
-instance CAddCtxN x σ g g' (IsSingleton g') => CAddCtx x σ g ('N g') where
-  add = addN @_ @x @σ @g @g'
-  remove = removeN @_ @x @σ @g @g'
+class CAddCtxN (x :: Nat) (σ :: LType sig) (γ :: Ctx sig) (γ' :: NCtx sig) (len :: Nat)
+    | x σ γ -> len γ', x γ' len -> σ γ 
+  where
+    addN    :: LVal σ -> CtxVal γ -> NCtxVal γ'
+--    remove :: CtxVal γ' -> (LVal σ, NCtxVal γ)
 
--- If CAddCtxN x σ g g' flag then 
--- flag IFF g' is a singleton context IFF g is the empty context
-class CAddCtxN (x :: Nat) (σ :: LType sig) (γ :: Ctx sig) (γ' :: NCtx sig) (flag :: Bool) 
-      | x σ γ -> γ' flag, x γ' flag -> σ γ where
-  addN :: LVal σ -> CtxVal γ -> NCtxVal γ'
-  removeN :: NCtxVal γ' -> (LVal σ, CtxVal γ)
 
-instance CSingletonNCtx x σ g' => CAddCtxN x σ Empty g' 'True where
-  addN a _ = a
-  removeN g' = (g', ())
-instance CAddNCtxFlag x σ g g' (IsDouble g') => CAddCtxN x σ ('N g) g' 'False where
-  addN = addNN @_ @x @σ @g 
-  removeN = removeNN @_ @x @σ @g @g'
-
-{-
-class CAddNCtxN (x :: Nat) (σ :: LType sig) (γ :: NCtx sig) (γ' :: NCtx sig) | x σ γ -> γ', x γ' -> σ γ where
-  addNN :: LVal σ -> NCtxVal γ -> NCtxVal γ'
-  removeNN :: NCtxVal γ' -> (LVal σ, NCtxVal γ)
-
-instance CAddNCtxFlag x σ g g' (IsDouble g') => CAddNCtxN x σ g g' where
-  addNN = addNN' @_ @x @σ @g
-  removeNN = removeNN' @_ @x @σ @g
--}
-
--- If CAddNCtxFlag x σ g g' flag then
--- flag IFF g is a singleton context iff g' is a double context
-class CAddNCtxFlag (x :: Nat) (σ :: LType sig) (γ :: NCtx sig) (γ' :: NCtx sig) (flag :: Bool) | x σ γ -> γ' flag, x γ' flag -> σ γ where
-  addNN :: LVal σ -> NCtxVal γ -> NCtxVal γ'
-  removeNN :: NCtxVal γ' -> (LVal σ, NCtxVal γ)
-
-instance (IsSingleton g ~ flag)
-    => CAddNCtxFlag 'Z σ ('Cons 'Nothing g) ('Cons ('Just σ) g) flag where
-  addNN s g = (s,g)
-  removeNN = id
-instance CSingletonNCtx x σ g => CAddNCtxFlag ('S x) σ ('End τ) ('Cons ('Just τ) g) 'True where
-  addNN s t = (t,s)
-  removeNN (v,g) = (g, v)
-instance CAddNCtxFlag x σ g g' f 
-      => CAddNCtxFlag ('S x) σ ('Cons 'Nothing g) ('Cons 'Nothing g') f where
-  addNN s g = addNN @_ @x @σ @g @g' s g
-  removeNN = removeNN  @_ @x @σ @g
-instance CAddNCtxFlag x σ g g' (IsDouble g') 
-      => CAddNCtxFlag ('S x) σ ('Cons ('Just τ) g) ('Cons ('Just τ) g') 'False where
-  addNN s (t,g) = (t,addNN @_ @x @σ @g @g' s g)
-  removeNN (v,g') = let (a,g0) = removeNN @_ @x @σ @g g'
-                     in (a,(v,g0))
-
+instance CSingletonNCtx x (σ :: LType sig) (γ' :: NCtx sig)
+      => CAddCtxN x σ Empty γ' (S Z)
+  where
+    addN v () = v
+instance CSingletonNCtx x σ γ'
+      => CAddCtxN x σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
+  where
+    addN v t = (t,v)
+instance CAddCtxN x (σ :: LType sig) (N (γ :: NCtx sig)) (γ' :: NCtx sig) (S (S n)) 
+      => CAddCtxN x σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S (S n)))
+  where
+    addN v g = addN @sig @x @σ @(N γ) @γ' @(S (S n)) v g
+instance CAddCtxN x (σ :: LType sig) (N (γ :: NCtx sig)) (γ' :: NCtx sig) (S (S n)) 
+      => CAddCtxN x σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S (S n)))
+  where
+    addN v (t,g) = (t,addN @sig @x @σ @(N γ) @γ' @(S (S n)) v g)
 
 ---------------------
 
@@ -144,8 +94,7 @@ class LVal σ ~ CtxVal g => CSingletonCtx (x :: Nat) (σ :: LType sig) (g :: Ctx
       | x σ -> g, g -> x σ where
 --  singleton :: LVal σ -> CtxVal g
 --  singletonInv :: CtxVal g -> LVal σ
-class LVal σ ~ NCtxVal g 
-   => CSingletonNCtx (x :: Nat) (σ :: LType sig) (g :: NCtx sig) 
+class LVal σ ~ NCtxVal g => CSingletonNCtx (x :: Nat) (σ :: LType sig) (g :: NCtx sig) 
     | x σ -> g, g -> x σ where
 --  singletonN :: LVal σ -> NCtxVal g
 --  singletonNInv :: NCtxVal g -> LVal σ
@@ -154,16 +103,17 @@ instance CSingletonNCtx 'Z σ ('End σ) where
 --  singletonN = id
 --  singletonNInv = id
 instance CSingletonNCtx x σ g => CSingletonNCtx ('S x) σ ('Cons 'Nothing g) where
---  singletonN = singletonN @_ @x @σ @g 
---  singletonNInv = singletonNInv @_ @x @σ @g
+--  singletonN = singletonN @sig @x @σ @g 
+--  singletonNInv = singletonNInv @sig @x @σ @g
 
 instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
---  singleton = singletonN @_ @x @σ
---  singletonInv = singletonNInv @_ @x @σ
+--  singleton = singletonN @sig @x @σ
+--  singletonInv = singletonNInv @sig @x @σ
 
 -- Well-formed contexts --------------------------------
 
-class (CDiv γ 'Empty γ, CDiv  γ γ 'Empty, CMergeForward 'Empty γ γ, CMergeForward γ 'Empty γ) => WFCtx γ 
+class (CDiv γ 'Empty γ, CDiv  γ γ 'Empty, CMergeForward 'Empty γ γ, CMergeForward γ 'Empty γ) 
+    => WFCtx γ 
 class (CDivN γ γ 'Empty) => WFNCtx γ
 
 instance WFCtx 'Empty
