@@ -40,14 +40,12 @@ instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountN γ')
       => CAddCtx x σ γ ('N γ') 
   where
     add v g = SN $ addN @x v g
---    remove = removeN @x @σ @γ @γ' @(CountN γ')
 
 class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
    => CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
   where
     addN    :: forall m. LVal m σ -> SCtx m γ -> SNCtx m γ'
---    remove :: SCtx γ' -> (LVal σ, SNCtx γ)
 
 
 instance CSingletonNCtx x (σ :: LType) (γ' :: NCtx)
@@ -58,8 +56,8 @@ instance CSingletonNCtx x σ γ'
       => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
   where
     addN s (SN (SEnd t)) = SCons (SJust t) $ singletonN @x s
-instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
-      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S (S n)))
+instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n))
+      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S n))
   where
     addN s (SN (SCons _ g)) = SCons SNothing (addN @x s (SN g))
 instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 

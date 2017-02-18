@@ -11,85 +11,35 @@ import Prelim
 
 import Data.Kind
 import GHC.TypeLits (TypeError, ErrorMessage(..))
-
+import Data.Proxy
 
 data LType where
   -- ty :: * -> *
   MkLType :: ty LType -> LType
 
--- Example of such a ty :: Sig -> *:
--- 
--- data LolliSig sig = LolliSig (LType sig) (LType sig)
--- 
--- type (⊸) (σ :: LType sig) (τ :: LType sig) = LType' sig ('LolliSig σ τ)
--- infixr 0 ⊸
 
+type Exp = Ctx -> LType -> Type
+data Sig = Sig (Type -> Type) (Sig -> Exp)
+type family Effect (sig :: Sig) :: Type -> Type where
+  Effect ('Sig m _) = m
+type family LExp (sig :: Sig) :: Exp where
+  LExp ('Sig m exp) = exp ('Sig m exp)
 
--- We can get around providing the proof that ty is in the signature
---type MkLType sig (σ :: ty (LType sig)) = 'LType (IsInSig ty sig) σ
-
-
-
-
-
-
--- A signature consists of a monad (in which evaluation will occur) and a list
--- of type constructors. This way, a signature can be extended
--- semlessly by adding a new type constructor to the signature.
--- A type constructor (of type Sig -> *) is a way to extend the syntax of LTypes.
--- e.g. 
---      data LolliSig sig = LolliSig (LType sig) (LType sig)
-type Sig = (Type -> Type, [Type -> Type])
---data Sig = Sig (Type -> Type) [Type -> Type]
-
--- SigEffect and SigType project out the monad and constructors, respectively
--- (Sig should be a type level record)
-type family SigEffect (sig :: Sig) :: Type -> Type where
-  SigEffect '(m,_) = m
-type family SigType (sig :: Sig) :: [Type -> Type] where
-  SigType '(_,tys) = tys
-
-
-
-
-
-
-
-{-
--- In lists ------------------------------------------------------
-
-type InSig ty sig = InList ty (SigType sig)
-
--- Type class that searches for a proof that ty is a type constructor in sig
-class CInSig (ty :: Type -> Type) (sig :: Sig)
-instance CInSig' (GetIndex ty (SigType sig)) ty sig => CInSig ty sig
-
-class CInSig' (i :: Nat) (ty :: Type -> Type) (sig :: Sig)
-instance CInSig' 'Z ty '(m,ty ': tys)
-instance CInSig' i  ty '(m,tys) => CInSig' ('S i) ty '(m,ty' ': tys)
-
--- The type InSig ty sig computes a type-level proof that ty ∈ sig
--- (if it exists)
-type IsInSig (ty :: Type -> Type) sig = 
-    (IsInList ty (SigType sig) :: InList ty (SigType sig))
-
--}
-
--- Values are extensible, used for implementation
-data family LVal (m :: Type -> Type) (σ :: LType)
+data family LVal (sig :: Sig) (σ :: LType)
+--data family LVal (m :: Type -> Type) (σ :: LType)
 
 data Ctx  = Empty | N (NCtx)
 data NCtx = End (LType) | Cons (Maybe (LType)) (NCtx)
 
-data SCtx m (γ :: Ctx) where
-  SEmpty :: SCtx m Empty
-  SN     :: SNCtx m γ -> SCtx m (N γ)
-data SNCtx m (γ :: NCtx) where
-  SEnd   :: LVal m σ   -> SNCtx m (End σ)
-  SCons  :: SMaybe m u -> SNCtx m γ -> SNCtx m ('Cons u γ)
-data SMaybe m (u :: Maybe LType) where
-  SNothing :: SMaybe m 'Nothing
-  SJust    :: LVal m σ -> SMaybe m ('Just σ)
+data SCtx sig (γ :: Ctx) where
+  SEmpty :: SCtx sig Empty
+  SN     :: SNCtx sig γ -> SCtx sig (N γ)
+data SNCtx sig (γ :: NCtx) where
+  SEnd   :: LVal sig σ   -> SNCtx sig (End σ)
+  SCons  :: SMaybe sig u -> SNCtx sig γ -> SNCtx sig ('Cons u γ)
+data SMaybe sig (u :: Maybe LType) where
+  SNothing :: SMaybe sig 'Nothing
+  SJust    :: LVal sig σ -> SMaybe sig ('Just σ)
 
 
 type family ConsN (u :: Maybe (LType)) (g :: Ctx) :: Ctx where
@@ -174,8 +124,5 @@ type family RemoveN (x :: Nat) (γ :: NCtx) :: Ctx where
 
 
 
--- Instances ----------------------------------------- 
 
-type Exp = Ctx -> LType -> Type
-class Monad m => Eval m (exp :: Exp) where
-  eval :: exp γ τ -> SCtx m γ -> m (LVal m τ)
+

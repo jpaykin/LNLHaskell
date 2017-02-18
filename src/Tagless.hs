@@ -17,18 +17,20 @@ import Classes
 import Data.Kind
 
 
+class Monad (Effect sig) => Eval (sig :: Sig) where
+  eval :: LExp sig γ τ -> SCtx sig γ -> Effect sig (LVal sig τ)
+
+
 -- For each domain:
 
 -- 1) Declare a data type
-data LolliSig ty = Lolli ty ty
+data LolliSig ty = LolliSig ty ty
 
 -- 2) embed it into LType
-type (σ :: LType) ⊸ (τ :: LType) = MkLType ('Lolli σ τ)
+type (σ :: LType) ⊸ (τ :: LType) = MkLType ('LolliSig σ τ)
 infixr 0 ⊸
 
 -- 3) define an LVal instance
-data instance LVal m (MkLType ('Lolli (σ :: LType) (τ :: LType))) = 
-    VAbs (LVal m σ -> m (LVal m τ))
 
 -- 4) Define an interface
 class HasLolli (exp :: Exp) where
@@ -40,11 +42,14 @@ class HasLolli (exp :: Exp) where
       => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
+letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
+         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
+      => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
+letin e f = λ f ^ e
 
 -- One -----------------------------------------------
 data OneSig ty = OneSig
 type One = (MkLType 'OneSig :: LType)
-data instance LVal m (MkLType 'OneSig) = VUnit
 
 class HasOne (exp :: Exp) where
   unit :: exp (Empty :: Ctx) (One :: LType)
@@ -58,7 +63,6 @@ type Var exp x σ = exp (Singleton x σ) σ
 
 data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
-data instance LVal m (MkLType ('TensorSig σ1 σ2)) = VPair (LVal m σ1) (LVal m σ2)
 
 -- Exp = Ctx -> LType -> Type
 class HasTensor (exp :: Exp) where
@@ -86,13 +90,11 @@ class HasTensor (exp :: Exp) where
 
 data BottomSig ty = BottomSig
 type Bottom = (MkLType 'BottomSig :: LType)
-data instance LVal m (MkLType 'BottomSig)
 
 -- Additive Sum ---------------------------------------
 
 data PlusSig ty = PlusSig ty ty
 type (⊕) (σ :: LType) (τ :: LType) = MkLType ('PlusSig σ τ)
-data instance LVal m (MkLType ('PlusSig σ τ)) = VLeft (LVal m σ) | VRight (LVal m τ)
 
 class HasPlus (exp :: Exp) where
   inl :: exp γ τ1 -> exp γ (τ1 ⊕ τ2)
@@ -111,7 +113,6 @@ class HasPlus (exp :: Exp) where
 
 data WithSig ty = WithSig ty ty
 type (σ :: LType) & (τ :: LType) = MkLType ('WithSig σ τ)
-data instance LVal m (MkLType ('WithSig σ τ)) = VWith (LVal m σ) (LVal m τ)
 
 class HasWith (exp :: Exp) where
   (&) :: exp γ τ1 -> exp γ τ2 -> exp γ (τ1 & τ2)
@@ -122,7 +123,6 @@ class HasWith (exp :: Exp) where
 -- Lower ----------------------------------------------
 data LowerSig ty = LowerSig Type
 type Lower a = (MkLType ('LowerSig a) :: LType)
-data instance LVal m (MkLType ('LowerSig a)) = VBang a
 
 class HasLower (exp :: Exp) where
   put  :: a -> exp Empty (Lower a)
