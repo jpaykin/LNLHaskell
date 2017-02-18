@@ -62,7 +62,7 @@ type Dom = Exp -> Exp
 --class WFDomain dom lang => Domain (dom :: Dom) (lang :: Lang) where
 class Monad m => Domain m (dom :: Dom) where
   evalDomain  :: dom (LExp m) g σ
-              -> CtxVal m g
+              -> SCtx m g
               -> m (LVal m σ)
 
 -----------------------------------------------------------
@@ -71,7 +71,7 @@ class Monad m => Domain m (dom :: Dom) where
 
 instance Monad m => Eval m (LExp m) where
   eval :: forall (γ :: Ctx) τ. 
-          LExp m γ τ -> CtxVal m γ -> m (LVal m τ)
+          LExp m γ τ -> SCtx m γ -> m (LVal m τ)
   eval Var                          γ = undefined -- return γ
   eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain e γ
 
@@ -125,7 +125,7 @@ instance Monad m => HasOne (LExp m) where
   letUnit e1 e2 = dom @m @OneExp $ LetUnit e1 e2
 
 instance Monad m => Domain m OneExp where
-  evalDomain Unit () = return VUnit
+  evalDomain Unit _ = return VUnit
   evalDomain (LetUnit (e1 :: LExp m γ1 One) (e2 :: LExp m γ2 τ)) ρ = do
       VUnit <- eval e1 ρ1
       eval e2 ρ2
@@ -138,8 +138,9 @@ data TensorExp :: forall. Exp -> Exp where
   Pair :: CMerge γ1 γ2 γ
        => exp γ1 τ1 -> exp γ2 τ2 -> TensorExp exp γ (τ1 ⊗ τ2)
   LetPair :: ( CMerge γ1 γ2 γ
-             , CAddCtx x1 σ1 γ2 γ2', CAddCtx x2 σ2 γ2' γ2'' )
-          => VarName x1 σ1 -> VarName x2 σ2 -> Proxy '(γ2,γ2')
+             , CAddCtx x1 σ1 γ2 γ2'
+             , CAddCtx x2 σ2 γ2' γ2'' )
+          => VarName x1 σ1 -> VarName x2 σ2
           -> exp γ1 (σ1 ⊗ σ2)
           -> exp γ2'' τ
           -> TensorExp exp γ τ
@@ -151,8 +152,6 @@ data TensorExp :: forall. Exp -> Exp where
 
 instance Monad m => HasTensor (LExp m) where
   e1 ⊗ e2 = dom @m @TensorExp $ Pair e1 e2
-
-{-
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
                     (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
@@ -161,19 +160,17 @@ instance Monad m => HasTensor (LExp m) where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ, x2 ~ Fresh2 γ )
+             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
       => LExp m γ1 (σ1 ⊗ σ2)
-      -> ((LExp m γ21 σ1, LExp m γ22 σ2) -> LExp m γ2'' τ)
+      -> ((Var (LExp m) x1 σ1, Var (LExp m) x2 σ2) -> LExp m γ2'' τ)
       -> LExp m γ τ
-  letPair e f = Dom (Proxy :: Proxy TensorExp) $ 
-                LetPair (VarName @x1) (VarName @x2) (Proxy :: Proxy '(γ2,γ2')) e 
-                  $ f(x1,x2)
+  letPair e f = dom @m @TensorExp $ 
+                LetPair (VarName @x1 @σ1) (VarName @x2 @σ2) e $ f (x1,x2)
     where
-      x1 :: LExp m γ21 σ1
-      x1 = var @_ @x1
-      x2 :: LExp m γ22 σ2
-      x2 = var @_ @x2
--}
+      x1 :: Var (LExp m) x1 σ1
+      x1 = Var
+      x2 :: Var (LExp m) x2 σ2
+      x2 = Var
 
 instance Monad m => Domain m TensorExp where
   evalDomain (Pair (e1 :: LExp m γ1 τ1) (e2 :: LExp m γ2 τ2)) ρ =
@@ -181,13 +178,13 @@ instance Monad m => Domain m TensorExp where
     where
       (ρ1,ρ2) = split @γ1 @γ2 @_ @m ρ
   evalDomain (LetPair (_ :: VarName x1 σ1) (_ :: VarName x2 σ2)
-                      (Proxy :: Proxy '(γ2,γ2'))
                       (e :: LExp m γ1 (σ1 ⊗ σ2))
                       (e' :: LExp m γ2'' τ)) ρ = do
       VPair v1 v2 <- eval @m e ρ1
-      eval e' (add @x2 @σ2 @γ2' @γ2'' v2 (add @x1 @σ1 @γ2 @γ2' v1 ρ2))
+      eval e' (add @x2 @σ2 v2 
+              (add @x1 @σ1 v1 ρ2))
     where
-      (ρ1,ρ2) = split @γ1 @γ2 @_ @m ρ
+      (ρ1,ρ2) = split @γ1 @(Remove x1 (Remove x2 γ2'')) ρ
 
 
 -- Bottom -------------------------------------------------

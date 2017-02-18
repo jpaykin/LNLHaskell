@@ -81,16 +81,16 @@ data family LVal (m :: Type -> Type) (σ :: LType)
 data Ctx  = Empty | N (NCtx)
 data NCtx = End (LType) | Cons (Maybe (LType)) (NCtx)
 
-type family CtxVal m (γ :: Ctx) :: Type where
-  CtxVal m Empty = ()
-  CtxVal m (N γ) = NCtxVal m γ
-type family NCtxVal m (γ :: NCtx) :: Type where
-  NCtxVal m (End σ)           = LVal m σ
-  NCtxVal m (Cons Nothing γ)  = NCtxVal m γ
-  NCtxVal m (Cons (Just σ) γ) = (LVal m σ, NCtxVal m γ)
-type family MaybeVal m (u :: Maybe (LType)) :: Type where
-  MaybeVal m 'Nothing  = ()
-  MaybeVal m ('Just σ) = LVal m σ
+data SCtx m (γ :: Ctx) where
+  SEmpty :: SCtx m Empty
+  SN     :: SNCtx m γ -> SCtx m (N γ)
+data SNCtx m (γ :: NCtx) where
+  SEnd   :: LVal m σ   -> SNCtx m (End σ)
+  SCons  :: SMaybe m u -> SNCtx m γ -> SNCtx m ('Cons u γ)
+data SMaybe m (u :: Maybe LType) where
+  SNothing :: SMaybe m 'Nothing
+  SJust    :: LVal m σ -> SMaybe m ('Just σ)
+
 
 type family ConsN (u :: Maybe (LType)) (g :: Ctx) :: Ctx where
   ConsN ('Just σ) 'Empty = 'N ('End σ)
@@ -127,6 +127,8 @@ type family AddFreshN γ σ where
   AddFreshN ('Cons 'Nothing γ)  σ = 'Cons ('Just σ) γ
   AddFreshN ('Cons ('Just τ) γ) σ = 'Cons ('Just τ) (AddFreshN γ σ)
 
+-- Type families
+
 type family Div (γ :: Ctx) (γ0 :: Ctx) = (r :: Ctx) where
 --  Div γ γ = 'Empty
   Div γ 'Empty = γ
@@ -143,10 +145,37 @@ type family DivN (γ :: NCtx) (γ0 :: NCtx) = (r :: Ctx) where
   DivN γ                   γ0                   = TypeError
     (ShowType γ0 :<>: Text " must be a subcontext of " :<>: ShowType γ)
 
+type family SingletonN x (σ :: LType) :: NCtx where
+  SingletonN x σ = AddN x σ 'Empty
+type family Singleton x (σ :: LType) :: Ctx where
+  Singleton x σ = 'N (SingletonN x σ)
+
+
+type family Add (x :: Nat) (σ :: LType) (g :: Ctx) :: Ctx where
+  Add x σ g = 'N (AddN x σ g)
+
+type family AddN (x :: Nat) (σ :: LType) (g :: Ctx) :: NCtx where
+  AddN 'Z     σ 'Empty = 'End σ
+  AddN ('S x) σ 'Empty = 'Cons 'Nothing (AddN x σ 'Empty)
+  AddN x      σ ('N g) = AddNN x σ g
+
+type family AddNN x σ (g :: NCtx) :: NCtx where
+  AddNN ('S x) σ ('End τ)          = 'Cons ('Just τ) (SingletonN x σ)
+  AddNN 'Z     σ ('Cons 'Nothing g) = 'Cons ('Just σ) g
+  AddNN ('S x) σ ('Cons u       g) = 'Cons u (AddNN x σ g)
+
+type family Remove (x :: Nat) (g :: Ctx) :: Ctx where
+  Remove x 'Empty = TypeError (Text "Cannot remove anything from an empty context")
+  Remove x ('N γ) = RemoveN x γ
+type family RemoveN (x :: Nat) (γ :: NCtx) :: Ctx where
+  RemoveN 'Z ('End _) = 'Empty
+  RemoveN 'Z ('Cons ('Just _) γ) = 'N ('Cons 'Nothing γ)
+  RemoveN ('S x) ('Cons u γ)     = ConsN u (RemoveN x γ)
+
+
+
 -- Instances ----------------------------------------- 
 
 type Exp = Ctx -> LType -> Type
 class Monad m => Eval m (exp :: Exp) where
-  eval :: exp γ τ -> CtxVal m γ -> m (LVal m τ)
-
-
+  eval :: exp γ τ -> SCtx m γ -> m (LVal m τ)

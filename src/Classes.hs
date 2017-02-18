@@ -30,22 +30,25 @@ instance CInN x σ g => CIn x σ ('N g)
 
 -- Add To Context ----------------------------------------------
 
-class CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) | x σ γ -> γ', x γ' -> σ γ
+class (γ' ~ Add x σ γ, γ ~ Remove x γ')
+   => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
+    | x σ γ -> γ', x γ' -> σ γ
   where
-    add    :: forall m. LVal m σ -> CtxVal m γ -> CtxVal m γ'
---    remove :: CtxVal γ' -> (LVal σ, CtxVal γ)
+    add    :: forall m. LVal m σ -> SCtx m γ -> SCtx m γ'
+--    remove :: SCtx γ' -> (LVal σ, SCtx γ)
 instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountN γ')
       => CAddCtx x σ γ ('N γ') 
   where
---    add :: forall m. LVal m σ -> CtxVal m γ -> CtxVal m ('N γ')
+--    add :: forall m. LVal m σ -> SCtx m γ -> SCtx m ('N γ')
 --    add    = addN @x @σ @γ @γ' @(CountN γ') @m
 --    remove = removeN @x @σ @γ @γ' @(CountN γ')
 
-class CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
+class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
+   => CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
   where
-    addN    :: forall m. LVal m σ -> CtxVal m γ -> NCtxVal m γ'
---    remove :: CtxVal γ' -> (LVal σ, NCtxVal γ)
+    addN    :: forall m. LVal m σ -> SCtx m γ -> SNCtx m γ'
+--    remove :: SCtx γ' -> (LVal σ, SNCtx γ)
 
 
 instance CSingletonNCtx x (σ :: LType) (γ' :: NCtx)
@@ -53,15 +56,15 @@ instance CSingletonNCtx x (σ :: LType) (γ' :: NCtx)
   where
 --    addN v () = singleton v
 instance CSingletonNCtx x σ γ'
-      => CAddCtxN x σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
+      => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
   where
 --    addN v t = (t,v)
 instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
-      => CAddCtxN x σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S (S n)))
+      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S (S n)))
   where
 --    addN v g = addN @x @σ @(N γ) @γ' @(S (S n)) v g
 instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
-      => CAddCtxN x σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S (S n)))
+      => CAddCtxN (S x) σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S (S n)))
   where
 --    addN v (t,g) = (t,addN @x @σ @(N γ) @γ' @(S (S n)) v g)
 
@@ -91,14 +94,16 @@ instance CIsSingleton g b => CIsSingleton ('Cons 'Nothing g) b where
 
 -- Singleton Context ------------------------------------------
 
-class CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
+class (g ~ Singleton x σ, Remove x g ~ Empty)
+   => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
       | x σ -> g, g -> x σ where
-  singleton :: LVal m σ -> CtxVal m g
-  singletonInv :: CtxVal m g -> LVal m σ
-class CSingletonNCtx (x :: Nat) (σ :: LType) (g :: NCtx) 
+  singleton :: LVal m σ -> SCtx m g
+  singletonInv :: SCtx m g -> LVal m σ
+class (g ~ SingletonN x σ, RemoveN x g ~ Empty)
+   => CSingletonNCtx (x :: Nat) (σ :: LType) (g :: NCtx) 
     | x σ -> g, g -> x σ where
-  singletonN :: LVal m σ -> NCtxVal m g
-  singletonNInv :: NCtxVal m g -> LVal m σ
+  singletonN :: LVal m σ -> SNCtx m g
+  singletonNInv :: SNCtx m g -> LVal m σ
 
 instance CSingletonNCtx 'Z σ ('End σ) where
 --  singletonN = id
@@ -147,23 +152,23 @@ instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3
 --  split = split'  @g1 @g2 @g3
 
 class CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
-  split :: CtxVal m g3 -> (CtxVal m g1, CtxVal m g2)
+  split :: SCtx m g3 -> (SCtx m g1, SCtx m g2)
 class CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
-  splitN :: NCtxVal m g3 -> (NCtxVal m g1, NCtxVal m g2)
+  splitN :: SNCtx m g3 -> (SNCtx m g1, SNCtx m g2)
 
 instance CMergeForward ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
-  split () = ((),())
+--  split () = ((),())
 instance CMergeForward 'Empty ('N g) ('N g) where
-  split g = ((),g)
+--  split g = ((),g)
 instance CMergeForward ('N g) 'Empty ('N g) where
-  split g = (g,())
+--  split g = (g,())
 instance CMergeNForward g1 g2 g3 => CMergeForward ('N g1) ('N g2) ('N g3) where
 --  split = splitN @g1 @g2
 
 instance CMergeNForward ('End σ) ('Cons 'Nothing g2) ('Cons ('Just σ) g2) where
-  splitN (s,g) = (s,g)
+--  splitN (s,g) = (s,g)
 instance CMergeNForward ('Cons 'Nothing g1) ('End σ) ('Cons ('Just σ) g1) where
-  splitN (s,g) = (g,s)
+--  splitN (s,g) = (g,s)
 --instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
 --      => CMergeNForward ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
 -- u1=Nothing, u2=Nothing
@@ -187,7 +192,7 @@ instance CMergeNForward g1 g2 g3
 -- Div ---------------------------------------
 
 class CDiv (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
---  split' :: CtxVal m g1 -> (CtxVal m g2, CtxVal m g3)
+--  split' :: SCtx m g1 -> (SCtx m g2, SCtx m g3)
 
 instance CDiv ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
 --  split' () = ((),())
@@ -197,7 +202,7 @@ instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
 --  split' = splitN @g1 @g2 @g3
 
 class CDivN (g1 :: NCtx) (g2 :: NCtx) (g3 :: Ctx) | g1 g2 -> g3 where
---  splitN :: NCtxVal m g1 -> (NCtxVal m g2, CtxVal m g3)
+--  splitN :: SNCtx m g1 -> (SNCtx m g2, SCtx m g3)
 
 instance σ ~ τ => CDivN ('End σ :: NCtx) ('End τ) ('Empty :: Ctx) where
 --  splitN g = (g,())

@@ -54,6 +54,7 @@ class HasOne (exp :: Exp) where
 
 -- Tensor ---------------------------------------------  
 
+type Var exp x σ = exp (Singleton x σ) σ
 
 data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
@@ -72,7 +73,7 @@ class HasTensor (exp :: Exp) where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ, x2 ~ Fresh2 γ )
+             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
