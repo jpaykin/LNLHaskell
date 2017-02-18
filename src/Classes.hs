@@ -39,8 +39,7 @@ class (γ' ~ Add x σ γ, γ ~ Remove x γ')
 instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountN γ')
       => CAddCtx x σ γ ('N γ') 
   where
---    add :: forall m. LVal m σ -> SCtx m γ -> SCtx m ('N γ')
---    add    = addN @x @σ @γ @γ' @(CountN γ') @m
+    add v g = SN $ addN @x v g
 --    remove = removeN @x @σ @γ @γ' @(CountN γ')
 
 class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
@@ -54,19 +53,19 @@ class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
 instance CSingletonNCtx x (σ :: LType) (γ' :: NCtx)
       => CAddCtxN x σ Empty γ' (S Z)
   where
---    addN v () = singleton v
+    addN s SEmpty = singletonN @x s
 instance CSingletonNCtx x σ γ'
       => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
   where
---    addN v t = (t,v)
+    addN s (SN (SEnd t)) = SCons (SJust t) $ singletonN @x s
 instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
       => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S (S n)))
   where
---    addN v g = addN @x @σ @(N γ) @γ' @(S (S n)) v g
+    addN s (SN (SCons _ g)) = SCons SNothing (addN @x s (SN g))
 instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
       => CAddCtxN (S x) σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S (S n)))
   where
---    addN v (t,g) = (t,addN @x @σ @(N γ) @γ' @(S (S n)) v g)
+    addN s (SN (SCons u g)) = SCons u $ addN @x s (SN g)
 
 ---------------------
 
@@ -106,15 +105,15 @@ class (g ~ SingletonN x σ, RemoveN x g ~ Empty)
   singletonNInv :: SNCtx m g -> LVal m σ
 
 instance CSingletonNCtx 'Z σ ('End σ) where
---  singletonN = id
---  singletonNInv = id
+  singletonN v = SEnd v
+  singletonNInv (SEnd v) = v
 instance CSingletonNCtx x σ g => CSingletonNCtx ('S x) σ ('Cons 'Nothing g) where
---  singletonN = singletonN @x @σ @g 
---  singletonNInv = singletonNInv @x @σ @g
+  singletonN v = SCons SNothing $ singletonN @x v
+  singletonNInv (SCons _ g) = singletonNInv @x g
 
 instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
---  singleton = singletonN @x @σ
---  singletonInv = singletonNInv @x @σ
+  singleton v = SN $ singletonN @x v
+  singletonInv (SN g) = singletonNInv @x g
 
 -- Well-formed contexts --------------------------------
 
@@ -133,14 +132,10 @@ instance WFNCtx γ => WFNCtx ('Cons ('Just σ) γ)
 
 class CMergeU (u1 :: Maybe a) (u2 :: Maybe a) (u3 :: Maybe a)
       | u1 u2 -> u3, u1 u3 -> u2, u2 u3 -> u1 where
---  mergeU :: MergeU u1 u2 u3
 
 instance CMergeU (Nothing :: Maybe α) (Nothing :: Maybe α) (Nothing :: Maybe α)
---  mergeU = MergeUn
 instance CMergeU (Just a) (Nothing :: Maybe α) ('Just a :: Maybe α) where
---  mergeU = MergeUL
 instance CMergeU ('Nothing :: Maybe α) ('Just a) ('Just a :: Maybe α) where
---  mergeU = MergeUR
 
 class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2
       , WFCtx g1, WFCtx g2, WFCtx g3) 
@@ -157,34 +152,40 @@ class CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
   splitN :: SNCtx m g3 -> (SNCtx m g1, SNCtx m g2)
 
 instance CMergeForward ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
---  split () = ((),())
+  split _ = (SEmpty,SEmpty)
 instance CMergeForward 'Empty ('N g) ('N g) where
---  split g = ((),g)
+  split g = (SEmpty,g)
 instance CMergeForward ('N g) 'Empty ('N g) where
---  split g = (g,())
+  split g = (g,SEmpty)
 instance CMergeNForward g1 g2 g3 => CMergeForward ('N g1) ('N g2) ('N g3) where
---  split = splitN @g1 @g2
+  split (SN g) = let (g1,g2) = splitN g
+                 in (SN g1, SN g2)
 
 instance CMergeNForward ('End σ) ('Cons 'Nothing g2) ('Cons ('Just σ) g2) where
---  splitN (s,g) = (s,g)
+  splitN (SCons (SJust v) g) = (SEnd v, SCons SNothing g)
 instance CMergeNForward ('Cons 'Nothing g1) ('End σ) ('Cons ('Just σ) g1) where
---  splitN (s,g) = (g,s)
---instance (CMergeU u1 u2 u3, CMergeNForward g1 g2 g3)
---      => CMergeNForward ('Cons u1 g1) ('Cons u2 g2) ('Cons u3 g3) where
+  splitN (SCons (SJust v) g) = (SCons SNothing g, SEnd v)
 -- u1=Nothing, u2=Nothing
 instance CMergeNForward g1 g2 g3
-    => CMergeNForward ('Cons 'Nothing g1) ('Cons 'Nothing g2) ('Cons 'Nothing g3) where
---  splitN g = splitN @g1 @g2 @_ @m g
+    => CMergeNForward ('Cons 'Nothing g1) ('Cons 'Nothing g2) ('Cons 'Nothing g3) 
+  where
+    splitN (SCons SNothing g) = (SCons SNothing g1, SCons SNothing g2)
+      where
+        (g1,g2) = splitN g
 -- u1=Just σ, u2= Nothing
 instance CMergeNForward g1 g2 g3
-    => CMergeNForward ('Cons ('Just σ) g1) ('Cons 'Nothing g2) ('Cons ('Just σ) g3) where
---  splitN (s,g) = let (g1,g2) = splitN @g1 @g2 g
---                 in ((s,g1),g2)
+    => CMergeNForward ('Cons ('Just σ) g1) ('Cons 'Nothing g2) ('Cons ('Just σ) g3) 
+  where
+    splitN (SCons (SJust v) g) = (SCons (SJust v) g1, SCons SNothing g2)
+      where
+        (g1,g2) = splitN g
 -- u1=Nothing, u2= Just σ
 instance CMergeNForward g1 g2 g3
-    => CMergeNForward ('Cons 'Nothing g1) ('Cons ('Just σ) g2) ('Cons ('Just σ) g3) where
---  splitN (s,g) = let (g1,g2) = splitN @g1 @g2 g
---                 in (g1,(s,g2))
+    => CMergeNForward ('Cons 'Nothing g1) ('Cons ('Just σ) g2) ('Cons ('Just σ) g3) 
+  where
+    splitN (SCons (SJust v) g) = (SCons SNothing g1, SCons (SJust v) g2) 
+      where
+        (g1,g2) = splitN g
 
 
 
