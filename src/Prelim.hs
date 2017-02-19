@@ -226,7 +226,14 @@ toNat (SS n) = S $ toNat n
 instance forall (n :: Nat). Show (Sing n) where
   show n = show $ toNat n
 
+--------------------------------------------
+-- Pairs -----------------------------------
+--------------------------------------------
 
+type family Fst (pair :: (k1,k2)) :: k1 where
+  Fst '(fst,_) = fst
+type family Snd pair where
+  Snd '(_,snd) = snd
 
 --------------------------------------------
 -- Maps ------------------------------------

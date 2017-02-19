@@ -69,13 +69,6 @@ type family Fresh2 (g::Ctx) :: Nat where
   Fresh2 'Empty = 'S 'Z
   Fresh2 ('N g) = FreshN2 g
 
-type family AddFresh γ σ where
-  AddFresh 'Empty σ = 'N ('End σ)
-  AddFresh ('N γ) σ = 'N (AddFreshN γ σ)
-type family AddFreshN γ σ where
-  AddFreshN ('End τ)            σ = 'Cons ('Just τ) ('End σ)
-  AddFreshN ('Cons 'Nothing γ)  σ = 'Cons ('Just σ) γ
-  AddFreshN ('Cons ('Just τ) γ) σ = 'Cons ('Just τ) (AddFreshN γ σ)
 
 -- Type families
 

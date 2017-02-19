@@ -171,6 +171,34 @@ class HasVar (exp :: Exp) where
   var :: forall x (σ :: LType) (γ :: Ctx). 
          CSingletonCtx x σ γ => exp γ σ
 
+data Prim σ = Prim
+data Bang a = Bang a
+
+type family Pat (σ :: LType) :: Type where
+  Pat (MkLType ('TensorSig σ τ)) = (Pat σ, Pat τ)
+  Pat (MkLType ('LowerSig a))    = Bang a
+  Pat σ                          = Prim σ
+
+
+type family AddFresh γ (σ :: LType) :: Ctx where
+  AddFresh γ (MkLType ('TensorSig σ τ)) = 
+    Merge12 (AddFresh γ σ) (Merge12 γ (AddFresh γ σ))
+  AddFresh γ (MkLType ('LowerSig a))    = 'Empty
+  AddFresh γ σ                          = Singleton (Fresh γ) σ
+
+class CAddFresh γ σ γ' | γ σ -> γ', γ' σ -> γ
+
+class Matchable exp σ where
+  pat :: CAddFresh γ σ γ' => Pat σ -> exp γ' σ
+  λcase :: (CAddFresh γ σ γ', CMerge γ γ' γ'')
+        => (Pat σ -> exp γ'' τ) -> exp γ (σ ⊸ τ)
+
+--foo :: forall (exp :: Exp) σ τ. 
+--       (HasTensor exp, Matchable exp σ, Matchable exp τ, Matchable exp (σ ⊗ τ))
+--    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
+--foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x
+
+
 {-
 data Bang a = Bang a
 type family Pat (σ :: LType) where
