@@ -141,7 +141,6 @@ force (Suspend e) = e
 -- Examples ---------------------------------------------------
 ---------------------------------------------------------------
 
-{-
 id :: HasLolli exp => Lift exp (σ ⊸ σ)
 id = Suspend . λ $ \x -> x
 
@@ -154,11 +153,14 @@ uncurryL = Suspend . λ $ \f -> λ $ \x ->
     f ^ x1 ^ x2
 uncurry :: (HasLolli exp,HasTensor exp,WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
 uncurry e = force uncurryL ^ e
--}
 
---compose :: (HasLolli exp,CMerge γ1 γ2 γ)
---        => exp γ1 (τ ⊸ ρ) -> exp γ2 (σ ⊸ τ) -> exp γ (σ ⊸ ρ)
---compose g f = λ $ \x -> g ^ (f ^ x)
+
+composeL :: HasLolli exp
+         => Lift exp ((τ ⊸ ρ) ⊸ (σ ⊸ τ) ⊸ (σ ⊸ ρ))
+composeL = Suspend . λ $ \g -> λ $ \f -> λ $ \x -> g ^ (f ^ x)
+compose :: (HasLolli exp, CMerge γ1 γ2 γ)
+        => exp γ1 (τ ⊸ ρ) -> exp γ2 (σ ⊸ τ) -> exp γ (σ ⊸ ρ)
+compose g f = force composeL ^ g ^ f
 
 
 ---------------------------------------------------------------

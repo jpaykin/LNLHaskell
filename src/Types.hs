@@ -19,14 +19,15 @@ data LType where
 
 
 type Exp = Ctx -> LType -> Type
-data Sig = Sig (Type -> Type) (Sig -> Exp)
-type family Effect (sig :: Sig) :: Type -> Type where
-  Effect ('Sig m _) = m
-type family LExp (sig :: Sig) :: Exp where
-  LExp ('Sig m exp) = exp ('Sig m exp)
+type Val = LType -> Type
+data Sig = Sig (Type -> Type) (Exp) (Val)
 
-data family LVal (sig :: Sig) (σ :: LType)
---data family LVal (m :: Type -> Type) (σ :: LType)
+type family Effect (sig :: Sig) :: Type -> Type where
+  Effect ('Sig m _ _) = m
+type family LExp (sig :: Sig) :: Exp where
+  LExp ('Sig _ exp _) = exp
+type family LVal (sig :: Sig) :: Val where
+  LVal ('Sig _ _ val) = val
 
 data Ctx  = Empty | N (NCtx)
 data NCtx = End (LType) | Cons (Maybe (LType)) (NCtx)
@@ -63,7 +64,6 @@ type family FreshN2 g :: Nat where
   FreshN2 ('End τ)           = 'S ('S 'Z)
   FreshN2 ('Cons 'Nothing g)   = 'S (FreshN g)
   FreshN2 ('Cons ('Just σ) g) = 'S (FreshN2 g)
-
 
 type family Fresh2 (g::Ctx) :: Nat where
   Fresh2 'Empty = 'S 'Z
@@ -122,7 +122,16 @@ type family RemoveN (x :: Nat) (γ :: NCtx) :: Ctx where
   RemoveN 'Z ('Cons ('Just _) γ) = 'N ('Cons 'Nothing γ)
   RemoveN ('S x) ('Cons u γ)     = ConsN u (RemoveN x γ)
 
-
-
+type family Merge12 (g1 :: Ctx) (g2 :: Ctx) :: Ctx where
+  Merge12 'Empty 'Empty = 'Empty
+  Merge12 'Empty ('N g2) = 'N g2
+  Merge12 ('N g1) 'Empty = 'N g1
+  Merge12 ('N g1) ('N g2) = 'N (Merge12N g1 g2)
+type family Merge12N (g1 :: NCtx) (g2 :: NCtx) :: NCtx where
+  Merge12N ('End σ) ('Cons 'Nothing g2) = 'Cons ('Just σ) g2
+  Merge12N ('Cons 'Nothing g1) ('End σ) = 'Cons ('Just σ) g1
+  Merge12N ('Cons 'Nothing g1) ('Cons 'Nothing g2) = 'Cons Nothing (Merge12N g1 g2)
+  Merge12N ('Cons ('Just σ) g1) ('Cons 'Nothing g2) = 'Cons ('Just σ) (Merge12N g1 g2)
+  Merge12N ('Cons 'Nothing g1) ('Cons ('Just σ) g2) = 'Cons ('Just σ) (Merge12N g1 g2)
 
 

@@ -11,7 +11,7 @@
 module ShallowEmbedding where
 
 import Control.Monad (liftM2)
-
+import Data.Kind
 
 --import Prelim hiding (One)
 import Types
@@ -23,10 +23,13 @@ import Tagless
 
 -- Shallow Embedding
 
-type Shallow m = '(m,SExp m)
-data SExp m :: Exp where
+type Shallow m = 'Sig m (SExp m) (SVal m)
+data SExp (m :: Type -> Type) :: Exp where
   SExp :: forall m (γ :: Ctx) (τ :: LType).
-          (SCtx (Shallow m) γ -> m (LVal (Shallow m) τ)) -> SExp m γ τ
+          (SCtx (Shallow m) γ -> m (SVal m τ)) -> SExp m γ τ
+
+data family SVal (m :: Type -> Type) (τ :: LType)
+
 
 instance Monad m => Eval (Shallow m) where
   eval (SExp f) γ = f γ
@@ -40,12 +43,12 @@ instance Monad m => HasVar (SExp m) where
 -----------------------------------------------------------
 -----------------------------------------------------------
 
-data instance LVal sig (MkLType ('LolliSig (σ :: LType) (τ :: LType))) = 
-    VAbs (LVal sig σ -> Effect sig (LVal sig τ))
+data instance SVal m (MkLType ('LolliSig σ τ)) =
+    VAbs (SVal m σ -> m (SVal m τ))
 
 instance Monad m => HasLolli (SExp m) where
   λ :: forall x σ γ γ' γ'' τ. 
-       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
+       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'')
     => (SExp m γ'' σ -> SExp m γ' τ) -> SExp m γ (σ ⊸ τ)  
   λ f = SExp $ \(γ :: SCtx (Shallow m) γ) -> return . VAbs $ \s -> 
          let SExp g = f var
@@ -58,7 +61,7 @@ instance Monad m => HasLolli (SExp m) where
     s'      <- s g2
     f' s'
 
-data instance LVal _ (MkLType 'OneSig) = VUnit
+data instance SVal _ (MkLType 'OneSig) = VUnit
 instance Monad m => HasOne (SExp m) where
   unit = SExp $ \_ -> return $ VUnit
   letUnit (SExp e1 :: SExp m γ1 One) (SExp e2 :: SExp m γ2 τ) = SExp $ \g -> do
@@ -66,8 +69,8 @@ instance Monad m => HasOne (SExp m) where
     VUnit   <- e1 g1
     e2 g2
 
-data instance LVal sig (MkLType ('TensorSig σ1 σ2)) = 
-    VPair (LVal sig σ1) (LVal sig σ2)
+data instance SVal m (MkLType ('TensorSig σ1 σ2)) = VPair (SVal m σ1) (SVal m σ2)
+
 instance Monad m => HasTensor (SExp m) where
   (SExp e1 :: SExp m γ1 σ1) ⊗ (SExp e2 :: SExp m γ2 σ2) = SExp $ \g ->
     let (g1,g2) = split g
@@ -80,8 +83,7 @@ instance Monad m => HasTensor (SExp m) where
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
-             , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
+             , CSingletonCtx x2 σ2 γ22)
       => SExp m γ1 (σ1 ⊗ σ2)
       -> ((SExp m γ21 σ1, SExp m γ22 σ2) -> SExp m γ2'' τ)
       -> SExp m γ τ
@@ -93,16 +95,15 @@ instance Monad m => HasTensor (SExp m) where
         e' (add @x2 @σ2 v2 (add @x1 @σ1 v1 ρ2))
 
 
-data instance LVal m (MkLType 'BottomSig)
+data instance SVal m (MkLType 'BottomSig)
 
-data instance LVal m (MkLType ('PlusSig σ τ)) = VLeft (LVal m σ) | VRight (LVal m τ)
+data instance SVal m (MkLType ('PlusSig σ τ)) = VLeft (SVal m σ) | VRight (SVal m τ)
 instance Monad m => HasPlus (SExp m) where
   inl (SExp e) = SExp $ \g -> VLeft <$> e g
   inr (SExp e) = SExp $ \g -> VRight <$> e g
   caseof :: forall x σ1 σ2 τ γ γ1 γ2 γ21 γ21' γ22 γ22'.
             ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
-            , x ~ Fresh γ
             , CMerge γ1 γ2 γ )
         => SExp m γ1 (σ1 ⊕ σ2)
         -> (SExp m γ21' σ1 -> SExp m γ21 τ)
@@ -116,7 +117,7 @@ instance Monad m => HasPlus (SExp m) where
         VLeft  s1 -> e1 $ add @x @σ1 s1 g2
         VRight s2 -> e2 $ add @x @σ2 s2 g2
 
-data instance LVal m (MkLType ('WithSig σ τ)) = VWith (LVal m σ) (LVal m τ)
+data instance SVal m (MkLType ('WithSig σ τ)) = VWith (SVal m σ) (SVal m τ)
 instance Monad m => HasWith (SExp m) where
   SExp e1 & SExp e2 = SExp $ \g -> liftM2 VWith (e1 g) (e2 g)
   proj1 (SExp e)   = SExp $ \g -> do
@@ -126,7 +127,7 @@ instance Monad m => HasWith (SExp m) where
     VWith _ v2 <- e g
     return v2
 
-data instance LVal m (MkLType ('LowerSig a)) = a
+data instance SVal m (MkLType ('LowerSig a)) = VBang a
 instance Monad m => HasLower (SExp m) where
   put a = SExp $ \_ -> return $ VBang a
   (SExp e :: SExp m γ1 (Lower a)) >! (f :: a -> SExp m γ2 τ) = SExp $ \ g -> do

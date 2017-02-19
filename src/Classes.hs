@@ -2,7 +2,8 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              InstanceSigs, TypeApplications, ScopedTypeVariables,
-             EmptyCase, FlexibleContexts, UndecidableInstances
+             EmptyCase, FlexibleContexts, UndecidableInstances,
+             ConstraintKinds
 #-}
 {-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
                                -fno-warn-redundant-constraints #-}
@@ -91,6 +92,10 @@ instance CIsSingleton g b => CIsSingleton ('Cons 'Nothing g) b where
 
 -- Singleton Context ------------------------------------------
 
+type WFVar x σ γ = ( CSingletonCtx x σ (Singleton x σ)
+                   , CAddCtx x σ γ (Add x σ γ) 
+                   )
+
 class (g ~ Singleton x σ, Remove x g ~ Empty)
    => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
       | x σ -> g, g -> x σ where
@@ -115,7 +120,9 @@ instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
 
 -- Well-formed contexts --------------------------------
 
-class (CDiv γ 'Empty γ, CDiv  γ γ 'Empty, CMergeForward 'Empty γ γ, CMergeForward γ 'Empty γ) 
+class ( CDiv γ 'Empty γ, CDiv  γ γ 'Empty
+      , CMergeForward 'Empty γ γ, CMergeForward γ 'Empty γ
+      ) 
     => WFCtx γ 
 class (CDivN γ γ 'Empty) => WFNCtx γ
 
@@ -144,9 +151,11 @@ instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3
     => CMerge g1 g2 g3 where
 --  split = split'  @g1 @g2 @g3
 
-class CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
+class (g3 ~ Merge12 g1 g2)
+   => CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
   split :: SCtx m g3 -> (SCtx m g1, SCtx m g2)
-class CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
+class (g3 ~ Merge12N g1 g2) 
+   => CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
   splitN :: SNCtx m g3 -> (SNCtx m g1, SNCtx m g2)
 
 instance CMergeForward ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
@@ -190,7 +199,8 @@ instance CMergeNForward g1 g2 g3
 
 -- Div ---------------------------------------
 
-class CDiv (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
+class (g3 ~ Div g1 g2)
+   => CDiv (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
 --  split' :: SCtx m g1 -> (SCtx m g2, SCtx m g3)
 
 instance CDiv ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
@@ -200,15 +210,22 @@ instance CDiv ('N g) 'Empty ('N g) where
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
 --  split' = splitN @g1 @g2 @g3
 
-class CDivN (g1 :: NCtx) (g2 :: NCtx) (g3 :: Ctx) | g1 g2 -> g3 where
+class (g3 ~ DivN g1 g2)
+   => CDivN (g1 :: NCtx) (g2 :: NCtx) (g3 :: Ctx) | g1 g2 -> g3 where
 --  splitN :: SNCtx m g1 -> (SNCtx m g2, SCtx m g3)
 
 instance σ ~ τ => CDivN ('End σ :: NCtx) ('End τ) ('Empty :: Ctx) where
 --  splitN g = (g,())
 instance CDivN ('Cons ('Just σ) g) ('End σ) ('N ('Cons 'Nothing g)) where
 --  splitN (s,g) = (s,g)
-instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
-      => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where
+--instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
+--      => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where
+instance (CDivN g1 g2 g3, g3' ~ ConsN 'Nothing g3)
+      => CDivN ('Cons 'Nothing g1) ('Cons 'Nothing g2) g3'
+instance (CDivN g1 g2 g3, g3' ~ ConsN ('Just σ) g3)
+      => CDivN ('Cons ('Just σ) g1) ('Cons 'Nothing g2) g3'
+instance (CDivN g1 g2 g3, g3' ~ ConsN 'Nothing g3)
+      => CDivN ('Cons ('Just σ) g1) ('Cons ('Just σ) g2) g3'
 
 
 

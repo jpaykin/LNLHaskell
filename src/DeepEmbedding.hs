@@ -2,7 +2,7 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
+             ScopedTypeVariables, AllowAmbiguousTypes,
              EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds
 #-}
 --{-# OPTIONS -fconstraint-solver-iterations=5 #-}
@@ -25,21 +25,25 @@ import Classes
 import Tagless
 
 
-type Deep m = 'Sig m DExp
+type Deep m = 'Sig m (DExp m) (DVal m)
 
 
 -- Expressions and values are indexed by languages, which are collections of
 -- individual domains. This allows domains to be easily composed.
 type Dom = Exp -> Exp
-data DExp (sig :: Sig) :: Ctx -> LType -> Type where
-  Var :: CSingletonCtx x τ γ => DExp sig γ τ
-  Dom :: forall sig (dom :: Dom) (γ :: Ctx) (τ :: LType).
-         Domain sig dom 
+data DExp m :: Ctx -> LType -> Type where
+  Var :: CSingletonCtx x τ γ => DExp m γ τ
+  Dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
+         Domain (Deep m) dom 
       => Proxy dom
-      -> dom (DExp sig) γ τ
-      -> DExp sig γ τ
+      -> dom (DExp m) γ τ
+      -> DExp m γ τ
+data family DVal (m :: Type -> Type) (τ :: LType)
 
-dom :: forall sig dom γ σ. Domain sig dom => dom (DExp sig) γ σ -> DExp sig γ σ
+dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
+         Domain (Deep m) dom 
+      => dom (DExp m) γ τ
+      -> DExp m γ τ
 dom = Dom (Proxy :: Proxy dom)
 
 -- The domain type class characterizes well-formed domains in which
@@ -53,7 +57,7 @@ class Monad (Effect sig) => Domain sig (dom :: Dom) where
 instance Monad m => Eval (Deep m) where
   eval :: forall (γ :: Ctx) τ. 
           LExp (Deep m) γ τ -> SCtx (Deep m) γ -> m (LVal (Deep m) τ)
-  eval Var                          γ = undefined -- return γ
+  eval Var                          γ = return $ singletonInv γ
   eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain e γ
 
 
@@ -80,31 +84,29 @@ data LolliExp :: Exp -> Exp where
       => exp γ1 (σ ⊸ τ)
       -> exp γ2 σ
       -> LolliExp exp γ τ
-data instance LVal (Deep m) (σ ⊸ τ) where
+data instance DVal m (σ ⊸ τ) where
   VAbs :: CAddCtx x σ γ γ'
        => SCtx (Deep m) γ
        -> VarName x σ
-       -> LExp (Deep m) γ' τ
-       -> LVal (Deep m) (σ ⊸ τ)
+       -> DExp m γ' τ
+       -> DVal m (σ ⊸ τ)
 
-instance Monad (Effect sig) => HasLolli (DExp sig) where
+instance Monad m => HasLolli (DExp m) where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-          => (DExp sig γ'' σ -> DExp sig γ' τ) -> DExp sig γ (σ ⊸ τ)
+          => (DExp m γ'' σ -> DExp m γ' τ) -> DExp m γ (σ ⊸ τ)
   λ f     = dom $ Abs (VarName @x) (f Var)
   e1 ^ e2 = dom $ App e1 e2
 
-instance Monad (Effect sig) => Domain sig LolliExp where
-{-
-  evalDomain (Abs x e) γ = 
-    return $ VAbs γ x e
+instance Monad m => Domain (Deep m) LolliExp where
+  evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: DExp m γ1 (σ ⊸ τ)) (e2 :: DExp m γ2 σ)) ρ = do
     VAbs ρ' (x :: VarName x σ) e1' <- eval e1 ρ1
     v2 <- eval e2 ρ2
     eval e1' (add @x v2 ρ')
     where
-      (γ1,γ2) = split γ
--}
+      (ρ1,ρ2) = split @γ1 @γ2 ρ
+
 {-
 
 
@@ -116,14 +118,14 @@ data OneExp :: Exp -> Exp where
 data instance LVal (Deep m) One where
   VUnit :: LVal (Deep m) One
 
-instance Monad m => HasOne (DExp m) where
+instance Monad m => HasOne (DExp) where
   unit = dom @m @OneExp Unit
   letUnit e1 e2 = dom @m @OneExp $ LetUnit e1 e2
 
 instance Monad (Effect sig) => Domain sig OneExp where
 {-
   evalDomain Unit _ = return VUnit
-  evalDomain (LetUnit (e1 :: DExp m γ1 One) (e2 :: DExp m γ2 τ)) ρ = do
+  evalDomain (LetUnit (e1 :: DExp γ1 One) (e2 :: DExp γ2 τ)) ρ = do
       VUnit <- eval e1 ρ1
       eval e2 ρ2
     where
@@ -149,7 +151,7 @@ data instance LVal (Deep m) (σ1 ⊗ σ2) = VPair (LVal (Deep m) σ1) (LVal (Dee
 -- instance sigs and ambiguous types?
 -- https://ghc.haskell.org/trac/ghc/ticket/12587
 
-instance Monad m => HasTensor (DExp m) where
+instance Monad m => HasTensor (DExp) where
   e1 ⊗ e2 = dom @m @TensorExp $ Pair e1 e2
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
@@ -160,26 +162,26 @@ instance Monad m => HasTensor (DExp m) where
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
              , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
-      => DExp m γ1 (σ1 ⊗ σ2)
-      -> ((Var (DExp m) x1 σ1, Var (DExp m) x2 σ2) -> DExp m γ2'' τ)
-      -> DExp m γ τ
+      => DExp γ1 (σ1 ⊗ σ2)
+      -> ((Var (DExp) x1 σ1, Var (DExp) x2 σ2) -> DExp γ2'' τ)
+      -> DExp γ τ
   letPair e f = dom @m @TensorExp $ 
                 LetPair (VarName @x1 @σ1) (VarName @x2 @σ2) e $ f (x1,x2)
     where
-      x1 :: Var (DExp m) x1 σ1
+      x1 :: Var (DExp) x1 σ1
       x1 = Var
-      x2 :: Var (DExp m) x2 σ2
+      x2 :: Var (DExp) x2 σ2
       x2 = Var
 
 instance Monad (Effect sig) => Domain sig TensorExp where
 {-
-  evalDomain (Pair (e1 :: DExp m γ1 τ1) (e2 :: DExp m γ2 τ2)) ρ =
+  evalDomain (Pair (e1 :: DExp γ1 τ1) (e2 :: DExp γ2 τ2)) ρ =
       liftM2 VPair (eval e1 ρ1) (eval e2 ρ2)
     where
       (ρ1,ρ2) = split ρ
   evalDomain (LetPair (_ :: VarName x1 σ1) (_ :: VarName x2 σ2)
-                      (e :: DExp m γ1 (σ1 ⊗ σ2))
-                      (e' :: DExp m γ2'' τ)) ρ = do
+                      (e :: DExp γ1 (σ1 ⊗ σ2))
+                      (e' :: DExp γ2'' τ)) ρ = do
       VPair v1 v2 <- eval @m e ρ1
       eval e' (add @x2 @σ2 v2 
               (add @x1 @σ1 v1 ρ2))
@@ -224,7 +226,7 @@ toDomain = fromJust . (toDomain' @dom)
 -- evalToValDom :: forall dom (lang :: Lang) g σ.
 --                 (WFDomain dom lang, Monad (SigEffect), Typeable σ)
 --              => Proxy dom -> ECtx lang g
---              -> DExp lang g σ ->Effect (ValDom dom lang σ)
+--              -> DExp g σ ->Effect (ValDom dom lang σ)
 -- evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
 
 
@@ -234,7 +236,7 @@ toDomain = fromJust . (toDomain' @dom)
 -- Show instance
 -- for debugging purposes
 
---instance Show (DExp lang γ t) where
+--instance Show (DExp γ t) where
 --  show (Var pfS) = "x" ++ (show . inSNat $ singletonIn pfS)
 --  show (Dom _ e) = show e
 -}
