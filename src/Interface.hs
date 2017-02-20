@@ -306,27 +306,58 @@ class HasVar (exp :: Exp) where
          CSingletonCtx x σ γ => exp γ σ
 
 
---type family PatMatch exp γ (σ :: LType) where
---  PatMatch exp γ σ = Var exp (Fresh γ) σ -> exp (Add
 
 
-type family Tuple exp γ (σs :: [LType]) :: Type where
-  Tuple exp γ '[]  = ()
-  Tuple exp γ '[σ] = Pat exp γ σ
-  Tuple exp γ (σ ': σs) = (Var exp (Fresh γ) σ, Tuple exp (Add (Fresh γ) σ γ) σs)
-
-data Pat exp γ σ where
-  U    :: Pat exp Empty One
+data Pat γin γout γsing σ where
 --  X    :: exp γ σ -> Pat exp γ σ
-  Put  :: a -> Pat exp γ (Lower a)
-  Pair :: CMerge γ1 γ2 γ => Pat exp γ1 σ1 -> Pat exp γ2 σ2 -> Pat exp γ (σ1 ⊗ σ2)
-  Inl  :: Pat exp γ σ1 -> Pat exp γ (σ1 ⊕ σ2)
-  Inr  :: Pat exp γ σ2 -> Pat exp γ (σ1 ⊕ σ2)
-data Match exp γ σ τ where
-  Match :: CMerge γ1 γ2 γ => (Pat exp γ2 σ -> exp γ τ) -> Match exp γ1 σ τ
+  U    :: Pat γ γ Empty One
+  Put  :: a -> Pat γ γ Empty (Lower a)
+  Pair :: (CMerge γ1 γ2 γ, WFFresh σ1 γ1, WFFresh σ2 γ2)
+       => Pat γin1 γout1 γ1 σ1 -> Pat γout1 γout2 γ2 σ2 
+       -> Pat γin1 γout2 γ (σ1 ⊗ σ2)
+  Inl  :: Pat γin γout γ σ1 -> Pat γin γout γ (σ1 ⊕ σ2)
+  Inr  :: Pat γin γout γ σ2 -> Pat γin γout γ (σ1 ⊕ σ2)
+
+type PatMatch exp γin σ τ = forall γout γ. 
+        CMerge γin γ γout => Pat γin γout γ σ -> exp γout τ
 
 class Matchable exp σ where 
-  λcase :: Match exp γ σ τ -> exp γ (σ ⊸ τ)
+  pat :: Pat γin γout γ σ -> exp γ σ
+  λcase :: (HasLolli exp, WFVar (Fresh γin) σ γin)
+        => PatMatch exp γin σ τ -> exp γin (σ ⊸ τ)
+
+match :: (Matchable exp σ, HasLolli exp, CMerge γ1 γ2 γ, WFVar (Fresh γ2) σ γ2)
+      => exp γ1 σ -> PatMatch exp γ2 σ τ -> exp γ τ
+match e f = (λcase f) ^ e
+
+
+instance HasOne exp => Matchable exp One where
+  pat U = unit
+  λcase f = λ $ \x -> x `letUnit` f U
+
+instance HasLower exp => Matchable exp (Lower a) where
+  pat (Put a) = put a
+  λcase f = λ $ \x -> x >! \a -> f (Put a)
+
+instance (HasTensor exp, Matchable exp σ1, Matchable exp σ2) 
+      => Matchable exp (σ1 ⊗ σ2) where
+  pat (Pair p1 p2) = pat p1 ⊗ pat p2
+--  λcase f = λ $ \x -> x `letPair` \(x1,x2) -> 
+--    x1 `match` \(p1 :: Pat γin1 γout1 γ1 σ1) -> 
+--    x2 `match` \(p2 :: Pat γin1 γout1 γ2 σ2) -> f (Pair p1 p2)
+
+
+instance (HasPlus exp, Matchable exp σ1, Matchable exp σ2) 
+      => Matchable exp (σ1 ⊕ σ2) where
+  pat (Inl p1) = inl $ pat p1
+  pat (Inr p2) = inr $ pat p2
+--  λcase f = λ $ \x -> caseof x (\y -> y `match` \p -> f (Inl p))
+--                               (\y -> y `match` \p -> f (Inr p))
+
+
+--swap :: (HasTensor exp, Matchable exp σ1, Matchable exp σ2) 
+--     => Lift exp (σ1 ⊗ σ2 ⊸ σ2 ⊗ σ1)
+--swap = suspend . λcase $ \(Pair p1 p2) -> pat p2 ⊗ pat p1
 
 --instance Matchable exp One where
 --  λcase (Match f) = λ $ \x -> x `letUnit` f U

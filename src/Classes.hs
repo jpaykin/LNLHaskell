@@ -101,7 +101,9 @@ instance CIsSingleton g b => CIsSingleton ('Cons 'Nothing g) b where
 
 type WFVar x σ γ = ( CSingletonCtx x σ (Singleton x σ)
                    , CAddCtx x σ γ (Add x σ γ) 
+                   , CMerge γ (Singleton x σ) (Add x σ γ)
                    )
+type WFFresh σ γ = WFVar (Fresh γ) σ γ
 
 class (g ~ Singleton x σ, Remove x g ~ Empty)
    => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
