@@ -154,7 +154,7 @@ instance Monad m => HasTensor (DExp m) where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
       => DExp m γ1 (σ1 ⊗ σ2)
       -> ((Var (DExp m) x1 σ1, Var (DExp m) x2 σ2) -> DExp m γ2'' τ)
       -> DExp m γ τ

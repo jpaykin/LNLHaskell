@@ -56,6 +56,9 @@ class HasOne (exp :: Exp) where
   letUnit :: CMerge γ1 γ2 γ 
           => exp γ1 One -> exp γ2 τ -> exp γ τ
 
+λunit :: (HasOne exp, HasLolli exp, WFFresh One γ)
+      => (() -> exp γ τ) -> exp γ (One ⊸ τ)
+λunit f = λ $ \x -> x `letUnit` f ()
 
 -- Tensor ---------------------------------------------  
 
@@ -77,13 +80,19 @@ class HasTensor (exp :: Exp) where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
 
-
-
+λpair :: (HasTensor exp, HasLolli exp
+         , CSingletonCtx x1 σ1 γ1, CSingletonCtx x2 σ2 γ2
+         , CAddCtx x1 σ1 γ γ', CAddCtx x2 σ2 γ' γ''
+         , x1 ~ Fresh γ, x2 ~ Fresh γ'
+         , WFVar x1 (σ1 ⊗ σ2) γ, WFVar x2 (σ1 ⊗ σ2) γ
+         )
+        => ((exp γ1 σ1, exp γ2 σ2) -> exp γ'' τ) -> exp γ (σ1⊗σ2 ⊸ τ)
+λpair f = λ $ \z -> z `letPair` f
 
 
 -- Bottom -------------------------------------------
@@ -128,6 +137,9 @@ class HasLower (exp :: Exp) where
   put  :: a -> exp Empty (Lower a)
   (>!) :: CMerge γ1 γ2 γ => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
 
+λbang :: ( HasLower exp, HasLolli exp, WFFresh (Lower a) γ)
+   => (a -> exp γ τ) -> exp γ (Lower a ⊸ τ)
+λbang f = λ $ \x -> x >! f
 
 -- Lift --------------------------------------------------
 

@@ -37,49 +37,51 @@ class (γ' ~ Add x σ γ, γ ~ Remove x γ')
   where
     add    :: forall m. LVal m σ -> SCtx m γ -> SCtx m γ'
 --    remove :: SCtx γ' -> (LVal σ, SCtx γ)
-instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountN γ')
+instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountNMinus1 γ')
       => CAddCtx x σ γ ('N γ') 
   where
     add v g = SN $ addN @x v g
 
-class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
+class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ', len ~ CountNMinus1 γ')
    => CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
   where
     addN    :: forall m. LVal m σ -> SCtx m γ -> SNCtx m γ'
 
 
-instance CSingletonNCtx x σ γ'
-      => CAddCtxN x σ Empty γ' (S Z)
+instance (CSingletonNCtx x σ γ', WFNCtx γ')
+      => CAddCtxN x σ Empty γ' Z
   where
     addN s SEmpty = singletonN @x s
 
-instance CountN γ ~ S n
-      => CAddCtxN Z σ (N (Cons Nothing γ)) (Cons (Just σ) γ) (S (S n)) 
+instance (CountNMinus1 γ ~ n, WFNCtx γ)
+      => CAddCtxN Z σ (N (Cons Nothing γ)) (Cons (Just σ) γ) (S n)
   where
     addN s (SN (SCons _ g)) = SCons (SJust s) g
 
 
-instance CSingletonNCtx x σ γ'
-      => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
+instance (CSingletonNCtx x σ γ', WFNCtx γ')
+      => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S Z)
   where
     addN s (SN (SEnd t)) = SCons (SJust t) $ singletonN @x s
-instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n))
-      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S (S n))
+instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S n)
+      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S n)
   where
     addN s (SN (SCons _ g)) = SCons SNothing (addN @x s (SN g))
-instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S (S n)) 
-      => CAddCtxN (S x) σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S (S n)))
+instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S n)
+      => CAddCtxN (S x) σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S n))
   where
     addN s (SN (SCons u g)) = SCons u $ addN @x s (SN g)
 
 ---------------------
 
 -- outputs the number of variables used in the NCtx
-type family CountN g :: Nat where
-  CountN ('End _)            = 'S 'Z
-  CountN ('Cons ('Just _) g) = 'S (CountN g)
-  CountN ('Cons 'Nothing g)   = CountN g
+-- since every NCtx has size >= 1, we first compute |g|-1 and then add one.
+type family CountNMinus1 γ :: Nat where
+  CountNMinus1 ('End _) = 'Z
+  CountNMinus1 ('Cons ('Just _) γ) = 'S (CountNMinus1 γ)
+  CountNMinus1 ('Cons 'Nothing γ)  = CountNMinus1 γ
+type CountN γ = S (CountNMinus1 γ)
 
 type family IsSingleton  g :: Bool where
   IsSingleton ('End σ)            = 'True
@@ -102,15 +104,24 @@ instance CIsSingleton g b => CIsSingleton ('Cons 'Nothing g) b where
 type WFVar x σ γ = ( CSingletonCtx x σ (Singleton x σ)
                    , CAddCtx x σ γ (Add x σ γ) 
                    , CMerge γ (Singleton x σ) (Add x σ γ)
+                   , WFCtx γ
                    )
-type WFFresh σ γ = WFVar (Fresh γ) σ γ
+class WFVar (Fresh γ) σ γ => WFFresh σ γ
+class WFVar (FreshN γ) σ (N γ) => WFNFresh σ γ
+
+instance WFFresh σ Empty
+instance WFNFresh σ γ => WFFresh σ (N γ)
+instance WFNFresh σ (End τ)
+instance WFNCtx γ => WFNFresh σ (Cons Nothing γ)
+--instance WFNFresh σ γ => WFNFresh σ (Cons (Just τ) γ)
+-- TODO
 
 class (g ~ Singleton x σ, Remove x g ~ Empty)
    => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
       | x σ -> g, g -> x σ where
   singleton :: LVal m σ -> SCtx m g
   singletonInv :: SCtx m g -> LVal m σ
-class (g ~ SingletonN x σ, RemoveN x g ~ Empty)
+class (g ~ SingletonN x σ, RemoveN x g ~ Empty, CountNMinus1 g ~ Z)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (g :: NCtx) 
     | x σ -> g, g -> x σ where
   singletonN :: LVal m σ -> SNCtx m g
@@ -158,7 +169,15 @@ class (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1
 instance (CMergeForward g1 g2 g3, CMergeForward g2 g1 g3, CDiv g3 g2 g1, CDiv g3 g1 g2
          , WFCtx g1, WFCtx g2, WFCtx g3)
     => CMerge g1 g2 g3 where
---  split = split'  @g1 @g2 @g3
+
+class (CMergeNForward g1 g2 g3, CMergeNForward g2 g1 g3, CDivN g3 g2 (N g1), CDivN g3 g1 (N g2)
+      , WFNCtx g1, WFNCtx g2, WFNCtx g3) 
+    => CMergeN g1 g2 g3 | g1 g2 -> g3, g1 g3 -> g2, g2 g3 -> g1
+
+instance (CMergeNForward g1 g2 g3, CMergeNForward g2 g1 g3, CDivN g3 g2 (N g1), CDivN g3 g1 (N g2)
+      , WFNCtx g1, WFNCtx g2, WFNCtx g3) 
+    => CMergeN g1 g2 g3
+
 
 class (g3 ~ Merge12 g1 g2)
    => CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
