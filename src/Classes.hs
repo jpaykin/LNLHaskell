@@ -49,10 +49,17 @@ class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ')
     addN    :: forall m. LVal m σ -> SCtx m γ -> SNCtx m γ'
 
 
-instance CSingletonNCtx x (σ :: LType) (γ' :: NCtx)
+instance CSingletonNCtx x σ γ'
       => CAddCtxN x σ Empty γ' (S Z)
   where
     addN s SEmpty = singletonN @x s
+
+instance CountN γ ~ S n
+      => CAddCtxN Z σ (N (Cons Nothing γ)) (Cons (Just σ) γ) (S (S n)) 
+  where
+    addN s (SN (SCons _ g)) = SCons (SJust s) g
+
+
 instance CSingletonNCtx x σ γ'
       => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S (S Z))
   where

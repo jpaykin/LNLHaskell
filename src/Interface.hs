@@ -1,695 +1,460 @@
 {-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, FlexibleContexts,
-             EmptyCase, RankNTypes, TypeFamilyDependencies,
-             ConstraintKinds
+             InstanceSigs, TypeApplications, 
+             ScopedTypeVariables, UndecidableInstances,
+             EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds,
+             TypeFamilyDependencies, LambdaCase
 #-}
--- {-# OPTIONS_GHC -Wall -Wcompat #-}
 
 module Interface where
-
-import Data.Kind
-import Data.Proxy
-import Data.Singletons
-
+ 
+import Prelude hiding ((^), uncurry)
 import Prelim hiding (One)
 import Types
-import Context
-import Proofs
 import Classes
-import Lang
 
-var :: forall x σ g lang. CSingletonCtx x σ g
-    => LExp lang g σ
-var = Var $ singletonCtx @x
+import Data.Kind
+import qualified Data.Singletons as Sing
+type (~>) a b = Sing.TyFun a b -> Type
 
--- Implication ----------------------------------
 
-data LolliSig sig where
-  LolliSig :: LType sig -> LType sig -> LolliSig sig
+class Monad (Effect sig) => Eval (sig :: Sig) where
+  eval :: LExp sig γ τ -> SCtx sig γ -> Effect sig (LVal sig τ)
 
-type (⊸) (σ :: LType sig) (τ :: LType sig) = LType' sig ('LolliSig σ τ)
+
+-- For each domain:
+
+-- 1) Declare a data type
+data LolliSig ty = LolliSig ty ty
+
+-- 2) embed it into LType
+type (σ :: LType) ⊸ (τ :: LType) = MkLType ('LolliSig σ τ)
 infixr 0 ⊸
 
-data LolliExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Abs :: AddCtx x σ γ γ'
-      -> LExp lang γ' τ
-      -> LolliExp lang γ (σ ⊸ τ)
-  App :: Merge γ1 γ2 γ
-      -> LExp lang γ1 (σ ⊸ τ)
-      -> LExp lang γ2 σ
-      -> LolliExp lang γ τ
-data LolliVal :: Lang sig -> LType sig -> * where
-  -- The value is a closure
-  VAbs :: ECtx lang γ
-       -> AddCtx x σ γ γ'
-       -> LExp lang γ' τ
-       -> LolliVal lang (σ ⊸ τ)
-
-
-type LolliDom = '(LolliExp, LolliVal)
-
--- Can we make this CBN instead of CBV? Can we have both?
-instance WFDomain LolliDom lang => Domain LolliDom lang where
-  evalDomain ρ (Abs pfA e)     = return $ vdom @LolliDom $ VAbs ρ pfA e
-  evalDomain ρ (App pfM e1 e2) = do
-      VAbs ρ' pfA e1' <- toDomain @LolliDom <$> eval' ρ1 e1
-      v2              <- eval' ρ2 e2
-      eval' (addSCtx pfA ρ' v2) e1'
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
-
-
-instance Show (LolliExp lang g τ) where
-  show (Abs pfA e) = "λ " ++ show (addIn pfA) ++ " . " ++ show e
-  show (App _ e1 e2) = "(" ++ show e1 ++ ") (" ++ show e2 ++ ")"
-
-λ :: forall g lang x σ τ g' g''. 
-     ( Domain LolliDom lang
-     , CAddCtx x σ g g'
-     , CSingletonCtx x σ g'' 
-     , x ~ Fresh g)
-  => (LExp lang g'' σ -> LExp lang g' τ) -> LExp lang g (σ ⊸ τ)
-λ f = dom @LolliDom $ Abs (addCtx @x) (f . Var $ singletonCtx @x) 
-
-app :: (Domain LolliDom lang, CMerge g1 g2 g3)
-    => LExp lang g1 (σ ⊸ τ)
-    -> LExp lang g2 σ
-    -> LExp lang g3 τ
-e1 `app` e2 = dom @LolliDom $ App merge e1 e2
+-- 3) Define an interface
+class HasLolli (exp :: Exp) where
+  λ :: forall x (σ :: LType) (γ :: Ctx) (γ' :: Ctx) (γ'' :: Ctx) (τ :: LType).
+       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
+    => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
+  (^) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (σ :: LType) (τ :: LType).
+         CMerge γ1 γ2 γ
+      => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
-letin :: forall lang x σ τ g g1 g2 g2' g2''.
-         ( Domain LolliDom lang
-         , CAddCtx x σ g2 g2'
-         , CSingletonCtx x σ g2''
-         , CMerge g1 g2 g
-         , x ~ Fresh g2)
-      => LExp lang g1 σ
-      -> (LExp lang g2'' σ -> LExp lang g2' τ)
-      -> LExp lang g τ
-letin e f = λ f `app` e
+letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
+         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
+      => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
+letin e f = λ f ^ e
 
-compose :: Domain LolliDom lang
-        => LExp lang 'Empty ((τ ⊸ ρ) ⊸ (σ ⊸ τ) ⊸ σ ⊸ ρ)
-compose = λ $ \e1 -> λ $ \e2 -> λ $ \s -> e1 `app` (e2 `app` s)
+-- One -----------------------------------------------
+data OneSig ty = OneSig
+type One = (MkLType 'OneSig :: LType)
 
--- comp :: (Domain LolliDom lang, CMerge g1 g2 g)
---      => LExp lang g1 (τ ⊸ ρ) -> LExp lang g2 (σ ⊸ τ)
---      -> LExp lang g (σ ⊸ ρ)
--- comp e1 e2 = compose `app` e1 `app` e2
+class HasOne (exp :: Exp) where
+  unit :: exp (Empty :: Ctx) (One :: LType)
+  letUnit :: CMerge γ1 γ2 γ 
+          => exp γ1 One -> exp γ2 τ -> exp γ τ
 
--- Sanity check examples 
 
-ex :: Domain LolliDom lang => LExp lang 'Empty ((σ ⊸ τ) ⊸ σ ⊸ τ)
-ex = λ (\x -> λ $ \y -> x `app` y)
+-- Tensor ---------------------------------------------  
 
---ex2 :: Domain LolliDom lang => LExp lang 'Empty (σ ⊸ τ ⊸ σ)
---ex2 = λ $ \x -> λ $ \y -> x
+type Var exp x σ = exp (Singleton x σ) σ
 
---ex3 :: (Domain LolliDom lang, Domain TensorDom lang) => LExp lang 'Empty (σ ⊸ σ ⊗ σ)
---ex3 = λ $ \x -> x ⊗ x
-
--- apply an expression to a value
--- this is conbined with evaluation
-evalApplyValue :: forall sig (lang :: Lang sig) g σ τ.
-                  Domain LolliDom lang
-               => ECtx lang g -> LExp lang g (σ ⊸ τ) -> LVal lang σ 
-               -> SigEffect sig (LVal lang τ)
-evalApplyValue ρ e v = eval' ρ' $ dom @LolliDom $ App pfM e $ Var pfS
-  where
-    pfS :: SingletonCtx (Fresh g) σ (Singleton (Fresh g) σ)
-    pfS = singSing $ knownFresh ρ 
-
-    ρ' :: ECtx lang (Add (Fresh g) σ g)
-    ρ' = addFreshSCtx ρ v
-
-    pfM :: Merge g (Singleton (Fresh g) σ) (Add (Fresh g) σ g)
-    pfM = mergeAddFresh @σ ρ
-
-
-
--- DEFINING DOMAINS ---------------------------------
-
--- One ---------------------------------------
+data TensorSig ty = TensorSig ty ty
+type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
 
-data OneSig sig where
-  OneSig :: OneSig sig
+-- Exp = Ctx -> LType -> Type
+class HasTensor (exp :: Exp) where
+  (⊗) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (τ1 :: LType) (τ2 :: LType).
+         CMerge γ1 γ2 γ
+      => exp γ1 τ1 -> exp γ2 τ2 -> exp γ (τ1 ⊗ τ2)
+  letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
+                    (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
+                    (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
+             ( CMerge γ1 γ2 γ
+             , CAddCtx x1 σ1 γ2 γ2'
+             , CAddCtx x2 σ2 γ2' γ2''
+             , CSingletonCtx x1 σ1 γ21
+             , CSingletonCtx x2 σ2 γ22
+             , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
+      => exp γ1 (σ1 ⊗ σ2)
+      -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
+      -> exp γ τ
 
-type One = (LType' sig 'OneSig :: LType sig)
-
-data OneExp :: forall sig. Lang sig -> Ctx sig -> LType sig -> * where
-  Unit :: OneExp lang 'Empty One
-  LetUnit :: Merge g1 g2 g -> LExp lang g1 One -> LExp lang g2 τ -> OneExp lang g τ
-
-data OneVal :: forall sig. Lang sig -> LType sig -> * where
-  VUnit :: OneVal lang One
-
-type OneDom = '(OneExp,OneVal)
 
-instance Show (OneExp lang g τ) where
-  show Unit = "()"
-  show (LetUnit _ e1 e2) = "let () = " ++ show e1 ++ " in " ++ show e2
 
-unit :: Domain OneDom lang
-     => LExp lang 'Empty One
-unit = dom @OneDom Unit
 
-letUnit :: (Domain OneDom lang, CMerge g1 g2 g)
-        => LExp lang g1 One -> LExp lang g2 τ -> LExp lang g τ
-e1 `letUnit` e2 = dom @OneDom $ LetUnit merge e1 e2
 
-vunit :: Domain OneDom lang
-      => LVal lang One
-vunit = vdom @OneDom VUnit
+-- Bottom -------------------------------------------
 
-instance WFDomain OneDom lang
-      => Domain OneDom lang where
+data BottomSig ty = BottomSig
+type Bottom = (MkLType 'BottomSig :: LType)
 
-  evalDomain _ Unit = return vunit
-  evalDomain ρ (LetUnit pfM e1 e2) = do
-    VUnit <- toDomain @OneDom <$> eval' ρ1 e1
-    eval' ρ2 e2
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
+-- Additive Sum ---------------------------------------
 
+data PlusSig ty = PlusSig ty ty
+type (⊕) (σ :: LType) (τ :: LType) = MkLType ('PlusSig σ τ)
 
+class HasPlus (exp :: Exp) where
+  inl :: exp γ τ1 -> exp γ (τ1 ⊕ τ2)
+  inr :: exp γ τ2 -> exp γ (τ1 ⊕ τ2)
+  caseof :: ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
+            , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
+            , x ~ Fresh γ
+            , CMerge γ1 γ2 γ )
+        => exp γ1 (σ1 ⊕ σ2)
+        -> (exp γ21' σ1 -> exp γ21 τ)
+        -> (exp γ22' σ2 -> exp γ22 τ)
+        -> exp γ τ
 
--- Tensor ------------------------------------------------------
 
+-- Additive Product -------------------------------------
 
-data TensorSig sig = TensorSig (LType sig) (LType sig)
+data WithSig ty = WithSig ty ty
+type (σ :: LType) & (τ :: LType) = MkLType ('WithSig σ τ)
 
-type (⊗) (σ :: LType sig) (τ :: LType sig) = LType' sig ('TensorSig σ τ)
+class HasWith (exp :: Exp) where
+  (&) :: exp γ τ1 -> exp γ τ2 -> exp γ (τ1 & τ2)
+  proj1 :: exp γ (τ1 & τ2) -> exp γ τ1
+  proj2 :: exp γ (τ1 & τ2) -> exp γ τ2
 
-data TensorExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Pair :: Merge g1 g2 g
-       -> LExp lang g1 τ1 -> LExp lang g2 τ2 -> TensorExp lang g (τ1 ⊗ τ2)
-  LetPair :: Merge g1 g2'' g -> AddCtx x1 σ1 g2'' g2' -> AddCtx x2 σ2 g2' g2
-          -> LExp lang g1 (σ1 ⊗ σ2) -> LExp lang g2 τ -> TensorExp lang g τ
-data TensorVal :: Lang sig -> LType sig -> * where
-  VPair :: LVal lang τ1 -> LVal lang τ2 -> TensorVal lang (τ1 ⊗ τ2)
 
-type TensorDom  = '(TensorExp, TensorVal)
+-- Lower ----------------------------------------------
+data LowerSig ty = LowerSig Type
+type Lower a = (MkLType ('LowerSig a) :: LType)
 
-instance Show (TensorExp lang g τ) where
-  show (Pair _ e1 e2) = "(" ++ show e1 ++ ", " ++ show e2 ++ ")"
-  show (LetPair _ pfA1 pfA2 e e') = "let (" ++ show (addIn pfA1) ++ ", " ++ show (addIn pfA2)
-    ++ ") = " ++ show e ++ " in " ++ show e'
+class HasLower (exp :: Exp) where
+  put  :: a -> exp Empty (Lower a)
+  (>!) :: CMerge γ1 γ2 γ => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
 
-(⊗) :: (Domain TensorDom lang, CMerge g1 g2 g)
-     => LExp lang g1 σ1 -> LExp lang g2 σ2 -> LExp lang g (σ1 ⊗ σ2)
-e1 ⊗ e2 = dom @TensorDom $ Pair merge e1 e2
 
-letPair :: forall sig (lang :: Lang sig) x1 x2 g g1 g2 g2' g2'' g21 g22 σ1 σ2 τ.
-         ( Domain TensorDom lang
-         , CAddCtx x1 σ1 g2'' g2'
-         , CAddCtx x2 σ2 g2' g2
-         , CMerge g1 g2'' g
-         , CSingletonCtx x1 σ1 g21
-         , CSingletonCtx x2 σ2 g22
-         , x1 ~ Fresh g
-         , x2 ~ Fresh2 g
-         )
-        => LExp lang g1 (σ1 ⊗ σ2)
-        -> ((LExp lang g21 σ1, LExp lang g22 σ2) -> LExp lang g2 τ)
-        -> LExp lang g τ
-letPair e f = dom @TensorDom $ LetPair merge (addCtx @x1 @_ @_ @g2') (addCtx @x2) e e'
-  where
-    e' :: LExp lang g2 τ
-    e' = f (Var $ singletonCtx @x1, Var $ singletonCtx @x2)
+-- Lift --------------------------------------------------
 
-vpair :: Domain TensorDom lang
-      => LVal lang σ1 -> LVal lang σ2 -> LVal lang (σ1 ⊗ σ2)
-vpair v1 v2 = vdom @TensorDom $ VPair v1 v2
-
-
-instance WFDomain TensorDom lang
-      => Domain TensorDom lang where
-
-  evalDomain ρ (Pair pfM e1 e2) = do
-      v1 <- eval' ρ1 e1
-      v2 <- eval' ρ2 e2
-      return $ vpair v1 v2
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
-  evalDomain ρ (LetPair pfM pfA pfA' e e') = do
-      VPair v1 v2 <- toDomain @TensorDom <$> eval' ρ1 e
-      eval' (ρ' v1 v2) e'
-    where
-      (ρ1,ρ2)  = splitSCtx pfM ρ 
-      ρ' v1 v2 = addSCtx pfA' (addSCtx pfA ρ2 v1) v2
-
--- Bottom ------------------------------------------
-
-data BotSig sig = BotSig
-type Bot = (LType' sig 'BotSig :: LType sig)
-
-
--- Lift --------------------------------------------------------
-
-data Lift (lang :: Lang sig) :: LType sig -> * where
-  Suspend :: LExp lang 'Empty τ -> Lift lang τ
-
-force :: Lift lang τ -> LExp lang 'Empty τ
-force (Suspend e) = e
-
--- Lower -------------------------------------------------------
-
-data LowerSig sig where
-  LowerSig :: * -> LowerSig sig
-type Lower a = (LType' sig ('LowerSig a) :: LType sig)
-
-data LowerExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Put :: a -> LowerExp lang 'Empty (Lower a)
-  LetBang :: Merge g1 g2 g
-          -> LExp lang g1 (Lower a)
-          -> (a -> LExp lang g2 τ)
-          -> LowerExp lang g τ
-data LowerVal :: Lang sig -> LType sig -> * where
-  VPut :: a -> LowerVal lang (Lower a)
-
-type LowerDom = '(LowerExp, LowerVal)
-
-
-instance Show (LowerExp lang g τ) where
-  show (Put _) = "Put"
-  show (LetBang _ e _) = show e ++ ">! ??"
-
-put :: Domain LowerDom lang
-    => a -> LExp lang 'Empty (Lower a)
-put a = dom @LowerDom $ Put a
-
-(>!) :: (Domain LowerDom lang, CMerge g1 g2 g)
-     => LExp lang g1 (Lower a)
-     -> (a -> LExp lang g2 τ)
-     -> LExp lang g τ
-e >! f = dom @LowerDom $ LetBang merge e f
-
-vput :: Domain LowerDom lang
-     => a -> LVal lang (Lower a)
-vput a = vdom @LowerDom $ VPut a
-
-instance WFDomain LowerDom lang
-      => Domain LowerDom lang where
-
-  evalDomain _ (Put a) = return $ vput a
-  evalDomain ρ (LetBang pfM e f) = do
-      VPut a <- toDomain @LowerDom <$> eval' ρ1 e
-      eval' ρ2 $ f a
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
-
-
-
--- Additive Sums
-
-data PlusSig sig = PlusSig (LType sig) (LType sig)
-type (⊕) (σ :: LType sig) (τ :: LType sig) = LType' sig ('PlusSig σ τ)
-
-
-data PlusExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  Inl  :: LExp lang g τ1 -> PlusExp lang g (τ1 ⊕ τ2)
-  Inr  :: LExp lang g τ2 -> PlusExp lang g (τ1 ⊕ τ2)
-  Case :: Merge g1 g2 g
-       -> AddCtx x1 σ1 g2 g21
-       -> AddCtx x2 σ2 g2 g22
-       -> LExp lang g1 (σ1 ⊕ σ2)
-       -> LExp lang g21 τ
-       -> LExp lang g22 τ
-       -> PlusExp lang g τ
-
-data PlusVal :: Lang sig -> LType sig -> * where
-  VInl :: LVal lang τ1 -> PlusVal lang (τ1 ⊕ τ2)
-  VInr :: LVal lang τ2 -> PlusVal lang (τ1 ⊕ τ2)
-
-type PlusDom = '(PlusExp, PlusVal)
-
-instance Show (PlusExp lang g τ) where
-  show (Inl e) = "Inl " ++ show e
-  show (Inr e) = "Inr " ++ show e
-  show (Case _ _ _ _ _ _) = undefined
-
-inl :: Domain PlusDom lang
-    => LExp lang g τ1 -> LExp lang g (τ1 ⊕ τ2)
-inl e = dom @PlusDom $ Inl e
-
-inr :: Domain PlusDom lang
-    => LExp lang g τ2 -> LExp lang g (τ1 ⊕ τ2)
-inr e = dom @PlusDom $ Inr e
-
-caseof :: forall lang x σ1 σ2 g g1 g2 g21 g22 g21' g22' τ.
-          ( Domain PlusDom lang
-          , CAddCtx x σ1 g2 g21, CSingletonCtx x σ1 g21'
-          , CAddCtx x σ2 g2 g22, CSingletonCtx x σ2 g22'
-          , x ~ Fresh g
-          , CMerge g1 g2 g)
-       => LExp lang g1 (σ1 ⊕ σ2)
-       -> (LExp lang g21' σ1 -> LExp lang g21 τ)
-       -> (LExp lang g22' σ2 -> LExp lang g22 τ)
-       -> LExp lang g τ
-caseof e f1 f2 = dom @PlusDom $ 
-    Case merge pfA1 pfA2 e (f1 . Var $ singletonCtx @x) (f2 . Var $ singletonCtx @x)
-  where
-    pfA1 :: AddCtx (Fresh g) σ1 g2 g21
-    pfA1 = addCtx
-    pfA2 :: AddCtx (Fresh g) σ2 g2 g22
-    pfA2 = addCtx
-
-
-instance WFDomain PlusDom lang
-      => Domain PlusDom lang where
-
-  evalDomain ρ (Inl e) = vdom @PlusDom . VInl <$> eval' ρ e
-  evalDomain ρ (Inr e) = vdom @PlusDom . VInr <$> eval' ρ e
-  evalDomain ρ (Case pfM pfA1 pfA2 e e1 e2) = do
-      v <- toDomain @PlusDom <$> eval' ρ1 e
-      case v of
-        VInl v1 -> eval' (addSCtx pfA1 ρ2 v1) e1
-        VInr v2 -> eval' (addSCtx pfA2 ρ2 v2) e2
-    where
-      (ρ1,ρ2) = splitSCtx pfM ρ
-
-
-
--- Additive Product
-
-data WithSig sig = WithSig (LType sig) (LType sig)
-type (&) (σ :: LType sig) (τ :: LType sig) = LType' sig ('WithSig σ τ)
-
-data WithExp :: Lang sig -> Ctx sig -> LType sig -> * where
-  With  :: LExp lang g τ1 -> LExp lang g τ2 -> WithExp lang g (τ1 & τ2)
-  Proj1 :: LExp lang g (τ1 & τ2) -> WithExp lang g τ1
-  Proj2 :: LExp lang g (τ1 & τ2) -> WithExp lang g τ2
-data WithVal :: Lang sig -> LType sig -> * where -- Lazy values
-  VWith :: ECtx lang g -> LExp lang g τ1 -> LExp lang g τ2 -> WithVal lang (τ1 & τ2)
-
-type WithDom = '(WithExp, WithVal)
-
-
-instance Show (WithExp lang g τ) where
-  show = undefined
-
-(&) :: Domain WithDom lang
-    => LExp lang g τ1 -> LExp lang g τ2 -> LExp lang g (τ1 & τ2)
-e1 & e2 = dom @WithDom $ With e1 e2
-
-proj1 :: Domain WithDom lang
-      => LExp lang g (τ1 & τ2) -> LExp lang g τ1
-proj1 = dom @WithDom . Proj1
-
-proj2 :: Domain WithDom lang
-      => LExp lang g (τ1 & τ2) -> LExp lang g τ2
-proj2 = dom @WithDom . Proj2
-
-
-oplus :: (Domain LolliDom lang, Domain PlusDom lang, Domain WithDom lang)
-    => LExp lang 'Empty ((σ1 ⊸ τ) & (σ2 ⊸ τ) ⊸ σ1 ⊕ σ2 ⊸ τ)
-oplus = λ $ \f -> λ $ \x -> 
-  caseof x
-    (\x1 -> proj1 f `app` x1)
-    (\x2 -> proj2 f `app` x2)
-
-instance WFDomain WithDom lang => Domain WithDom lang where
-  evalDomain ρ (With e1 e2) = return $ vdom @WithDom $ VWith ρ e1 e2
-  evalDomain ρ (Proj1 e) = do
-    VWith ρ' e1 _ <- toDomain @WithDom <$> eval' ρ e
-    eval' ρ' e1
-  evalDomain ρ (Proj2 e) = do
-    VWith ρ' _ e2 <- toDomain @WithDom <$> eval' ρ e
-    eval' ρ' e2
-
-
-
-
-
--- Linearity Monad and Comonad -------------------------------
-
-type family Bang (lang :: Lang sig) (a :: LType sig) :: LType sig where
-  Bang lang a = Lower (Lift lang a)
-data Lin lang a where
-  Lin :: Lift lang (Lower a) -> Lin lang a
-instance Show (Lin lang a) where
-  show (Lin (Suspend e)) = show e
-
-
-instance Domain LowerDom lang => Functor (Lin lang) where
-  -- f :: a -> b
-  -- a :: Lin a ~ Lift f (Lower a)
-  -- fmap f a :: Lift (Lower b)
-  fmap f (Lin (Suspend e)) = Lin . Suspend $ e >! \ x → put (f x)
-instance  Domain LowerDom lang => Applicative (Lin lang) where
-  pure a = Lin $ Suspend (put a)
-  -- a :: Lift (Lower a) 
-  -- f :: Lift (Lower (a -> b))
-  -- f <*> a :: Lift (Lower b)
-  Lin (Suspend f) <*> Lin (Suspend e) = Lin . Suspend $ e >! \ x -> 
-                                                        f >! \ f' -> 
-                                                        put (f' x)
-instance  Domain LowerDom lang => Monad (Lin lang) where
-  -- e :: Lin a = Lift (Lower a)
-  -- f :: a -> Lift (Lower b)
-  Lin (Suspend e) >>= f  = Lin . Suspend $ e >! \ x -> forceL (f x)
-
-
-
-forceL :: Lin lang a -> LExp lang 'Empty (Lower a)
-forceL (Lin e) = force e
-
-suspendL :: LExp lang 'Empty (Lower a) -> Lin lang a
-suspendL = Lin . Suspend 
-
--- evalL :: forall sig (lang :: Lang sig) a.
---          Monad (SigEffect sig) => Lin lang a -> SigEffect sig (Lin lang a)
--- evalL (Lin e) = Lin <$> evalL' e where
---   evalL' :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
---          => Lift lang (Lower a) -> SigEffect sig (Lift lang (Lower a))
---   evalL' (Suspend e) = Suspend <$> eval e
-
-
-
-evalVal :: forall sig (lang :: Lang sig) a. Monad (SigEffect sig) 
-        => Lin lang a -> SigEffect sig (LVal lang (Lower a))
-evalVal (Lin (Suspend e)) = eval e
-
-run :: forall sig (lang :: Lang sig) a. 
-       Domain LowerDom lang
-    => Lin lang a -> SigEffect sig a
-run e = do
-    VPut a <- toDomain @LowerDom <$> eval (forceL e)
-    return a
-
--- Monads in the linear world -----------------------------------
-
--- Defunctionalization from singletons library!
-class LFunctor lang (f :: LType sig ~> LType sig) where
-  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
-class LFunctor lang f => LApplicative lang f where
-  lpure :: LExp lang 'Empty (τ ⊸ f @@ τ)
-  llift :: LExp lang 'Empty (f @@ (σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
-class LApplicative lang m => LMonad lang m where
-  lbind :: LExp lang 'Empty (m @@ σ ⊸ (σ ⊸ m @@ τ) ⊸ m @@ τ)
-
-
--- Linearity monad transformer
-data LinT lang (m :: LType sig ~> LType sig) :: * -> * where
-  LinT :: Lift lang (m @@ Lower a) -> LinT lang m a
-
-forceT :: LinT lang m a -> LExp lang 'Empty (m @@ Lower a)
-forceT (LinT e) = force e
-suspendT :: LExp lang 'Empty (m @@ Lower a) -> LinT lang m a
-suspendT = LinT . Suspend
-
-lowerT :: (Domain LolliDom lang, Domain LowerDom lang)
-       => LExp lang 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
-lowerT = λ $ \g -> λ $ \ x -> 
-          g >! \f ->
-          x >! \a -> put $ f a
-
-lowerT2 :: (Domain LolliDom lang, Domain LowerDom lang)
-        => LExp lang 'Empty (Lower (a -> b -> c) ⊸ Lower a ⊸ Lower b ⊸ Lower c)
-lowerT2 = λ $ \f -> λ $ \x -> λ $ \y ->
-    f >! \g -> x >! \a -> y >! \b -> put $ g a b
-
-instance (Domain LowerDom lang, Domain LolliDom lang, LFunctor lang f) 
-      => Functor (LinT lang f) where
-  fmap (g :: a -> b) (x :: LinT lang f a) = 
-    suspendT $ lfmap @lang @f `app` (lowerT `app` put g) `app` forceT x
-instance (Domain LowerDom lang, Domain LolliDom lang, LApplicative lang f) 
-      => Applicative (LinT lang f) where
-  pure a = suspendT $ lpure @lang @f `app` put a
-
-  (<*>) :: forall a b. LinT lang f (a -> b) -> LinT lang f a -> LinT lang f b
-  g <*> a = suspendT $ foo `app` forceT a
-    where
-      g' :: LExp lang 'Empty (f @@ (Lower a ⊸ Lower b))
-      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
-            `app` lowerT `app` forceT g
-      foo :: LExp lang 'Empty (f @@ (Lower a) ⊸ f @@ (Lower b))
-      foo = llift @lang @f @(Lower a) @(Lower b) `app` g'
-
-instance (Domain LowerDom lang, Domain LolliDom lang, LMonad lang m)
-      => Monad (LinT lang m) where
-  (>>=) :: forall a b. LinT lang m a -> (a -> LinT lang m b) -> LinT lang m b
-  x >>= f = suspendT mb
-    where
-      f' :: LExp lang 'Empty (Lower a ⊸ m @@ (Lower b))
-      f' = λ $ \ x -> x >! (forceT . f)
-      mb :: LExp lang 'Empty (m @@ Lower b)
-      mb = lbind @lang @m @(Lower a) @(Lower b) `app` forceT x `app` f'   
-
-
-
-
--- State Monad -------------------------------------------------
-
-data LState' :: LType sig -> LType sig ~> LType sig
-type instance Apply (LState' σ) τ = σ ⊸ σ ⊗ τ
-
+class HasLift exp lift where
+  suspend :: exp Empty τ -> lift exp τ
+  force   :: lift exp τ -> exp Empty τ
+
+data Lift (exp :: Exp) (τ :: LType) = Suspend (exp Empty τ)
+
+instance HasLift exp Lift where
+  suspend = Suspend
+  force (Suspend e) = e
+
+-- Families of linear languages --------------------------
+
+type HasBang exp = (HasLower exp)
+type HasILL exp = (HasLolli exp, HasBang exp)
+type HasMILL exp = (HasILL exp, HasOne exp, HasTensor exp)
+type HasMELL exp = (HasMILL exp, HasLower exp)
+type HasMALL exp = (HasMILL exp, HasWith exp, HasPlus exp)
+
+---------------------------------------------------------------
+-- Examples ---------------------------------------------------
+---------------------------------------------------------------
+
+id :: HasILL exp => Lift exp (σ ⊸ σ)
+id = suspend . λ $ \x -> x
+
+sApp :: HasILL exp => Lift exp (σ ⊸ τ) -> Lift exp σ -> Lift exp τ
+sApp f e = suspend $ force  f ^ force e
+
+uncurryL :: HasMILL exp => Lift exp ((σ1 ⊸ σ2 ⊸ τ) ⊸ σ1 ⊗ σ2 ⊸ τ)
+uncurryL = suspend . λ $ \f -> λ $ \x -> 
+    x `letPair` \(x1,x2) -> 
+    f ^ x1 ^ x2
+uncurry :: (HasMILL exp, WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
+uncurry e = force uncurryL ^ e
+
+
+composeL :: HasMILL exp
+         => Lift exp ((τ ⊸ ρ) ⊸ (σ ⊸ τ) ⊸ (σ ⊸ ρ))
+composeL = suspend . λ $ \g -> λ $ \f -> λ $ \x -> g ^ (f ^ x)
+compose :: (HasMILL exp, CMerge γ1 γ2 γ)
+        => exp γ1 (τ ⊸ ρ) -> exp γ2 (σ ⊸ τ) -> exp γ (σ ⊸ ρ)
+compose g f = force composeL ^ g ^ f
+
+--------------------------------------------------------------
+-- LMonad ----------------------------------------------------
+--------------------------------------------------------------
+
+class LFunctor exp (f :: LType ~> LType) where
+  (<$$>) :: CMerge γ1 γ2 γ 
+         => exp γ1 (σ ⊸ τ) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
+class LFunctor exp f => LApplicative exp f where
+  lpure  :: WFCtx γ => exp γ τ -> exp γ (f @@ τ)
+  (<**>) :: CMerge γ1 γ2 γ
+         => exp γ1 (f @@ (σ ⊸ τ)) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
+class LApplicative exp m => LMonad exp m where
+  (=>>=) :: CMerge γ1 γ2 γ
+         => exp γ1 (m @@ σ) -> exp γ2 (σ ⊸ m @@ τ) -> exp γ (m @@ τ)
+
+
+-- State monad
+data LState' :: LType -> LType ~> LType
+type family (f :: k1 ~> k2) @@ (x :: k1) = (r :: b) | r -> f x
+
+type instance (LState' σ) @@ τ = σ ⊸ σ ⊗ τ
 type LState σ τ = LState' σ @@ τ
-type HasLStateDom lang = (WFDomain TensorDom lang, WFDomain LowerDom lang, 
-                          WFDomain OneDom lang, WFDomain LolliDom lang) 
 
-runLState :: HasLStateDom lang
-          => LinT lang (LState' σ) a -> Lift lang σ -> Lift lang (σ ⊗ Lower a)
-runLState st s = Suspend $ forceT st `app` force s
+instance HasMILL exp => LFunctor exp (LState' ρ) where
+  f <$$> e = force lfmap ^ f ^ e
+    where
+      lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
+      lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
+        x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+instance HasMILL exp => LApplicative exp (LState' ρ) where
+  lpure e = force lpure' ^ e
+    where
+      lpure' :: Lift exp (σ ⊸ LState ρ σ)
+      lpure' = suspend . λ $ \x -> λ $ \r -> r ⊗ x
+  f <**> e = force lapp ^ e ^ f
+    where
+      lapp :: Lift exp (LState ρ σ ⊸ LState ρ (σ ⊸ τ) ⊸ LState ρ τ)
+      lapp = suspend . λ $ \st -> λ $ \stF -> λ $ \r ->
+        st ^ r `letPair` \(r,s) ->
+        stF ^ r `letPair` \(r,f) ->
+        r ⊗ (f ^ s)
+instance HasMILL exp => LMonad exp (LState' ρ) where
+  e =>>= f = force lbind ^ e ^ f
+    where
+      lbind :: Lift exp (LState ρ σ ⊸ (σ ⊸ LState ρ τ) ⊸ LState ρ τ)
+      lbind = suspend . λ $ \st -> λ $ \f -> λ $ \ r ->
+                st ^ r `letPair` \(r,s) -> f ^ s ^ r
 
-execLState :: HasLStateDom lang 
-           => LinT lang (LState' σ) a -> Lift lang σ -> Lift lang σ
-execLState st s = Suspend $ 
-    forceT st `app` force s `letPair` \(s',a) ->
-    a >! \_ ->
-    s'
+runLStateT :: HasMILL exp 
+           => LinT exp (LState' σ) a -> Lift exp σ -> Lift exp (σ ⊗ Lower a)
+runLStateT st s = suspend $ forceT st ^ force s
 
-evalLState :: HasLStateDom lang
-           => LinT lang (LState' σ) a
-           -> Lift lang σ
-           -> Lift lang (σ ⊸ One) -- a way to eliminate the state
-           -> Lin lang a
-evalLState st s f = suspendL $
-    force (runLState st s) `letPair` \(s',a) ->
-    force f `app` s' `letUnit` a
+execLStateT :: HasMILL exp
+            => LinT exp (LState' σ) a -> Lift exp σ -> Lift exp σ
+execLStateT st s = suspend $ force (runLStateT st s) `letPair` \(s,a) -> 
+                             a >! \_ -> s
 
-
-instance HasLStateDom lang => LFunctor lang (LState' σ) where
-  lfmap = λ $ \f -> λ $ \fs -> λ $ \r ->
-    fs `app` r `letPair` \(r,s) ->
-    r ⊗ (f `app` s)
-
-instance HasLStateDom lang => LApplicative lang (LState' r) where
-  lpure = λ $ \s -> λ $ \r -> r ⊗ s
-
-  llift :: forall σ τ. 
-           LExp lang 'Empty (LState r (σ ⊸ τ) ⊸ LState r σ ⊸ LState r τ)
-  llift = λ $ \ff -> λ $ \fs -> λ $ \r ->
-    ff `app` r `letPair` \ (r,f) -> 
-    fs `app` r `letPair` \ (r,s) ->
-    r ⊗ (f `app` s)
-
-instance HasLStateDom lang => LMonad lang (LState' σ) where
-  lbind = λ $ \ ms -> λ $ \ f -> λ $ \r -> 
-     ms `app` r `letPair` \(r,s) -> 
-     f `app` s `app` r
+evalLStateT :: HasMILL exp
+            => LinT exp (LState' σ) a -> Lift exp σ 
+            -> Lift exp (σ ⊸ One) -> Lin exp a
+evalLStateT st s free = suspendL $ force (runLStateT st s) `letPair` \(s,a) ->
+                                   force free ^ s `letUnit` a
 
 
+---------------------------------------------------------------
+-- Linearity Monad --------------------------------------------
+---------------------------------------------------------------
+
+newtype Lin exp a = Lin (Lift exp (Lower a))
+
+
+suspendL :: exp Empty (Lower a) -> Lin exp a
+suspendL = Lin . suspend
+
+forceL :: Lin exp a -> exp Empty (Lower a)
+forceL (Lin x) = force x
+
+instance (HasLower exp) => Functor (Lin exp) where
+  fmap f e = suspendL $ forceL e >! (put . f)
+instance (HasLower exp) => Applicative (Lin exp) where
+  pure = suspendL . put
+  f <*> e = suspendL $ forceL e >! \a ->
+                       forceL f >! \g ->
+                       put $ g a
+instance (HasLower exp) => Monad (Lin exp) where
+  e >>= f = suspendL $ forceL e >! \a ->
+                       forceL (f a)
+
+---------------------------------------------------------------
+-- Linearity Monad Transformer --------------------------------
+---------------------------------------------------------------
+
+newtype LinT exp (f :: LType ~> LType) a = LinT (Lift exp (f @@ (Lower a)))
+
+suspendT :: exp Empty (f @@ (Lower a)) -> LinT exp f a
+suspendT = LinT . suspend
+
+forceT :: forall f exp a. LinT exp f a -> exp Empty (f @@ (Lower a))
+forceT (LinT e) = force e
+
+lowerT :: HasILL exp => (a -> b) -> exp Empty (Lower a ⊸ Lower b)
+lowerT f = λ $ \x -> x >! \a -> put $ f a
+
+lowerT2 :: HasILL exp => (a -> b -> c) -> exp Empty (Lower a ⊸ Lower b ⊸ Lower c)
+lowerT2 f = λ $ \x -> x >! \a ->
+            λ $ \y -> y >! \b -> put $ f a b
+
+instance (HasILL exp, LFunctor exp f) => Functor (LinT exp f) where
+    fmap g x = suspendT $ lowerT g <$$> forceT x
+instance (HasILL exp, LApplicative exp f) => Applicative (LinT exp f) where
+    pure a = suspendT $ lpure (put a)
+
+    -- forceT f :: f (Lower (a -> b))
+    -- forceT x :: f (Lower a) 
+    -- lowerT' <$$> forceT f :: f (Lower a ⊸ Lower b)
+    (<*>) :: LinT exp f (a -> b) -> LinT exp f a -> LinT exp f b
+    f <*> x = suspendT $ (lowerT' <$$> forceT f) <**> forceT x
+      where
+        lowerT' :: exp Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
+        lowerT' = λ $ \f -> f >! lowerT
+instance (HasILL exp, LMonad exp f) => Monad (LinT exp f) where
+    x >>= f = suspendT $ forceT x =>>= (λ $ \y -> y >! (forceT . f))
+
+---------------------------------------------------------------
+-- Patterns ---------------------------------------------------
+---------------------------------------------------------------
+
+class HasVar (exp :: Exp) where
+  var :: forall x (σ :: LType) (γ :: Ctx). 
+         CSingletonCtx x σ γ => exp γ σ
+
+
+--type family PatMatch exp γ (σ :: LType) where
+--  PatMatch exp γ σ = Var exp (Fresh γ) σ -> exp (Add
+
+
+type family Tuple exp γ (σs :: [LType]) :: Type where
+  Tuple exp γ '[]  = ()
+  Tuple exp γ '[σ] = Pat exp γ σ
+  Tuple exp γ (σ ': σs) = (Var exp (Fresh γ) σ, Tuple exp (Add (Fresh γ) σ γ) σs)
+
+data Pat exp γ σ where
+  U    :: Pat exp Empty One
+--  X    :: exp γ σ -> Pat exp γ σ
+  Put  :: a -> Pat exp γ (Lower a)
+  Pair :: CMerge γ1 γ2 γ => Pat exp γ1 σ1 -> Pat exp γ2 σ2 -> Pat exp γ (σ1 ⊗ σ2)
+  Inl  :: Pat exp γ σ1 -> Pat exp γ (σ1 ⊕ σ2)
+  Inr  :: Pat exp γ σ2 -> Pat exp γ (σ1 ⊕ σ2)
+data Match exp γ σ τ where
+  Match :: CMerge γ1 γ2 γ => (Pat exp γ2 σ -> exp γ τ) -> Match exp γ1 σ τ
+
+class Matchable exp σ where 
+  λcase :: Match exp γ σ τ -> exp γ (σ ⊸ τ)
+
+--instance Matchable exp One where
+--  λcase (Match f) = λ $ \x -> x `letUnit` f U
+
+--instance (Matchable exp σ1, Matchable exp σ2) => Matchable exp (σ1 ⊗ σ2) where
+--  λcase (Match f) = λ $ \x -> x `letPair` \(y,z) -> f (Pair (X y) (X z))
+
+--foo = λcase . Match $ \ Pair p1 p2 -> pat p2 ⊗ pat p1
+
+
+-- data PatMatch exp γ (σs :: [LType]) τ where
+--   X   :: (CAddTypes σs γ γ', x ~ Fresh γ)
+--       => (Tuple γ σs -> exp γ' τ) -> PatMatch exp γ σs τ
+--   Put :: (a -> exp γ τ) -> PatMatch exp γ (Lower a) τ
+--   Pair :: (CAddCtx x σ1 γ γ', x ~ Fresh γ)
+--        => PatMatch2 exp γ σ1 σ2 τ -> PatMatch exp γ (σ1 ⊗ σ2) τ
+  
+
+-- λcase :: HasLolli exp => PatMatch exp γ σ τ -> exp γ (σ ⊸ τ)
+-- λcase (X f)   = λ f
+-- λcase (Put f) = λ $ \x -> x >! f
+-- λcase (Pair 
+
+-- foo :: (Matchable exp (σ1 ⊗ σ2), HasTensor exp, HasLolli exp)
+--     => exp Empty (σ1 ⊗ σ2 ⊸ σ2 ⊗ σ1)
+-- foo = λcase . Pair . V $ \x1 -> λ $ \x2 -> x2 ⊗ x1
 
 
 
--- Collections of Domains
 
-type ILLSig = '[ LolliSig ]
-type MILLSig = TensorSig ': (OneSig ': ILLSig)
-type MELLSig = LowerSig ': MILLSig
+type family AddFresh γ (σ :: LType) :: Ctx where
+  AddFresh γ (MkLType ('TensorSig σ τ)) = 
+    Merge12 (AddFresh γ σ) (Merge12 γ (AddFresh γ σ))
+  AddFresh γ (MkLType ('LowerSig a))    = 'Empty
+  AddFresh γ σ                          = Singleton (Fresh γ) σ
 
-type ILL  = '[ LolliDom ]
-type MILL = TensorDom ': (OneDom ': ILL)
-type MELL = LowerDom ': MILL
+class CAddFresh γ σ γ' | γ σ -> γ', γ' σ -> γ
 
-type family HasDomains (ls :: [Dom sig]) (lang :: Lang sig) where
-  HasDomains '[ dom ]    lang = Domain dom lang
-  HasDomains (dom ': ls) lang = (Domain dom lang, HasDomains ls lang)
+--class Matchable exp σ where
+--  pat :: CAddFresh γ σ γ' => Pat σ -> exp γ' σ
+--  λcase :: (CAddFresh γ σ γ', CMerge γ γ' γ'')
+--        => (Pat σ -> exp γ'' τ) -> exp γ (σ ⊸ τ)
 
+--foo :: forall (exp :: Exp) σ τ. 
+--       (HasTensor exp, Matchable exp σ, Matchable exp τ, Matchable exp (σ ⊗ τ))
+--    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
+--foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x
 
--- concrete examples
-
-swapMP :: Monad m
-       => Lift ('Lang MILL :: Lang ('Sig m MILLSig)) (σ ⊗ τ ⊸ τ ⊗ σ)
-swapMP = Suspend . λ $ \pr ->
-    pr `letPair` \(x,y) ->
-    y ⊗ x
 
 {-
+data Bang a = Bang a
+type family Pat (σ :: LType) where
+    Pat ('LType _ ('TensorSig σ τ)) = (Pat σ, Pat τ)
+    Pat ('LType _ ('PlusSig σ τ))   = Either (Pat σ) (Pat τ)
+    Pat ('LType _ ('LowerSig a))    = Bang a
+--  Pat _                           = 
 
-type MultiplicativeProductSig m = 'Sig m '[ OneSig, TensorSig, LolliSig ]
-type MultiplicativeProductDom m = ('Lang '[ OneDom, TensorDom, LolliDom ] 
-    :: Lang (MultiplicativeProductSig m) )
-
-swapMP :: (Typeable m,Monad m) => Lift (MultiplicativeProductDom m) (σ ⊗ τ ⊸ τ ⊗ σ)
-swapMP = Suspend . λ $ \ pr ->
-    pr `letPair` \(x,y) ->
-    y ⊗ x
-
+-- FreshCtx γ σ is a context γ extended with fresh variables for every pattern variable in σ
+class FreshCtx (γ :: Ctx) (σ :: LType) (γ' :: Ctx)
+instance (pf ~ IsInSig TensorSig, FreshCtx γ σ1 γ0, FreshCtx γ0 σ2 γ')
+      => FreshCtx (γ :: Ctx) ('LType pf ('TensorSig σ1 σ2)) γ'
 -}
 
--- Patterns
 
--- class Pat' (lang :: Lang sig) (γ :: Ctx sig) (σ :: LType sig) (γ' :: Ctx sig) pat where
---   pat :: pat -> LExp lang γ' σ
--- instance CSingletonCtx (Fresh γ) σ γ' => Pat' lang γ σ  γ' (LExp lang γ' σ) where
---   pat e = e
--- instance (Pat' lang γ1 σ1 γ1' pat1, Pat' lang γ2 σ2 γ2' pat2, CMerge γ1 γ1' γ2, CMerge γ1' γ2' γ', τ ~ 'LType inSig ('TensorSig σ1 σ2))
---       => Pat' (lang :: Lang sig) γ1 τ γ' (pat1,pat2) where
---   pat (e1,e2) = pat e1 ⊗ pat e2
+--type family   FreshCtx (γ :: Ctx) (σ :: LType) :: Ctx where
+--    FreshCtx γ ('LType _ ('TensorSig σ τ)) = FreshCtx (FreshCtx γ σ) τ
+--    FreshCtx γ ('LType _ ('PlusSig σ τ))   = FreshCtx (FreshCtx γ σ) τ
+--    FreshCtx γ σ                           = AddFresh γ σ
 
-class LTypeEq (σ :: LType sig) (τ :: LType sig)
+--class (Matchable' exp (Div γout γin) σ (Pat σ), CMerge γin (Div γout γin) γout) 
+--    => Matchable exp γin γout σ 
+--type Matchable (exp :: Exp) σ = 
+--    (WFCtx (FreshCtx 'Empty σ), Matchable' exp (FreshCtx 'Empty σ) σ (Pat σ))
 
-class Pat (lang :: Lang sig) (γ :: Ctx sig) (σ :: LType sig) pat 
-    | sig pat -> γ where
-  pat :: pat -> LExp lang γ σ
-  caseof' :: (CMerge γ2 γ γ2', CMerge γ2' γ1 γ')
-          => LExp lang γ1 σ -> (pat -> LExp lang γ2' τ) -> LExp lang γ' τ
+{-
+type Matchable exp σ = Matchable' exp σ (Pat σ)
+-- essentially saying that pat ≅ exp (FreshCtx Empty σ) σ
+class Matchable' (exp :: Exp) σ pat where
+  pat   :: FreshCtx 'Empty σ γ => pat -> exp γ σ
+  λcase :: (FreshCtx γ σ γ')
+        => (pat -> exp γ' τ) -> exp γ (σ ⊸ τ)
+-}
 
---instance Pat lang γ σ (LExp lang γ σ) where
---  pat = id
-instance ( WFDomain OneDom lang, τ ~ One ) 
-        => Pat (lang :: Lang sig) ('Empty :: Ctx sig) τ () where
-  pat () = unit
-  caseof' e f = e `letUnit` (f ())
+-- γ0 is a context of variables not to use
+-- class HasLolli exp 
+--    => Matchable' (exp :: Exp) (γ :: Ctx)
+--                  (σ :: LType) (pat :: Type) where
+--   pat   :: pat -> exp γ σ
+--   λcase :: forall γ0 γ' τ. 
+--            CMerge γ γ0 γ' => (pat -> exp γ' τ) -> exp γ0 (σ ⊸ τ)
 
-instance ( WFDomain TensorDom lang, τ ~ (σ1 ⊗ σ2), CMerge γ1 γ2 γ
-         , Pat lang γ1 σ1 pat1, Pat lang γ2 σ2 pat2)
-        => Pat lang γ τ (pat1,pat2) where
-  pat (p1,p2) = pat @lang @γ1 @σ1 p1 ⊗ pat @lang @γ2 @σ2 p2
-  caseof' = undefined
---  caseof' e f = e `letPair`  \(x1,x2) ->
---                x1 `caseof'` \pat1 ->
---                x2 `caseof'` \pat2 ->
---                f (pat1,pat2)
+--  match :: (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
+--        => exp γ1 σ -> (pat -> exp γ2' τ) -> exp γ' τ
+--  match e f = λcase f ^ e
 
-instance ( WFDomain PlusDom lang, τ ~ (σ1 ⊕ σ2)
-         , Pat lang γ σ1 pat1, Pat lang γ σ2 pat2 )
-        => Pat lang γ τ (Either pat1 pat2) where
-  pat (Left  p) = inl $ pat p
-  pat (Right p) = inr $ pat p
-  caseof' = undefined
---  caseof' e f = caseof e (\x -> x `caseof'` \pat -> f (Left pat))
---                         (\x -> x `caseof'` \pat -> f (Right pat))
+--instance ( CMerge γ1 γ2 γ, HasTensor exp
+--         , Matchable' exp γ1 σ1 pat1, Matchable' exp γ2 σ2 pat2
+--         , τ ~ (σ1 ⊗ σ2) )
+--      => Matchable' (exp :: Exp) γ τ (pat1,pat2) where
 
---instance (τ ~ Bot) => Pat lang Empty τ (LExp lang 'Empty τ) where
---  pat = id
---  caseof' e f = 
+--   pat (p1,p2) = (pat @_ @_ @γ1 @σ1 p1) ⊗ (pat @_ @_ @γ2 @σ2 p2)
 
-instance ( WFDomain LowerDom lang, CInList τ '[ Lower a, σ1 & σ2, Bot, σ1 ⊸ σ2 ])
-        => Pat lang γ τ (LExp lang γ τ) where
-  pat = id
-  caseof' e f = undefined -- f e
+--   λcase :: forall γ0 γ' ρ.
+--            CMerge γ0 γ γ' => ((pat1,pat2) -> exp γ' ρ) -> exp γ0 (σ1 ⊗ σ2 ⊸ ρ)
+--   λcase f = uncurry f'
+ --    uncurry @exp $ λcase (\p1 -> λcase @_ @exp (\p2 -> f (p1,p2)))
+--     where
+---       f' :: exp γ0 (σ1 ⊸ σ2 ⊸ ρ)
+--       f' = undefined -- λcase @_ @exp @γ1 @σ1 @pat1 $ \p1 -> _
+    
+
+--  match :: forall γ1 γ2 γ' γ2' τ. (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
+--        => exp γ1 (σ1 ⊗ σ2) -> ((pat1,pat2) -> exp γ2' τ) -> exp γ' τ
+--  match = undefined
+--  match e f   = letPair @_ @_ @_ @_ @_ @_ @_ @γ1 e $ \(x1,x2) ->
+--                match @_ @exp x1 $ \p1 ->
+--                match @_ @exp x2 $ \p2 ->
+--                f (p1,p2)
+
+
+--instance (HasPlus exp, Matchable' exp γ σ1 pat1, Matchable' exp γ σ2 pat2, τ ~ (σ1 ⊕ σ2))
+--      => Matchable' exp γ τ (Either pat1 pat2) where
+--  pat (Left  p) = inl $ pat p
+--  pat (Right p) = inr $ pat p
 
 -- Example programs
 
-λ' f = λ $ \x -> x `caseof'` f
-
---foo :: (WFDomain LolliDom lang, WFDomain TensorDom lang) 
---    => Lift lang (σ ⊗ τ ⊸ τ ⊗ σ)
---foo = Suspend $ λ' $ \(x,y) -> y ⊗ x
+--foo :: forall (exp :: Exp) σ τ. 
+--       (HasTensor exp, Matchable exp σ, Matchable exp τ)
+--    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
+--foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x
