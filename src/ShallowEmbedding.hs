@@ -11,7 +11,6 @@
 module ShallowEmbedding where
 
 import Control.Monad (liftM2)
-import Data.Kind
 
 --import Prelim hiding (One)
 import Types
@@ -20,57 +19,58 @@ import Interface
 
 
 -- Shallow Embedding
+data Shallow
 
-type Shallow m = 'Sig m (SExp m) (SVal m)
-data SExp (m :: Type -> Type) :: Exp where
-  SExp :: forall m (γ :: Ctx) (τ :: LType).
-          (SCtx (Shallow m) γ -> m (SVal m τ)) -> SExp m γ τ
-
-data family SVal (m :: Type -> Type) (τ :: LType)
+data instance LExp Shallow γ τ where
+  SExp :: forall (γ :: Ctx) (τ :: LType).
+          (SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)) 
+       -> LExp Shallow γ τ
 
 
-instance Monad m => Eval (Shallow m) where
+
+instance Monad (Effect Shallow) => Eval Shallow where
   eval (SExp f) γ = f γ
+  fromVPut (VPut a) = return a
 
 
 
-instance Monad m => HasVar (SExp m) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => SExp m γ σ
+instance Monad (Effect Shallow) => HasVar Shallow where
+  var :: forall x σ γ. CSingletonCtx x σ γ => LExp Shallow γ σ
   var = SExp $ \g -> return $ singletonInv g
 
 -----------------------------------------------------------
 -----------------------------------------------------------
 
-data instance SVal m (MkLType ('LolliSig σ τ)) =
-    VAbs (SVal m σ -> m (SVal m τ))
+data instance LVal Shallow (MkLType ('LolliSig σ τ)) =
+    VAbs (LVal Shallow σ -> Effect Shallow (LVal Shallow τ))
 
-instance Monad m => HasLolli (SExp m) where
+instance Monad (Effect Shallow) => HasLolli Shallow where
   λ :: forall x σ γ γ' γ'' τ. 
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'')
-    => (SExp m γ'' σ -> SExp m γ' τ) -> SExp m γ (σ ⊸ τ)  
-  λ f = SExp $ \(γ :: SCtx (Shallow m) γ) -> return . VAbs $ \s -> 
+    => (LExp Shallow γ'' σ -> LExp Shallow γ' τ) -> LExp Shallow γ (σ ⊸ τ)  
+  λ f = SExp $ \(γ :: SCtx Shallow γ) -> return . VAbs $ \s -> 
          let SExp g = f var
          in g (add @x s γ)
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
-      => SExp m γ1 (σ ⊸ τ) -> SExp m γ2 σ -> SExp m γ τ
+      => LExp Shallow γ1 (σ ⊸ τ) -> LExp Shallow γ2 σ -> LExp Shallow γ τ
   SExp f ^ SExp s = SExp $ \g -> do
     (g1,g2) <- return $ split g
     VAbs f' <- f g1
     s'      <- s g2
     f' s'
 
-data instance SVal _ (MkLType 'OneSig) = VUnit
-instance Monad m => HasOne (SExp m) where
+data instance LVal Shallow (MkLType 'OneSig) = VUnit
+instance Monad (Effect Shallow) => HasOne Shallow where
   unit = SExp $ \_ -> return $ VUnit
-  letUnit (SExp e1 :: SExp m γ1 One) (SExp e2 :: SExp m γ2 τ) = SExp $ \g -> do
+  letUnit (SExp e1 :: LExp Shallow γ1 One) (SExp e2 :: LExp Shallow γ2 τ) = SExp $ \g -> do
     (g1,g2) <- return $ split g
     VUnit   <- e1 g1
     e2 g2
 
-data instance SVal m (MkLType ('TensorSig σ1 σ2)) = VPair (SVal m σ1) (SVal m σ2)
+data instance LVal Shallow (MkLType ('TensorSig σ1 σ2)) = VPair (LVal Shallow σ1) (LVal Shallow σ2)
 
-instance Monad m => HasTensor (SExp m) where
-  (SExp e1 :: SExp m γ1 σ1) ⊗ (SExp e2 :: SExp m γ2 σ2) = SExp $ \g ->
+instance Monad (Effect Shallow) => HasTensor Shallow where
+  (SExp e1 :: LExp Shallow γ1 σ1) ⊗ (SExp e2 :: LExp Shallow γ2 σ2) = SExp $ \g ->
     let (g1,g2) = split g
     in liftM2 VPair (e1 g1) (e2 g2)
 
@@ -82,9 +82,9 @@ instance Monad m => HasTensor (SExp m) where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22)
-      => SExp m γ1 (σ1 ⊗ σ2)
-      -> ((SExp m γ21 σ1, SExp m γ22 σ2) -> SExp m γ2'' τ)
-      -> SExp m γ τ
+      => LExp Shallow γ1 (σ1 ⊗ σ2)
+      -> ((LExp Shallow γ21 σ1, LExp Shallow γ22 σ2) -> LExp Shallow γ2'' τ)
+      -> LExp Shallow γ τ
   letPair (SExp e) f = SExp $ \ρ -> 
     let (ρ1,ρ2) = split ρ
         SExp e'  = f (var,var)
@@ -93,20 +93,20 @@ instance Monad m => HasTensor (SExp m) where
         e' (add @x2 @σ2 v2 (add @x1 @σ1 v1 ρ2))
 
 
-data instance SVal m (MkLType 'BottomSig)
+data instance LVal Shallow (MkLType 'BottomSig)
 
-data instance SVal m (MkLType ('PlusSig σ τ)) = VLeft (SVal m σ) | VRight (SVal m τ)
-instance Monad m => HasPlus (SExp m) where
+data instance LVal Shallow (MkLType ('PlusSig σ τ)) = VLeft (LVal Shallow σ) | VRight (LVal Shallow τ)
+instance Monad (Effect Shallow) => HasPlus Shallow where
   inl (SExp e) = SExp $ \g -> VLeft <$> e g
   inr (SExp e) = SExp $ \g -> VRight <$> e g
   caseof :: forall x σ1 σ2 τ γ γ1 γ2 γ21 γ21' γ22 γ22'.
             ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
             , CMerge γ1 γ2 γ )
-        => SExp m γ1 (σ1 ⊕ σ2)
-        -> (SExp m γ21' σ1 -> SExp m γ21 τ)
-        -> (SExp m γ22' σ2 -> SExp m γ22 τ)
-        -> SExp m γ τ
+        => LExp Shallow γ1 (σ1 ⊕ σ2)
+        -> (LExp Shallow γ21' σ1 -> LExp Shallow γ21 τ)
+        -> (LExp Shallow γ22' σ2 -> LExp Shallow γ22 τ)
+        -> LExp Shallow γ τ
   caseof (SExp e) f1 f2 = SExp $ \g ->
       let (g1,g2) = split g
           SExp e1  = f1 var 
@@ -115,8 +115,8 @@ instance Monad m => HasPlus (SExp m) where
         VLeft  s1 -> e1 $ add @x @σ1 s1 g2
         VRight s2 -> e2 $ add @x @σ2 s2 g2
 
-data instance SVal m (MkLType ('WithSig σ τ)) = VWith (SVal m σ) (SVal m τ)
-instance Monad m => HasWith (SExp m) where
+data instance LVal Shallow (MkLType ('WithSig σ τ)) = VWith (LVal Shallow σ) (LVal Shallow τ)
+instance Monad (Effect Shallow) => HasWith Shallow where
   SExp e1 & SExp e2 = SExp $ \g -> liftM2 VWith (e1 g) (e2 g)
   proj1 (SExp e)   = SExp $ \g -> do
     VWith v1 _ <- e g
@@ -125,11 +125,11 @@ instance Monad m => HasWith (SExp m) where
     VWith _ v2 <- e g
     return v2
 
-data instance SVal m (MkLType ('LowerSig a)) = VBang a
-instance Monad m => HasLower (SExp m) where
-  put a = SExp $ \_ -> return $ VBang a
-  (SExp e :: SExp m γ1 (Lower a)) >! (f :: a -> SExp m γ2 τ) = SExp $ \ g -> do
+data instance LVal Shallow (MkLType ('LowerSig a)) = VPut a
+instance Monad (Effect Shallow) => HasLower Shallow where
+  put a = SExp $ \_ -> return $ VPut a
+  (SExp e :: LExp Shallow γ1 (Lower a)) >! (f :: a -> LExp Shallow γ2 τ) = SExp $ \ g -> do
       (g1,g2) <- return $ split g
-      VBang a <- e g1
+      VPut a <- e g1
       SExp h   <- return $ f a
       h g2

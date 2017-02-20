@@ -17,17 +17,14 @@ data LType where
   -- ty :: * -> *
   MkLType :: ty LType -> LType
 
-
+type Sig = Type
 type Exp = Ctx -> LType -> Type
 type Val = LType -> Type
-data Sig = Sig (Type -> Type) (Exp) (Val)
 
-type family Effect (sig :: Sig) :: Type -> Type where
-  Effect ('Sig m _ _) = m
-type family LExp (sig :: Sig) :: Exp where
-  LExp ('Sig _ exp _) = exp
-type family LVal (sig :: Sig) :: Val where
-  LVal ('Sig _ _ val) = val
+data family LExp (sig :: Sig) :: Exp
+data family LVal (sig :: Sig) :: Val
+type family Effect (sig :: Sig) :: Type -> Type
+
 
 data Ctx  = Empty | N (NCtx)
 data NCtx = End (LType) | Cons (Maybe (LType)) (NCtx)
