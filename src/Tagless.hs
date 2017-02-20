@@ -131,34 +131,41 @@ class HasLower (exp :: Exp) where
 
 -- Lift --------------------------------------------------
 
+class HasLift exp where
+  suspend :: exp Empty τ -> Lift exp τ
+  force   :: Lift exp τ -> exp Empty τ
 
-data Lift (exp :: Exp) (τ :: LType) where
-  Suspend :: exp 'Empty τ -> Lift exp τ
-force :: Lift exp τ -> exp 'Empty τ
-force (Suspend e) = e
+data family Lift (exp :: Exp) (τ :: LType)
+
+-- Families of linear languages --------------------------
+
+type HasILL exp = (HasLolli exp, HasLift exp)
+type HasMILL exp = (HasILL exp, HasOne exp, HasTensor exp)
+type HasMELL exp = (HasMILL exp, HasLower exp)
+type HasMALL exp = (HasMILL exp, HasWith exp, HasPlus exp)
 
 ---------------------------------------------------------------
 -- Examples ---------------------------------------------------
 ---------------------------------------------------------------
 
-id :: HasLolli exp => Lift exp (σ ⊸ σ)
-id = Suspend . λ $ \x -> x
+id :: HasILL exp => Lift exp (σ ⊸ σ)
+id = suspend . λ $ \x -> x
 
-sApp :: HasLolli exp => Lift exp (σ ⊸ τ) -> Lift exp σ -> Lift exp τ
-sApp f e = Suspend $ force  f ^ force e
+sApp :: HasILL exp => Lift exp (σ ⊸ τ) -> Lift exp σ -> Lift exp τ
+sApp f e = suspend $ force  f ^ force e
 
-uncurryL :: (HasLolli exp,HasTensor exp) => Lift exp ((σ1 ⊸ σ2 ⊸ τ) ⊸ σ1 ⊗ σ2 ⊸ τ)
-uncurryL = Suspend . λ $ \f -> λ $ \x -> 
+uncurryL :: HasMILL exp => Lift exp ((σ1 ⊸ σ2 ⊸ τ) ⊸ σ1 ⊗ σ2 ⊸ τ)
+uncurryL = suspend . λ $ \f -> λ $ \x -> 
     x `letPair` \(x1,x2) -> 
     f ^ x1 ^ x2
-uncurry :: (HasLolli exp,HasTensor exp,WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
+uncurry :: (HasMILL exp, WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
 uncurry e = force uncurryL ^ e
 
 
-composeL :: HasLolli exp
+composeL :: HasMILL exp
          => Lift exp ((τ ⊸ ρ) ⊸ (σ ⊸ τ) ⊸ (σ ⊸ ρ))
-composeL = Suspend . λ $ \g -> λ $ \f -> λ $ \x -> g ^ (f ^ x)
-compose :: (HasLolli exp, CMerge γ1 γ2 γ)
+composeL = suspend . λ $ \g -> λ $ \f -> λ $ \x -> g ^ (f ^ x)
+compose :: (HasMILL exp, CMerge γ1 γ2 γ)
         => exp γ1 (τ ⊸ ρ) -> exp γ2 (σ ⊸ τ) -> exp γ (σ ⊸ ρ)
 compose g f = force composeL ^ g ^ f
 
