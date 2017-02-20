@@ -16,9 +16,7 @@ import Data.Kind
 --import Prelim hiding (One)
 import Types
 import Classes
-import Tagless
-
--- Instances ----------------------------------------- 
+import Interface
 
 
 -- Shallow Embedding
