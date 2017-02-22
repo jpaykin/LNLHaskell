@@ -101,6 +101,19 @@ class HasTensor sig where
 data BottomSig ty = BottomSig
 type Bottom = (MkLType 'BottomSig :: LType)
 
+-- Par ----------------------------------------------
+
+data ParSig ty = ParSig ty ty
+type σ ⅋ τ = MkLType (ParSig σ τ)
+
+class HasPar sig where
+  inPar :: (CMerge γ1 γ2 γ, CMerge γ21 γ22 γ2)
+        => LExp sig γ1 (σ ⅋ τ)
+        -> LExp sig γ21 (σ ⊸ σ')
+        -> LExp sig γ22 (τ ⊸ τ')
+        -> LExp sig γ   (σ' ⅋ τ')
+
+
 -- Additive Sum ---------------------------------------
 
 data PlusSig ty = PlusSig ty ty
@@ -129,6 +142,21 @@ class HasWith sig where
   proj1 :: LExp sig γ (τ1 & τ2) -> LExp sig γ τ1
   proj2 :: LExp sig γ (τ1 & τ2) -> LExp sig γ τ2
 
+-- Zero ------------------------------------------------
+
+data ZeroSig ty = ZeroSig
+type Zero = MkLType 'ZeroSig
+
+class HasZero sig where
+  absurd :: CMerge γ1 γ2 γ => LExp sig γ1 Zero -> LExp sig γ τ
+
+-- Top ------------------------------------------------
+
+data TopSig ty = TopSig
+type Top = MkLType 'TopSig
+
+class HasTop sig where
+  abort :: LExp sig γ Top
 
 -- Lower ----------------------------------------------
 data LowerSig ty = LowerSig Type
