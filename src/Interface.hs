@@ -104,7 +104,7 @@ type Bottom = (MkLType 'BottomSig :: LType)
 -- Par ----------------------------------------------
 
 data ParSig ty = ParSig ty ty
-type σ ⅋ τ = MkLType (ParSig σ τ)
+type σ ⅋ τ = MkLType ('ParSig σ τ)
 
 class HasPar sig where
   inPar :: (CMerge γ1 γ2 γ, CMerge γ21 γ22 γ2)
@@ -172,15 +172,18 @@ class HasLower sig where
 
 -- Lift --------------------------------------------------
 
-class HasLift sig lift where
-  suspend :: LExp sig Empty τ -> lift sig τ
-  force   :: lift sig τ -> LExp sig Empty τ
+class HasLift sig τ lift | lift -> sig τ where
+  suspend :: LExp sig Empty τ -> lift
+  force   :: lift -> LExp sig Empty τ
 
 data Lift (sig :: Sig) (τ :: LType) = Suspend (LExp sig Empty τ)
 
-instance HasLift sig Lift where
+instance HasLift sig τ (Lift sig τ) where
   suspend = Suspend
   force (Suspend e) = e
+
+
+--instance HasLift sig Lin (Lower α) where
 
 -- Families of linear languages --------------------------
 
@@ -222,26 +225,30 @@ compose g f = force composeL ^ g ^ f
 
 newtype Lin sig a = Lin (Lift sig (Lower a))
 
+instance HasLift sig (Lower α) (Lin sig α) where
+    suspend = Lin . suspend
+    force (Lin x) = force x
 
-suspendL :: LExp sig Empty (Lower a) -> Lin sig a
-suspendL = Lin . suspend
 
-forceL :: Lin sig a -> LExp sig Empty (Lower a)
-forceL (Lin x) = force x
+--suspendL :: LExp sig Empty (Lower a) -> Lin sig a
+--suspendL = Lin . suspend
+
+--forceL :: Lin sig a -> LExp sig Empty (Lower a)
+--forceL (Lin x) = force x
 
 instance (HasLower sig) => Functor (Lin sig) where
-  fmap f e = suspendL $ forceL e >! (put . f)
+  fmap f e = suspend $ force e >! (put . f)
 instance (HasLower sig) => Applicative (Lin sig) where
-  pure = suspendL . put
-  f <*> e = suspendL $ forceL e >! \a ->
-                       forceL f >! \g ->
+  pure = suspend . put
+  f <*> e = suspend $ force e >! \a ->
+                       force f >! \g ->
                        put $ g a
 instance (HasLower sig) => Monad (Lin sig) where
-  e >>= f = suspendL $ forceL e >! \a ->
-                       forceL (f a)
+  e >>= f = suspend $ force e >! \a ->
+                       force (f a)
 
 run :: forall sig a. Eval sig => Lin sig a -> Effect sig a
-run e = eval (forceL e) SEmpty >>= fromVPut
+run e = eval (force e) SEmpty >>= fromVPut
 
 ---------------------------------------------------------------
 -- Linearity Monad Transformer --------------------------------
@@ -249,11 +256,15 @@ run e = eval (forceL e) SEmpty >>= fromVPut
 
 newtype LinT sig (f :: LType ~> LType) a = LinT (Lift sig (f @@ (Lower a)))
 
-suspendT :: LExp sig Empty (f @@ (Lower a)) -> LinT sig f a
-suspendT = LinT . suspend
+instance τ ~ (f @@ (Lower α)) => HasLift sig τ (LinT sig f α) where
+    suspend = LinT . suspend
+    force (LinT x) = force x
 
-forceT :: forall f sig a. LinT sig f a -> LExp sig Empty (f @@ (Lower a))
-forceT (LinT e) = force e
+--suspendT :: LExp sig Empty (f @@ (Lower a)) -> LinT sig f a
+--suspendT = LinT . suspend
+
+--forceT :: forall f sig a. LinT sig f a -> LExp sig Empty (f @@ (Lower a))
+--forceT (LinT e) = force e
 
 lowerT :: HasILL sig => (a -> b) -> LExp sig Empty (Lower a ⊸ Lower b)
 lowerT f = λ $ \x -> x >! \a -> put $ f a
@@ -264,20 +275,20 @@ lowerT2 f = λ $ \x -> x >! \a ->
             λ $ \y -> y >! \b -> put $ f a b
 
 instance (HasILL sig, LFunctor sig f) => Functor (LinT sig f) where
-    fmap g x = suspendT $ lowerT g <$$> forceT x
+    fmap g x = suspend $ lowerT g <$$> force x
 instance (HasILL sig, LApplicative sig f) => Applicative (LinT sig f) where
-    pure a = suspendT $ lpure (put a)
+    pure a = suspend $ lpure (put a)
 
-    -- forceT f :: f (Lower (a -> b))
-    -- forceT x :: f (Lower a) 
-    -- lowerT' <$$> forceT f :: f (Lower a ⊸ Lower b)
+    -- force f :: f (Lower (a -> b))
+    -- force x :: f (Lower a) 
+    -- lowerT' <$$> force f :: f (Lower a ⊸ Lower b)
     (<*>) :: LinT sig f (a -> b) -> LinT sig f a -> LinT sig f b
-    f <*> x = suspendT $ (lowerT' <$$> forceT f) <**> forceT x
+    f <*> x = suspend $ (lowerT' <$$> force f) <**> force x
       where
         lowerT' :: LExp sig Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
         lowerT' = λ $ \f -> f >! lowerT
 instance (HasILL sig, LMonad sig f) => Monad (LinT sig f) where
-    x >>= f = suspendT $ forceT x =>>= (λ $ \y -> y >! (forceT . f))
+    x >>= f = suspend $ force x =>>= (λ $ \y -> y >! (force . f))
 
 --------------------------------------------------------------
 -- LMonad ----------------------------------------------------
@@ -330,7 +341,7 @@ instance HasMILL sig => LMonad sig (LState' ρ) where
 
 runLStateT :: HasMILL sig 
            => LinT sig (LState' σ) a -> Lift sig σ -> Lift sig (σ ⊗ Lower a)
-runLStateT st s = suspend $ forceT st ^ force s
+runLStateT st s = suspend $ force st ^ force s
 
 execLStateT :: HasMILL sig
             => LinT sig (LState' σ) a -> Lift sig σ -> Lift sig σ
@@ -340,7 +351,7 @@ execLStateT st s = suspend $ force (runLStateT st s) `letPair` \(s,a) ->
 evalLStateT :: HasMILL sig
             => LinT sig (LState' σ) a -> Lift sig σ 
             -> Lift sig (σ ⊸ One) -> Lin sig a
-evalLStateT st s free = suspendL $ force (runLStateT st s) `letPair` \(s,a) ->
+evalLStateT st s free = suspend $ force (runLStateT st s) `letPair` \(s,a) ->
                                    force free ^ s `letUnit` a
 
 
