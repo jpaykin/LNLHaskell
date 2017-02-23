@@ -33,29 +33,24 @@ data instance LExp Deep γ τ where
   Var :: CSingletonCtx x τ γ => LExp Deep γ τ
   Dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
          Domain Deep dom 
-      => Proxy dom
-      -> dom Deep γ τ
-      -> LExp Deep γ τ
-
-dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
-         Domain Deep dom 
       => dom Deep γ τ
       -> LExp Deep γ τ
-dom = Dom (Proxy :: Proxy dom)
+
 
 -- The domain type class characterizes well-formed domains in which
 -- expressions in the domain evaluate to values in the langauge,
 -- under the monad
-class Monad (Effect sig) => Domain sig (dom :: Dom) where
-  evalDomain  :: dom sig g σ
+class Domain sig (dom :: Dom) where
+  evalDomain  :: Monad (Effect sig) 
+              => dom sig g σ
               -> SCtx sig g
               -> Effect sig (LVal sig σ)
 
-instance Monad (Effect Deep) => Eval Deep where
-  eval :: forall (γ :: Ctx) τ. 
+instance Eval Deep where
+  eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
           LExp Deep γ τ -> SCtx Deep γ -> Effect Deep (LVal Deep τ)
-  eval Var                          γ = return $ singletonInv γ
-  eval (Dom (Proxy :: Proxy dom) e) γ = evalDomain e γ
+  eval Var     γ = return $ singletonInv γ
+  eval (Dom e) γ = evalDomain e γ
 
   fromVPut (VPut a) = return a
 
@@ -90,14 +85,14 @@ data instance LVal Deep (σ ⊸ τ) where
        -> LExp Deep γ' τ
        -> LVal Deep (σ ⊸ τ)
 
-instance Monad (Effect Deep) => HasLolli Deep where
+instance HasLolli Deep where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
           => (LExp Deep γ'' σ -> LExp Deep γ' τ) -> LExp Deep γ (σ ⊸ τ)
-  λ f     = dom $ Abs (VarName @x) (f Var)
-  e1 ^ e2 = dom $ App e1 e2
+  λ f     = Dom $ Abs (VarName @x) (f Var)
+  e1 ^ e2 = Dom $ App e1 e2
 
-instance Monad (Effect Deep) => Domain Deep LolliExp where
+instance Domain Deep LolliExp where
   evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: LExp Deep γ1 (σ ⊸ τ)) (e2 :: LExp Deep γ2 σ)) ρ = do
     VAbs ρ' (x :: VarName x σ) e1' <- eval e1 ρ1
@@ -115,11 +110,11 @@ data OneExp :: Sig -> Exp where
   LetUnit :: CMerge γ1 γ2 γ => LExp sig γ1 One -> LExp sig γ2 τ -> OneExp sig γ τ
 data instance LVal Deep One = VUnit
 
-instance Monad (Effect Deep) => HasOne Deep where
-  unit = dom Unit
-  letUnit e1 e2 = dom $ LetUnit e1 e2
+instance HasOne Deep where
+  unit = Dom Unit
+  letUnit e1 e2 = Dom $ LetUnit e1 e2
 
-instance Monad (Effect Deep) => Domain Deep OneExp where
+instance Domain Deep OneExp where
   evalDomain Unit _ = return VUnit
   evalDomain (LetUnit (e1 :: LExp Deep γ1 One) (e2 :: LExp Deep γ2 τ)) ρ = do
       VUnit <- eval e1 ρ1
@@ -143,8 +138,8 @@ data TensorExp :: Sig -> Exp where
 data instance LVal Deep (σ1 ⊗ σ2) = VPair (LVal Deep σ1) (LVal Deep σ2)
 
 
-instance Monad (Effect Deep) => HasTensor Deep where
-  e1 ⊗ e2 = dom $ Pair e1 e2
+instance HasTensor Deep where
+  e1 ⊗ e2 = Dom $ Pair e1 e2
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
                     (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
@@ -157,14 +152,14 @@ instance Monad (Effect Deep) => HasTensor Deep where
       => LExp Deep γ1 (σ1 ⊗ σ2)
       -> ((Var Deep x1 σ1, Var Deep x2 σ2) -> LExp Deep γ2'' τ)
       -> LExp Deep γ τ
-  letPair e f = dom $ LetPair (VarName @x1 @σ1) (VarName @x2 @σ2) e $ f (x1,x2)
+  letPair e f = Dom $ LetPair (VarName @x1 @σ1) (VarName @x2 @σ2) e $ f (x1,x2)
     where
       x1 :: Var Deep x1 σ1
       x1 = Var
       x2 :: Var Deep x2 σ2
       x2 = Var
 
-instance Monad (Effect Deep) => Domain Deep TensorExp where
+instance  Domain Deep TensorExp where
   evalDomain (Pair (e1 :: LExp Deep γ1 τ1) (e2 :: LExp Deep γ2 τ2)) ρ =
       liftM2 VPair (eval e1 ρ1) (eval e2 ρ2)
     where
@@ -192,9 +187,9 @@ data PlusExp :: Sig -> Exp where
 data instance LVal Deep (σ1 ⊕ σ2) = 
     VInl (LVal Deep σ1) | VInr (LVal Deep σ2)
 
-instance Monad (Effect Deep) => HasPlus Deep where
-  inl = dom . Inl
-  inr = dom . Inr
+instance  HasPlus Deep where
+  inl = Dom . Inl
+  inr = Dom . Inr
 
   caseof :: forall x σ1 σ2 γ1 γ2 γ γ21 γ22 γ21' γ22' τ.
             ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
@@ -205,9 +200,9 @@ instance Monad (Effect Deep) => HasPlus Deep where
         -> (LExp Deep γ21' σ1 -> LExp Deep γ21 τ)
         -> (LExp Deep γ22' σ2 -> LExp Deep γ22 τ)
         -> LExp Deep γ τ
-  caseof e f1 f2 = dom $ Case (VarName @x) (VarName @x) e (f1 var) (f2 var)
+  caseof e f1 f2 = Dom $ Case (VarName @x) (VarName @x) e (f1 var) (f2 var)
 
-instance Monad (Effect Deep) => Domain Deep PlusExp where
+instance  Domain Deep PlusExp where
   evalDomain (Inl e) ρ = VInl <$> eval e ρ
   evalDomain (Inr e) ρ = VInr <$> eval e ρ
   evalDomain (Case (_ :: VarName x1 σ1) (_ :: VarName x2 σ2)
@@ -229,12 +224,12 @@ data instance LVal Deep (σ1 & σ2) where
   VWith :: SCtx Deep γ -> LExp Deep γ σ1 -> LExp Deep γ σ2 
         -> LVal Deep (σ1 & σ2)
 
-instance Monad (Effect Deep) => HasWith Deep where
-  e1 & e2 = dom $ With e1 e2
-  proj1 = dom . Proj1
-  proj2 = dom . Proj2
+instance  HasWith Deep where
+  e1 & e2 = Dom $ With e1 e2
+  proj1 = Dom . Proj1
+  proj2 = Dom . Proj2
 
-instance Monad (Effect Deep) => Domain Deep WithExp where
+instance  Domain Deep WithExp where
   evalDomain (With e1 e2) ρ = return $ VWith ρ e1 e2
   evalDomain (Proj1 e) ρ = do
     VWith ρ' e1 _ <- eval e ρ
@@ -251,11 +246,11 @@ data LowerExp :: Sig -> Exp where
           => LExp sig γ1 (Lower a) -> (a -> LExp sig γ2 τ) -> LowerExp sig γ τ
 data instance LVal Deep (Lower a) = VPut a
 
-instance Monad (Effect Deep) => HasLower Deep where
-  put = dom . Put
-  e >! f = dom $ LetBang e f
+instance  HasLower Deep where
+  put = Dom . Put
+  e >! f = Dom $ LetBang e f
 
-instance Monad (Effect Deep) => Domain Deep LowerExp where
+instance  Domain Deep LowerExp where
   evalDomain (Put a) _ = return $ VPut a
   evalDomain (LetBang (e1 :: LExp Deep γ1 (Lower a)) (e2 :: a -> LExp Deep γ2 τ)) ρ = do
       VPut a <- eval e1 ρ1

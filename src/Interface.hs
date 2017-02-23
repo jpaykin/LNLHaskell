@@ -19,9 +19,9 @@ import qualified Data.Singletons as Sing
 type (~>) a b = Sing.TyFun a b -> Type
 
 
-class Monad (Effect sig) => Eval (sig :: Sig) where
-  eval     :: LExp sig γ τ -> SCtx sig γ -> Effect sig (LVal sig τ)
-  fromVPut :: LVal sig (Lower a) -> Effect sig a
+class Eval (sig :: Sig) where
+  eval     :: Monad (Effect sig) => LExp sig γ τ -> SCtx sig γ -> Effect sig (LVal sig τ)
+  fromVPut :: Monad (Effect sig) => LVal sig (Lower a) -> Effect sig a
 
 
 -- For each domain:
@@ -247,7 +247,7 @@ instance (HasLower sig) => Monad (Lin sig) where
   e >>= f = suspend $ force e >! \a ->
                        force (f a)
 
-run :: forall sig a. Eval sig => Lin sig a -> Effect sig a
+run :: forall sig a. (Monad (Effect sig), Eval sig) => Lin sig a -> Effect sig a
 run e = eval (force e) SEmpty >>= fromVPut
 
 ---------------------------------------------------------------
