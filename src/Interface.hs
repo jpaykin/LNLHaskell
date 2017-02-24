@@ -34,16 +34,16 @@ type (σ :: LType) ⊸ (τ :: LType) = MkLType ('LolliSig σ τ)
 infixr 0 ⊸
 
 -- 3) Define an interface
-class HasLolli (sig :: Sig) where
+class HasLolli (exp :: Exp) where
   λ :: forall x σ γ γ' γ'' τ.
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-    => (LExp sig γ'' σ -> LExp sig γ' τ) -> LExp sig γ (σ ⊸ τ)
+    => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
   (^) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (σ :: LType) (τ :: LType).
          CMerge γ1 γ2 γ
-      => LExp sig γ1 (σ ⊸ τ) -> LExp sig γ2 σ -> LExp sig γ τ
+      => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
-letin :: (HasLolli sig, CAddCtx x σ γ2 γ2'
+letin :: (HasLolli (LExp sig), CAddCtx x σ γ2 γ2'
          , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
       => LExp sig γ1 σ -> (LExp sig γ2'' σ -> LExp sig γ2' τ) -> LExp sig γ τ
 letin e f = λ f ^ e
@@ -52,12 +52,12 @@ letin e f = λ f ^ e
 data OneSig ty = OneSig
 type One = (MkLType 'OneSig :: LType)
 
-class HasOne sig where
-  unit :: LExp sig (Empty :: Ctx) (One :: LType)
+class HasOne exp where
+  unit :: exp (Empty :: Ctx) (One :: LType)
   letUnit :: CMerge γ1 γ2 γ 
-          => LExp sig γ1 One -> LExp sig γ2 τ -> LExp sig γ τ
+          => exp γ1 One -> exp γ2 τ -> exp γ τ
 
-λunit :: (HasOne sig, HasLolli sig, WFFresh One γ)
+λunit :: (HasOne (LExp sig), HasLolli (LExp sig), WFFresh One γ)
       => (() -> LExp sig γ τ) -> LExp sig γ (One ⊸ τ)
 λunit f = λ $ \x -> x `letUnit` f ()
 
@@ -69,10 +69,10 @@ data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
 
 -- Exp = Ctx -> LType -> Type
-class HasTensor sig where
+class HasTensor exp where
   (⊗) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (τ1 :: LType) (τ2 :: LType).
          CMerge γ1 γ2 γ
-      => LExp sig γ1 τ1 -> LExp sig γ2 τ2 -> LExp sig γ (τ1 ⊗ τ2)
+      => exp γ1 τ1 -> exp γ2 τ2 -> exp γ (τ1 ⊗ τ2)
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
                     (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
@@ -82,11 +82,11 @@ class HasTensor sig where
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
              , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
-      => LExp sig γ1 (σ1 ⊗ σ2)
-      -> ((LExp sig γ21 σ1, LExp sig γ22 σ2) -> LExp sig γ2'' τ)
-      -> LExp sig γ τ
+      => exp γ1 (σ1 ⊗ σ2)
+      -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
+      -> exp γ τ
 
-λpair :: (HasTensor sig, HasLolli sig
+λpair :: (HasTensor (LExp sig), HasLolli (LExp sig)
          , CSingletonCtx x1 σ1 γ1, CSingletonCtx x2 σ2 γ2
          , CAddCtx x1 σ1 γ γ', CAddCtx x2 σ2 γ' γ''
          , x1 ~ Fresh γ, x2 ~ Fresh γ'
@@ -106,12 +106,12 @@ type Bottom = (MkLType 'BottomSig :: LType)
 data ParSig ty = ParSig ty ty
 type σ ⅋ τ = MkLType ('ParSig σ τ)
 
-class HasPar sig where
+class HasPar exp where
   inPar :: (CMerge γ1 γ2 γ, CMerge γ21 γ22 γ2)
-        => LExp sig γ1 (σ ⅋ τ)
-        -> LExp sig γ21 (σ ⊸ σ')
-        -> LExp sig γ22 (τ ⊸ τ')
-        -> LExp sig γ   (σ' ⅋ τ')
+        => exp γ1 (σ ⅋ τ)
+        -> exp γ21 (σ ⊸ σ')
+        -> exp γ22 (τ ⊸ τ')
+        -> exp γ   (σ' ⅋ τ')
 
 
 -- Additive Sum ---------------------------------------
@@ -119,17 +119,17 @@ class HasPar sig where
 data PlusSig ty = PlusSig ty ty
 type (⊕) (σ :: LType) (τ :: LType) = MkLType ('PlusSig σ τ)
 
-class HasPlus sig where
-  inl :: LExp sig γ τ1 -> LExp sig γ (τ1 ⊕ τ2)
-  inr :: LExp sig γ τ2 -> LExp sig γ (τ1 ⊕ τ2)
+class HasPlus exp where
+  inl :: exp γ τ1 -> exp γ (τ1 ⊕ τ2)
+  inr :: exp γ τ2 -> exp γ (τ1 ⊕ τ2)
   caseof :: ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
             , x ~ Fresh γ
             , CMerge γ1 γ2 γ )
-        => LExp sig γ1 (σ1 ⊕ σ2)
-        -> (LExp sig γ21' σ1 -> LExp sig γ21 τ)
-        -> (LExp sig γ22' σ2 -> LExp sig γ22 τ)
-        -> LExp sig γ τ
+        => exp γ1 (σ1 ⊕ σ2)
+        -> (exp γ21' σ1 -> exp γ21 τ)
+        -> (exp γ22' σ2 -> exp γ22 τ)
+        -> exp γ τ
 
 
 -- Additive Product -------------------------------------
@@ -137,36 +137,36 @@ class HasPlus sig where
 data WithSig ty = WithSig ty ty
 type (σ :: LType) & (τ :: LType) = MkLType ('WithSig σ τ)
 
-class HasWith sig where
-  (&) :: LExp sig γ τ1 -> LExp sig γ τ2 -> LExp sig γ (τ1 & τ2)
-  proj1 :: LExp sig γ (τ1 & τ2) -> LExp sig γ τ1
-  proj2 :: LExp sig γ (τ1 & τ2) -> LExp sig γ τ2
+class HasWith exp where
+  (&) :: exp γ τ1 -> exp γ τ2 -> exp γ (τ1 & τ2)
+  proj1 :: exp γ (τ1 & τ2) -> exp γ τ1
+  proj2 :: exp γ (τ1 & τ2) -> exp γ τ2
 
 -- Zero ------------------------------------------------
 
 data ZeroSig ty = ZeroSig
 type Zero = MkLType 'ZeroSig
 
-class HasZero sig where
-  absurd :: CMerge γ1 γ2 γ => LExp sig γ1 Zero -> LExp sig γ τ
+class HasZero exp where
+  absurd :: CMerge γ1 γ2 γ => exp γ1 Zero -> exp γ τ
 
 -- Top ------------------------------------------------
 
 data TopSig ty = TopSig
 type Top = MkLType 'TopSig
 
-class HasTop sig where
-  abort :: LExp sig γ Top
+class HasTop exp where
+  abort :: exp γ Top
 
 -- Lower ----------------------------------------------
 data LowerSig ty = LowerSig Type
 type Lower a = (MkLType ('LowerSig a) :: LType)
 
-class HasLower sig where
-  put  :: a -> LExp sig Empty (Lower a)
-  (>!) :: CMerge γ1 γ2 γ => LExp sig γ1 (Lower a) -> (a -> LExp sig γ2 τ) -> LExp sig γ τ
+class HasLower exp where
+  put  :: a -> exp Empty (Lower a)
+  (>!) :: CMerge γ1 γ2 γ => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
 
-λbang :: ( HasLower sig, HasLolli sig, WFFresh (Lower a) γ)
+λbang :: ( HasLower (LExp sig), HasLolli (LExp sig), WFFresh (Lower a) γ)
    => (a -> LExp sig γ τ) -> LExp sig γ (Lower a ⊸ τ)
 λbang f = λ $ \x -> x >! f
 
@@ -187,11 +187,10 @@ instance HasLift sig τ (Lift sig τ) where
 
 -- Families of linear languages --------------------------
 
-type HasBang sig = (HasLower sig)
-type HasILL sig = (HasLolli sig, HasBang sig)
-type HasMILL sig = (HasILL sig, HasOne sig, HasTensor sig)
-type HasMELL sig = (HasMILL sig, HasLower sig)
-type HasMALL sig = (HasMILL sig, HasWith sig, HasPlus sig)
+type HasBang sig = (HasLower (LExp sig))
+type HasILL sig = (HasLolli (LExp sig), HasBang sig)
+type HasMILL sig = (HasILL sig, HasOne (LExp sig), HasTensor (LExp sig))
+type HasMALL sig = (HasMILL sig, HasWith (LExp sig), HasPlus (LExp sig))
 
 ---------------------------------------------------------------
 -- Examples ---------------------------------------------------
@@ -218,6 +217,17 @@ compose :: (HasMILL sig, CMerge γ1 γ2 γ)
         => LExp sig γ1 (τ ⊸ ρ) -> LExp sig γ2 (σ ⊸ τ) -> LExp sig γ (σ ⊸ ρ)
 compose g f = force composeL ^ g ^ f
 
+--------------------------------------------------------------
+-- Comonad ---------------------------------------------------
+--------------------------------------------------------------
+
+type Bang sig σ = Lower (Lift sig σ)
+
+extract :: HasILL sig => Lift sig (Bang sig τ ⊸ τ)
+extract = suspend . λbang $ \x → force x
+
+duplicate :: HasILL sig => Lift sig (Bang sig τ ⊸ Bang sig (Bang sig τ))
+duplicate = suspend . λbang $ put . suspend . put
 
 ---------------------------------------------------------------
 -- Linearity Monad --------------------------------------------
@@ -236,14 +246,14 @@ instance HasLift sig (Lower α) (Lin sig α) where
 --forceL :: Lin sig a -> LExp sig Empty (Lower a)
 --forceL (Lin x) = force x
 
-instance (HasLower sig) => Functor (Lin sig) where
+instance (HasLower (LExp sig)) => Functor (Lin sig) where
   fmap f e = suspend $ force e >! (put . f)
-instance (HasLower sig) => Applicative (Lin sig) where
+instance (HasLower (LExp sig)) => Applicative (Lin sig) where
   pure = suspend . put
   f <*> e = suspend $ force e >! \a ->
                        force f >! \g ->
                        put $ g a
-instance (HasLower sig) => Monad (Lin sig) where
+instance (HasLower (LExp sig)) => Monad (Lin sig) where
   e >>= f = suspend $ force e >! \a ->
                        force (f a)
 
@@ -355,9 +365,9 @@ evalLStateT st s free = suspend $ force (runLStateT st s) `letPair` \(s,a) ->
                                    force free ^ s `letUnit` a
 
 
-class HasVar (sig :: Sig) where
+class HasVar exp where
   var :: forall x (σ :: LType) (γ :: Ctx). 
-         CSingletonCtx x σ γ => LExp sig γ σ
+         CSingletonCtx x σ γ => exp γ σ
 
 {-
 

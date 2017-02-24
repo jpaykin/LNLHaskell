@@ -63,7 +63,7 @@ instance Eval Deep where
 
 data VarName x σ = VarName
 
-instance HasVar Deep where
+instance HasVar (LExp Deep) where
   var :: forall x σ γ. CSingletonCtx x σ γ => LExp Deep γ σ
   var = Var
 
@@ -85,7 +85,7 @@ data instance LVal Deep (σ ⊸ τ) where
        -> LExp Deep γ' τ
        -> LVal Deep (σ ⊸ τ)
 
-instance HasLolli Deep where
+instance HasLolli (LExp Deep) where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
           => (LExp Deep γ'' σ -> LExp Deep γ' τ) -> LExp Deep γ (σ ⊸ τ)
@@ -110,7 +110,7 @@ data OneExp :: Sig -> Exp where
   LetUnit :: CMerge γ1 γ2 γ => LExp sig γ1 One -> LExp sig γ2 τ -> OneExp sig γ τ
 data instance LVal Deep One = VUnit
 
-instance HasOne Deep where
+instance HasOne (LExp Deep) where
   unit = Dom Unit
   letUnit e1 e2 = Dom $ LetUnit e1 e2
 
@@ -138,7 +138,7 @@ data TensorExp :: Sig -> Exp where
 data instance LVal Deep (σ1 ⊗ σ2) = VPair (LVal Deep σ1) (LVal Deep σ2)
 
 
-instance HasTensor Deep where
+instance HasTensor (LExp Deep) where
   e1 ⊗ e2 = Dom $ Pair e1 e2
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
@@ -187,7 +187,7 @@ data PlusExp :: Sig -> Exp where
 data instance LVal Deep (σ1 ⊕ σ2) = 
     VInl (LVal Deep σ1) | VInr (LVal Deep σ2)
 
-instance  HasPlus Deep where
+instance  HasPlus (LExp Deep) where
   inl = Dom . Inl
   inr = Dom . Inr
 
@@ -224,7 +224,7 @@ data instance LVal Deep (σ1 & σ2) where
   VWith :: SCtx Deep γ -> LExp Deep γ σ1 -> LExp Deep γ σ2 
         -> LVal Deep (σ1 & σ2)
 
-instance  HasWith Deep where
+instance  HasWith (LExp Deep) where
   e1 & e2 = Dom $ With e1 e2
   proj1 = Dom . Proj1
   proj2 = Dom . Proj2
@@ -246,7 +246,7 @@ data LowerExp :: Sig -> Exp where
           => LExp sig γ1 (Lower a) -> (a -> LExp sig γ2 τ) -> LowerExp sig γ τ
 data instance LVal Deep (Lower a) = VPut a
 
-instance  HasLower Deep where
+instance  HasLower (LExp Deep) where
   put = Dom . Put
   e >! f = Dom $ LetBang e f
 
