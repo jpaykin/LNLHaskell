@@ -13,12 +13,15 @@ module Arrays where
 import Data.Kind
 import qualified Data.Array.IO as IO
 import Prelude hiding (read, (^))
+import qualified Prelude as Prelude
 import Data.Proxy
 import Data.Constraint
 import System.TimeIt
-import Control.Monad (void, foldM)
+import Control.Monad (void, foldM, forM_)
 import Debug.Trace
 import Control.Monad.State.Lazy (State(..), runState)
+
+-- this implementation is really slow
 
 import Types
 --import Context
@@ -56,13 +59,13 @@ instance HasArray Shallow where
         return $ VPair (VArray arr) (VPut $ high-low)
 
 readT :: HasArray sig => Int -> LinT sig (LState' (Array a)) a
-readT i = suspendT . λ $ read i
+readT i = suspend . λ $ read i
 
 writeT :: HasArray sig => Int -> a -> LinT sig (LState' (Array a)) ()
-writeT i a = suspendT . λ $ \arr -> write i arr a ⊗ put ()
+writeT i a = suspend . λ $ \arr -> write i arr a ⊗ put ()
 
 sizeT :: HasArray sig => LinT sig (LState' (Array a)) Int
-sizeT = suspendT . λ $ size
+sizeT = suspend . λ $ size
 
 -- Fold
 
@@ -100,7 +103,7 @@ toListT = foldArrayT (:) []
 
 
 fromList :: forall sig a. HasArray sig => [a] -> Lift sig (Array a)
-fromList ls = foldr (execLStateT . f) (Suspend . alloc (length ls) $ head ls) $ zip ls [0..]
+fromList ls = foldr (execLStateT . f) (suspend . alloc (length ls) $ head ls) $ zip ls [0..]
   where
     f :: (a,Int) -> LinT sig (LState' (Array a)) ()
     f (a,i) = writeT i a
@@ -109,7 +112,7 @@ fromList ls = foldr (execLStateT . f) (Suspend . alloc (length ls) $ head ls) $ 
 
 evalArrayState :: HasArray sig
                => LinT sig (LState' (Array a)) b -> Lift sig (Array a) -> Lin sig b
-evalArrayState st a = evalLStateT st a (Suspend . λ $ dealloc)
+evalArrayState st a = evalLStateT st a (suspend . λ $ dealloc)
 
 toFromList :: [a] -> Lin Shallow [a]
 toFromList ls = evalArrayState toListT (fromList ls)
@@ -140,14 +143,26 @@ fromListIO ls = do
     f' :: IO.IOArray Int a -> (a,Int) -> IO ()
     f' arr (a,i) = IO.writeArray arr i a
 
+fromListIO' :: forall a. [a] -> IO (IO.IOArray Int a)
+fromListIO' ls = IO.newListArray (0,length ls-1) ls
+
 toFromListIO :: [a] -> IO [a]
 --toFromListIO ls = fromListIO ls >>= toListIO
-toFromListIO ls = fromListIO ls >>= IO.getElems
+toFromListIO ls = fromListIO' ls >>= IO.getElems
 
-compare :: Int -> IO ()
-compare n = do
+compareIO :: Int -> IO ()
+compareIO n = do
+    print $ "Calling toFromList on a list of size " ++ show n
+    putStr "Linear:\t"
     timeIt . void . run $ toFromList ls
+    putStr "Direct:\t"
     timeIt . void $ toFromListIO ls
   where
     ls = replicate n 10
 
+
+
+compareUpTo :: Int -> IO ()
+compareUpTo n = forM_ ls compareIO 
+  where
+    ls = ((Prelude.^) 2) <$> [0..n]

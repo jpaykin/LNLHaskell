@@ -237,7 +237,7 @@ newtype Lin sig a = Lin (Lift sig (Lower a))
 
 instance HasLift sig (Lower α) (Lin sig α) where
     suspend = Lin . suspend
-    force (Lin x) = force x
+    force (Lin e) = force e
 
 
 --suspendL :: LExp sig Empty (Lower a) -> Lin sig a
