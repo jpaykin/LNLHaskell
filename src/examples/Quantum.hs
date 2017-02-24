@@ -2,46 +2,92 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds,
+             ScopedTypeVariables, ConstraintKinds, LambdaCase,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
 #-}
-{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-name-shadowing #-}
+{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
+                               -fno-warn-name-shadowing #-}
 
-module Quantum where
+module Main where
 
-import Data.Kind
-import Control.Applicative
+--import Data.Kind
+--import Control.Applicative
+--import Data.Typeable
+import Prelude hiding ((^))
 import Data.Singletons
 --import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
 
-import Prelim
+import Prelim hiding (One)
 import Types
-import Context
-import Lang
 import Interface
+import DeepEmbedding
 
 --import Density hiding (cnot)
 import LinTrans
 
 -- Signature
-data QuantumSig sig  = QubitSig
-type Qubit = ('LType (IsInList QuantumSig (SigType sig))
-                     ('QubitSig :: QuantumSig sig) :: LType sig)
+data QuantumSig sig = MkQubit
+type Qubit = MkLType MkQubit
 
-data QuantumLVal (lang :: Lang sig) :: LType sig -> * where
-  -- qubit identifier 
-  VQubit :: QId -> QuantumLVal lang Qubit
+
+class HasMILL sig => HasQuantum sig where
+  new :: Bool -> LExp sig Empty Qubit
+  meas :: LExp sig γ Qubit -> LExp sig γ (Lower Bool)
+  unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> LExp sig γ σ
+
+controlBy :: (HasQuantum sig,KnownType σ, KnownQubits σ) 
+          => Unitary σ -> LExp sig γ (Qubit ⊗ σ) -> LExp sig γ (Qubit ⊗ σ)
+controlBy u e = unitary (control u) e
+
+-- -- first element is the control
+cnot :: HasQuantum sig
+     => LExp sig γ (Qubit ⊗ Qubit) -> LExp sig γ (Qubit ⊗ Qubit)
+cnot = controlBy PauliX
+
+
+
+-------------------------------------------------------
+-- Deep embedding -------------------------------------
+-------------------------------------------------------
+
+type instance Effect Deep = DensityMonad
+data instance LVal Deep Qubit = QId Int
+
   
-data QuantumLExp (lang :: Lang sig) :: Ctx sig -> LType sig -> * where
-  New     :: Bool -> QuantumLExp lang 'Empty Qubit
-  Meas    :: LExp lang g Qubit -> QuantumLExp lang g (Lower Bool)
-  Unitary :: Unitary σ -> LExp lang g σ -> QuantumLExp lang g σ
-  -- control the first expression BY the second expression
-  -- only valid if the first expression represents a unitary transformation
---  ControlBy :: Merge g1 g2 g 
---            -> LExp lang g1 σ -> LExp lang g2 Qubit -> QuantumLExp lang g (σ ⊗ Qubit)
+data QuantumExp :: Sig -> Exp where
+  New     :: Bool -> QuantumExp sig 'Empty Qubit
+  Meas    :: LExp sig γ Qubit -> QuantumExp sig γ (Lower Bool)
+  Unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> QuantumExp sig γ σ
 
-type QuantumDom = '(QuantumLExp,QuantumLVal)
+instance HasQuantum Deep where
+  new = Dom . New
+  meas = Dom . Meas
+  unitary u = Dom . Unitary u
+
+instance Domain Deep QuantumExp where
+  evalDomain (New b) _ = QId <$> newM b
+  evalDomain (Meas e) ρ = do QId i <- eval e ρ
+                             VPut <$> measM i
+  evalDomain (Unitary u e) ρ = do v <- eval e ρ
+                                  applyU u v
+                                  return v
+
+applyU :: forall σ. KnownType σ => Unitary σ -> LVal Deep σ -> DensityMonad ()
+applyU u v = withSingI (unitarySing u) $
+            applyUnitaryM @(NumQubits σ) (interpU u) (valToQubits v)
+
+class KnownType σ where
+  valToQubits :: LVal Deep σ -> [Int]
+instance KnownType Qubit where
+  valToQubits (QId i) = [i]
+instance KnownType One where
+  valToQubits VUnit = []
+instance (KnownType σ1,KnownType σ2) => KnownType (σ1 ⊗ σ2) where
+  valToQubits (VPair v1 v2) = valToQubits v1 ++ valToQubits v2
+instance KnownType (Lower α) where
+  valToQubits (VPut _) = []
+
+
 
 instance Show (Unitary σ) where
   show Identity = "I"
@@ -49,23 +95,25 @@ instance Show (Unitary σ) where
   show PauliX   = "X"
   show PauliY   = "Y"
   show PauliZ   = "Z"
+  show (R m)    = "R " ++ show m
   show (Alt u0 u1) = "(" ++ show u0 ++ " ⊕ " ++ show u1 ++ ")"
   show (Transpose u) = show u ++ "†"
-instance Show (QuantumLExp lang g τ) where
-  show (New b)  = "New(" ++ show b ++ ")"
-  show (Meas q) = "Meas(" ++ show q ++ ")"
-  show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
---  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
+-- instance Show (QuantumLExp lang g τ) where
+--   show (New b)  = "New(" ++ show b ++ ")"
+--   show (Meas q) = "Meas(" ++ show q ++ ")"
+--   show (Unitary u e) = "Unitary (" ++ show u ++ ") " ++ show e
+-- --  show (ControlBy _ e e') = show e ++ "`ControlBy`" ++ show e'
 
 -- Quantum Data
 
 -- Add more?
-data Unitary (σ :: LType sig) where
+data Unitary (σ :: LType) where
   Identity  :: KnownQubits σ => Unitary σ
   Hadamard  :: Unitary Qubit
   PauliX    :: Unitary Qubit -- (NOT)
   PauliY    :: Unitary Qubit
   PauliZ    :: Unitary Qubit
+  R         :: Int -> Unitary Qubit
   Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
   Transpose :: Unitary σ -> Unitary σ
 
@@ -78,6 +126,7 @@ unitarySing Hadamard = one
 unitarySing PauliX   = one
 unitarySing PauliY   = one
 unitarySing PauliZ   = one
+unitarySing (R _)    = one
 unitarySing (Alt u0 _)    = SS $ unitarySing u0
 unitarySing (Transpose u) = unitarySing u
 
@@ -86,171 +135,107 @@ unitarySing (Transpose u) = unitarySing u
 control :: KnownQubits σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
 control = Alt Identity
 
-type QId = Int
-class Monad (SigEffect sig) => HasQuantumEffect sig where
-  type family QUnitary (σ :: LType sig)
-  interpU :: forall (σ :: LType sig). Unitary σ -> QUnitary σ
-
-  newQubit  :: Bool -> SigEffect sig QId
-  applyU    :: forall (σ :: LType sig).
-               Unitary σ -> Qubits σ -> SigEffect sig ()
-  measQubit :: QId -> SigEffect sig Bool
 
 
-instance HasQuantumEffect ('Sig DensityMonad sigs) where
---  type QUnitary ('Sig DensityMonad sigs) = Density
-  type QUnitary (σ :: LType ('Sig DensityMonad sigs)) 
-    = Squared (NumQubits σ)
+-- instance HasQuantumEffect ('Sig DensityMonad sigs) where
+-- --  type QUnitary ('Sig DensityMonad sigs) = Density
+type QUnitary σ = Squared (NumQubits σ)
 
-  interpU :: forall (σ :: LType ('Sig DensityMonad sigs)). 
-             Unitary σ -> QUnitary σ
-  interpU Identity = ident
-  interpU Hadamard = hadamard
-  interpU PauliX   = pauliX
-  interpU PauliY   = pauliY
-  interpU PauliZ   = pauliZ
-  interpU (Alt (u0 :: Unitary σ') u1) = 
-    withSingI (two `raiseToSNat` unitarySing (Alt u0 u1)) $ 
-    withSingI (two `raiseToSNat` unitarySing u0) $
-      (newD False `kron` interpU u0) + (newD True `kron` interpU u1)
-  interpU (Transpose u) = transpose $ interpU u
+interpU :: Unitary σ -> QUnitary σ
+interpU Identity = ident
+interpU Hadamard = hadamard
+interpU PauliX   = pauliX
+interpU PauliY   = pauliY
+interpU PauliZ   = pauliZ
+interpU (R m)    = undefined -- rotation about the z axis by 2πi/2^m?
+interpU (Alt (u0 :: Unitary σ') u1) = 
+  withSingI (two `raiseToSNat` unitarySing (Alt u0 u1)) $ 
+  withSingI (two `raiseToSNat` unitarySing u0) $
+    (newD False `kron` interpU u0) + (newD True `kron` interpU u1)
+interpU (Transpose u) = transpose $ interpU u
 
-  newQubit  = newM
-  applyU :: forall (σ :: LType ('Sig DensityMonad sigs)).
-            Unitary σ -> Qubits σ -> DensityMonad ()
-  applyU u  = withSingI (unitarySing u) $ 
-                applyUnitaryM @(NumQubits σ) (interpU u)
-  measQubit = measM
-  
-
--- Language instance
-
-type HasQuantumDom (lang :: Lang sig) =
-    ( HasQuantumEffect sig
-    , WFDomain QuantumDom lang
-    , WFDomain OneDom lang, WFDomain TensorDom lang, WFDomain LolliDom lang
-    , WFDomain LowerDom lang)
-
-
-
-instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
-
-  evalDomain _ (New b)   = do
-    i <- newQubit @sig b
-    return $ vqubit i
-  evalDomain ρ (Meas e)  = do
-    VQubit i <- toDomain @QuantumDom <$> eval' ρ e
-    b <- measQubit @sig i
-    return $ vput b
-  evalDomain ρ (Unitary u e) = do
-    v  <- eval' ρ e
-    qs <- valToQubits @sig v
-    applyU @sig u qs
-    return v 
-    
-type Qubits (τ :: LType sig) = [QId]
--- This type family should be open 
--- type family Qubits (τ :: LType sig) :: * 
--- type instance Qubits ('LType _ 'OneSig) = ()
--- type instance Qubits ('LType _ 'QubitSig) = QId
--- type instance Qubits ('LType _ ('TensorSig τ1 τ2)) = (Qubits τ1, Qubits τ2)
--- type instance Qubits ('LType _ ('LowerSig _)) = ()
-
-valToQubits :: forall sig (lang :: Lang sig) τ.
-              HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)
-valToQubits v = case toDomain' @QuantumDom v of
-    Just (VQubit i) -> return [i]
-    Nothing -> case toDomain' @OneDom v of
-      Just VUnit -> return []
-      Nothing -> case toDomain' @TensorDom v of
-        Just (VPair v1 v2) -> liftA2 (++) (valToQubits v1) (valToQubits v2)
-        Nothing -> return [] 
---        case fromLVal' proxyLower v of
---          Just (VPut _) -> return []
---          Nothing       -> error "Cannot extract qubits from the given value"
-
-type family   NumQubits (τ :: LType sig) :: Nat 
-type instance NumQubits ('LType _ 'OneSig)            = 'Z
-type instance NumQubits ('LType _ 'QubitSig)          = 'S 'Z
-type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Plus` NumQubits τ2
+type family   NumQubits (τ :: LType) :: Nat 
+type instance NumQubits One            = 'Z
+type instance NumQubits Qubit          = 'S 'Z
+type instance NumQubits (τ1 ⊗ τ2) = NumQubits τ1 `Plus` NumQubits τ2
 --type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
-type instance NumQubits ('LType _ ('LowerSig _))      = 'Z
+type instance NumQubits (Lower _)      = 'Z
   
--- Interface for quantum data
-
-new :: HasQuantumDom lang
-    => Bool -> LExp lang 'Empty Qubit
-new = dom @QuantumDom . New
+-- EXAMPLES
 
 
-meas :: HasQuantumDom lang
-     => LExp lang g Qubit -> LExp lang g (Lower Bool)
-meas = dom @QuantumDom . Meas
+-- Flip -------------------------------------------
 
-unitary :: HasQuantumDom lang
-        => Unitary σ -> LExp lang g σ -> LExp lang g σ
-unitary u = dom @QuantumDom . Unitary u
 
-vqubit :: forall sig (lang :: Lang sig).
-          HasQuantumDom lang
-       => QId -> LVal lang Qubit
-vqubit = vdom @QuantumDom . VQubit
+qflip :: Lin Deep Bool
+qflip = suspend $ meas (unitary Hadamard (new False))
 
-controlBy :: (HasQuantumDom lang, KnownQubits σ)
-          => Unitary σ -> LExp lang g (Qubit ⊗ σ) -> LExp lang g (Qubit ⊗ σ)
-controlBy u e = unitary (control u) e
+-- ----------------------------------------------------
+-- -- Teleportation -----------------------------------
+-- ----------------------------------------------------
 
--- first element is the control
-cnot :: HasQuantumDom lang => LExp lang g (Qubit ⊗ Qubit) -> LExp lang g (Qubit ⊗ Qubit)
-cnot = controlBy PauliX
+plus_minus :: HasQuantum sig => Bool -> Lift sig Qubit
+plus_minus b = suspend $ unitary Hadamard $ new b
 
-----------------------------------------------------
--- Teleportation -----------------------------------
-----------------------------------------------------
+share :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit ⊗ Qubit)
+share = suspend . λ $ \q -> cnot (q ⊗ new False)
 
-plus_minus :: HasQuantumDom lang
-           => Bool -> Lift lang Qubit
-plus_minus b = Suspend $ unitary Hadamard $ new b
+bell00 :: HasQuantum sig => Lift sig (Qubit ⊗ Qubit)
+bell00 = suspend $ force (plus_minus False) `letin` \a ->
+                   force share ^ a
 
-share :: HasQuantumDom lang
-      => Lift lang (Qubit ⊸ Qubit ⊗ Qubit)
-share = Suspend . λ $ \q ->
-    cnot (q ⊗ new False)
-
-bell00 :: HasQuantumDom lang
-       => Lift lang (Qubit ⊗ Qubit)
-bell00 = Suspend $
-    force (plus_minus False) `letin` \a ->
-    force share `app` a
-    
-alice :: HasQuantumDom lang
-      => Lift lang (Qubit ⊸ Qubit ⊸ Lower (Bool, Bool))
-alice = Suspend . λ $ \q -> λ $ \a -> 
+alice :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit ⊸ Lower (Bool,Bool))
+alice = suspend . λ $ \q -> λ $ \a ->
             cnot (q ⊗ a) `letPair` \(q,a) ->
             meas (unitary Hadamard q) >! \x ->
             meas a >! \y ->
             put (x,y)
-
-bob :: HasQuantumDom lang
-    => (Bool,Bool) -> Lift lang (Qubit ⊸ Qubit)
-bob (x,y) = Suspend . λ $ \b ->
-    if y then unitary PauliX b else b `letin` \b ->
-    if x then unitary PauliZ b else b 
-
-teleport :: HasQuantumDom lang
-         => Lift lang (Qubit ⊸ Qubit)
-teleport = Suspend . λ $ \q ->
-    force bell00 `letPair` \(a,b) ->
-    force alice `app` q `app` a >! \(x,y) ->
-    force (bob (x,y)) `app` b
-
-teleport0 :: HasQuantumDom lang => Lin lang Bool
-teleport0 = suspendL . meas $ force teleport `app` new False
-
-qflip :: HasQuantumDom lang => Lin lang Bool
-qflip = suspendL $ meas (unitary Hadamard (new False))
     
-type MyQuantumSig = ( 'Sig DensityMonad (QuantumSig ': MELLSig) )
-type MyQuantumLang = ( 'Lang (QuantumDom ': MELL) :: Lang MyQuantumSig )
+bob :: HasQuantum sig => Bool -> Bool -> Lift sig (Qubit ⊸ Qubit)
+bob x y = suspend . λ $ \b ->
+    if y then unitary PauliX b else b `letin` \b ->
+    if x then unitary PauliZ b else b
+
+teleport :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit)
+teleport = suspend . λ $ \q ->
+    force bell00 `letPair` \(a,b) ->
+    force alice ^ q ^ a >! \(x,y) ->
+    force (bob x y) ^ b
+
+teleport0 :: Lin Deep Bool
+teleport0 = suspend . meas $ force teleport ^ new False
 
 
+main' :: Lin Deep Bool
+main' = suspend $ force bell00 `letPair` \(q1,q2) ->
+                 meas q1 >! \x ->
+                 meas q2 >! \y ->
+                 put (x == y)
+
+main :: IO ()
+main = print $ run main'
+
+
+-- Dependent fourier transform
+
+type family (σ :: LType) ⊗⊗ (n :: Nat) where
+  σ ⊗⊗ Z = One
+  σ ⊗⊗ S Z = σ
+  σ ⊗⊗ (S (S n)) = σ ⊗ (σ ⊗⊗ S n)
+
+rotations :: forall (m :: Nat) (n :: Nat) sig. (HasQuantum sig)
+          => Sing m -> Sing n -> Lift sig (Qubit ⊗⊗ S n ⊸ Qubit ⊗⊗ S n)
+rotations _ SZ      = idL
+rotations _ (SS SZ) = idL
+rotations m (SS n'@(SS _)) = suspend . λpair $ \(c,qs) -> qs `letPair` \(q,qs') ->
+    force (rotations m n') ^ (c ⊗ qs') `letPair` \(c,qs') ->
+    controlBy (R $ 2 + toInt m - toInt n') (c ⊗ q) `letPair` \(c,q) ->
+    c ⊗ (q ⊗ qs')
+
+fourier :: forall n sig. (HasQuantum sig)
+        => Sing n -> Lift sig (Qubit ⊗⊗ n ⊸ Qubit ⊗⊗ n)
+fourier SZ = idL
+fourier (SS SZ) = suspend . λ $ unitary Hadamard
+fourier (SS n'@(SS _)) = Suspend . λpair $ \(q,w) ->
+        force (fourier n') ^ w `letin` \w -> 
+        force (rotations (SS n') n') ^ (q ⊗ w)

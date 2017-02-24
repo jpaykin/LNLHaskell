@@ -196,8 +196,8 @@ type HasMALL sig = (HasMILL sig, HasWith (LExp sig), HasPlus (LExp sig))
 -- Examples ---------------------------------------------------
 ---------------------------------------------------------------
 
-id :: HasILL sig => Lift sig (σ ⊸ σ)
-id = suspend . λ $ \x -> x
+idL :: HasILL sig => Lift sig (σ ⊸ σ)
+idL = suspend . λ $ \x -> x
 
 sApp :: HasILL sig => Lift sig (σ ⊸ τ) -> Lift sig σ -> Lift sig τ
 sApp f e = suspend $ force  f ^ force e
