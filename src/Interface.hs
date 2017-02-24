@@ -43,9 +43,9 @@ class HasLolli (exp :: Exp) where
       => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
-letin :: (HasLolli (LExp sig), CAddCtx x σ γ2 γ2'
+letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
          , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
-      => LExp sig γ1 σ -> (LExp sig γ2'' σ -> LExp sig γ2' τ) -> LExp sig γ τ
+      => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
 letin e f = λ f ^ e
 
 -- One -----------------------------------------------

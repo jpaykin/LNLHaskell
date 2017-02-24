@@ -7,7 +7,7 @@
              MagicHash, RecursiveDo
 #-}
 
-module Sessions where
+module Main where
 
 import Control.Concurrent
 import GHC.Prim
@@ -15,7 +15,9 @@ import GHC.Prim
 import Prelude hiding ((^))
 import Types
 import Classes
-import Tagless
+import Interface
+import DeepEmbedding (Dom, Domain(..), VarName(..), LolliExp(..), OneExp(..))
+
 
 
 
@@ -38,7 +40,7 @@ recvOn :: (HasTensor exp
           , CAddCtx x2 σ2 γ2' γ2''
           , CSingletonCtx x1 σ1 γ21
           , CSingletonCtx x2 σ2 γ22
-          , x1 ~ Fresh γ, x2 ~ Fresh2 γ)
+          , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
@@ -51,13 +53,11 @@ wait = letUnit
 done :: HasOne exp => exp Empty One
 done = unit
 
-
-class (HasOne exp, HasTensor exp, HasLolli exp, HasLower exp)
-   => HasSessions exp where
---  fork :: (CMerge γ1 γ2 γ, CSingletonCtx x σ γ2'', CAddCtx x σ γ2 γ2', x ~ Fresh γ2)
---       => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
-    fork :: CMerge γ1 γ2 γ
-         => exp γ1 σ -> exp γ2 (σ ⊸ τ) -> exp γ τ
+type HasSessions exp = (HasOne exp, HasTensor exp, HasLolli exp, HasLower exp)
+--class (HasOne exp, HasTensor exp, HasLolli exp, HasLower exp)
+--   => HasSessions exp where
+--    fork :: CMerge γ1 γ2 γ
+--         => exp γ1 σ -> exp γ2 (σ ⊸ τ) -> exp γ τ
 
 type family Dual (σ :: LType) :: LType where
   Dual (MkLType ('TensorSig σ1 σ2)) = σ1 ⊸ Dual σ2
@@ -74,20 +74,36 @@ type ServerProto = Lower String ⊸ Lower Int ⊸ Lower String ⊗ One
 processOrder :: String -> Int -> String
 processOrder item cc = "Processed order for " ++ item ++ "."
 
-serverBody :: HasSessions exp => Lift exp ServerProto
+serverBody :: HasSessions (LExp sig) => Lift sig ServerProto
 serverBody = Suspend . recv $ \x -> x >! \item ->
                        recv $ \y -> y >! \cc   ->
                        send (put $ processOrder item cc) done
 
-clientBody :: HasSessions exp => Lift exp (ServerProto ⊸ Lower String)
+clientBody :: HasSessions (LExp sig) => Lift sig (ServerProto ⊸ Lower String)
 clientBody = Suspend . λ $ \c ->
    sendOn (put "Tea") c $ \c ->
    sendOn (put 1234)  c $ \c ->
    recvOn c $ \(receipt,c) ->
    wait c receipt
 
---transaction :: HasSessions exp => Lift exp (Lower String)
---transaction = Suspend $ fork serverBody clientBody
+connect :: HasLolli (LExp sig) => Lift sig proto -> Lift sig (proto ⊸ Lower α)  -> Lin sig α
+connect server client = suspend $ force client ^ force server
+
+transaction :: Lin SSessions String
+transaction = connect serverBody clientBody
+
+
+simpl :: Lin SSessions String
+--simpl = suspend $ (λbang $ \s -> put $ "hello " ++ s) ^ put "world" where
+simpl = connect server client where
+    server :: Lift SSessions (Lower String)
+    server = suspend $  put "world"
+    client :: Lift SSessions (Lower String ⊸ Lower String)
+    client = suspend $ recv $ \c ->
+                       c >! \s ->
+                       put $ "Hello " ++ s
+
+main = run simpl >>= print
 
 
 -- May need a separate fork
@@ -105,62 +121,93 @@ recvU :: UChan -> IO a
 recvU (cin,_) = unsafeCoerce# <$> readChan cin
 
 forwardU :: UChan -> UChan -> IO ()
-forwardU (cin1,cout1) (cin2,cout2) = do
-    forkIO $ readChan cout1 >>= writeChan cin2
-    readChan cout2 >>= writeChan cin1
-
-type Sessions = 'Sig IO SessionExp
-data SessionExp sig (γ :: Ctx) (τ :: LType) where
-  SessionExp :: (SCtx Sessions γ -> IO (LVal Sessions τ)) -> SessionExp sig γ τ
-
-data SessionVal τ where
-  Chan :: UChan -> SessionVal τ
-  Bang :: a -> SessionVal (Lower a)
-  VAbs :: (LVal Sessions σ -> IO (LVal Sessions τ)) -> SessionVal (σ ⊸ τ)
-data instance LVal Sessions τ = SVal (SessionVal τ)
-type family FromLower τ where
-  FromLower (MkLType ('LowerSig a)) = a
-
-instance HasVar (SessionExp sig) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => SessionExp sig γ σ
-  var = SessionExp $ \g -> return $ singletonInv g
+forwardU c1 c2 = do
+    forkIO $ recvU c1 >>= sendU c2
+    forkIO $ recvU c2 >>= sendU c1
+    return ()
 
 
-instance HasLolli (SessionExp sig) where
+-- Shallow Embedding ----------------------------------------
+
+data SSessions
+-- The UChan is the output channel
+data instance LExp SSessions γ τ = SExp {runSExp :: SCtx SSessions γ -> UChan -> IO ()}
+data instance LVal SSessions τ where
+  Chan  :: UChan -> LVal SSessions τ
+type instance Effect SSessions = IO
+
+instance Eval SSessions where
+    eval e γ = do
+        (cin,cout) <- newU
+        runSExp e γ cin
+        return $ Chan cout
+    fromVPut (Chan c) = recvU c
+
+instance HasVar (LExp SSessions) where
+  var :: forall x σ γ. CSingletonCtx x σ γ => LExp SSessions γ σ
+  var = SExp $ \g c -> sendU c (singletonInv g)
+
+
+instance HasLolli (LExp SSessions) where
   λ :: forall x σ γ γ' γ'' τ. 
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-    => (SessionExp sig γ'' σ -> SessionExp sig γ' τ) -> SessionExp sig γ (σ ⊸ τ)  
---  λ f = SessionExp $ \ρ -> do rec SVal (Chan c) <- g (add @x a ρ)
---                                  a             <- recvU c
---                              return . SVal $ Chan c
-  λ f = SessionExp $ \ρ -> do
-      (c1,c2) <- newU
-      forkIO $ recvU c1 >>= \a -> g (add @x a ρ) >>= sendU c1
-      return . SVal $ Chan c2
-    where
-      SessionExp g = f var
+    => (LExp SSessions γ'' σ -> LExp SSessions γ' τ) -> LExp SSessions γ (σ ⊸ τ)  
+  λ f = SExp $ \ρ c -> do
+        Chan c' <- recvU c
+        runSExp (f var) (add @x (Chan c') ρ) c
 
-  SessionExp e1 ^ SessionExp e2 = SessionExp $ \ρ -> do
-    (ρ1,ρ2) <- return $ split ρ
-    SVal (Chan c)  <- e1 ρ1
-    v2      <- e2 ρ2
-    sendU c v2
-    return . SVal $ Chan c
+  e1 ^ e2 = SExp $ \ρ c -> do   let (ρ1,ρ2) = split ρ
+--                                (x1,x2) <- newU
+                                (y1,y2) <- newU
+                                forkIO $ runSExp e1 ρ1 c
+                                forkIO $ runSExp e2 ρ2 y1
+                                sendU c (Chan y2)
+--                                forwardU x2 c
+                     
 
-instance HasTensor (SessionExp sig) where
-  SessionExp e1 ⊗ SessionExp e2 = SessionExp $ \ρ -> do
-    (ρ1,ρ2) <- return $ split ρ
-    v1      <- e1 ρ1
-    SVal (Chan c)  <- e2 ρ2
-    sendU c v1
-    return . SVal $ Chan c
+instance HasTensor (LExp SSessions) where
+    e1 ⊗ e2 = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+                                (x1,x2) <- newU
+                                forkIO $ runSExp e1 ρ1 x1
+                                forkIO $ sendU c (Chan x2)
+                                runSExp e2 ρ2 c -- continue as τ2
+
+    letPair :: forall x1 x2 σ1 σ2 τ γ1 γ2 γ2' γ γ2'' γ21 γ22.
+             ( CMerge γ1 γ2 γ
+             , CAddCtx x1 σ1 γ2 γ2'
+             , CAddCtx x2 σ2 γ2' γ2''
+             , CSingletonCtx x1 σ1 γ21
+             , CSingletonCtx x2 σ2 γ22
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
+      => LExp SSessions γ1 (σ1 ⊗ σ2)
+      -> ((LExp SSessions γ21 σ1, LExp SSessions γ22 σ2) -> LExp SSessions γ2'' τ)
+      -> LExp SSessions γ τ
+    letPair e e' = SExp $ \ρ c ->  do 
+                         let (ρ1,ρ2) = split ρ
+                         (x1,x2) <- newU
+                         forkIO $ runSExp e ρ1 x1
+                         Chan y <- recvU x2
+                         runSExp (e' (var,var)) (add @x2 (Chan x2) (add @x1 (Chan y) ρ2)) c
     
-instance HasOne (SessionExp sig) where
-instance HasLower (SessionExp sig) where
+instance HasOne (LExp SSessions) where
+--   -- unit = SExp $ \_ _ -> return ()
+--   -- letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+--   --                                  forkIO $ runSExp e ρ1 undefined
+--   --                                  runSExp e' ρ2 c
+--   unit = SExp $ \_ c -> sendU c ()
+--   letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+--                                    (x1,x2) <- newU
+--                                    forkIO $ runSExp e ρ1 x1
+--                                    Chan y <- recvU x2
+--                                    () <- recvU y
+--                                    runSExp e' ρ2 c
 
-instance HasSessions (SessionExp sig) where
-  fork (SessionExp e1) (SessionExp e2) = SessionExp $ \ρ -> do
-    (ρ1,ρ2)       <- return $ split ρ
-    v1            <- e1 ρ1
-    SVal (VAbs f) <- e2 ρ2
-    f v1
+instance HasLower (LExp SSessions) where
+  put a  = SExp $ \_ c -> sendU c (Just a)
+
+  e >! f = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+                             (c1,c2) <- newU
+                             forkIO $ runSExp e ρ1 c1
+                             Chan x <- recvU c2
+                             Just a <- recvU x
+                             runSExp (f a) ρ2 c
