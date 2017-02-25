@@ -201,22 +201,37 @@ instance HasLolli (LExp Sessions) where
             forward c z
 
 instance HasTensor (LExp Sessions) where
+    e1 ⊗ e2 = SExp $ \ρ (c :: UChan (σ1 ⊗ σ2)) -> do
+            let (ρ1,ρ2) = split ρ
+            (x,x') <- newU @σ1
+            forkIO $ runSExp e1 ρ1 x
+            c' <- sendTensor c (Chan x')
+            runSExp e2 ρ2 c'
+
     -- e1 ⊗ e2 = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
     --                             (x1,x2) <- newU
     --                             forkIO $ runSExp e1 ρ1 x1
     --                             sendU c (Chan x2)
     --                             runSExp e2 ρ2 c
 
-    -- letPair :: forall x1 x2 σ1 σ2 τ γ1 γ2 γ2' γ γ2'' γ21 γ22.
-    --          ( CMerge γ1 γ2 γ
-    --          , CAddCtx x1 σ1 γ2 γ2'
-    --          , CAddCtx x2 σ2 γ2' γ2''
-    --          , CSingletonCtx x1 σ1 γ21
-    --          , CSingletonCtx x2 σ2 γ22
-    --          , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
-    --   => LExp Sessions γ1 (σ1 ⊗ σ2)
-    --   -> ((LExp Sessions γ21 σ1, LExp Sessions γ22 σ2) -> LExp Sessions γ2'' τ)
-    --   -> LExp Sessions γ τ
+    letPair :: forall x1 x2 σ1 σ2 τ γ1 γ2 γ2' γ γ2'' γ21 γ22.
+             ( CMerge γ1 γ2 γ
+             , CAddCtx x1 σ1 γ2 γ2'
+             , CAddCtx x2 σ2 γ2' γ2''
+             , CSingletonCtx x1 σ1 γ21
+             , CSingletonCtx x2 σ2 γ22
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
+      => LExp Sessions γ1 (σ1 ⊗ σ2)
+      -> ((LExp Sessions γ21 σ1, LExp Sessions γ22 σ2) -> LExp Sessions γ2'' τ)
+      -> LExp Sessions γ τ
+    letPair e f = SExp $ \ρ (c :: UChan τ) -> do
+                let (ρ1,ρ2) = split ρ
+                (x,x') <- newU @(σ1 ⊗ σ2) -- x' :: Chan (σ1 ⊸ Dual σ2)
+                forkIO $ runSExp e ρ1 x
+                (v,y) <- recvLolli x' -- v :: LVal σ1, y :: UChan (Dual σ2)
+                let ρ2' = add @x2 (Chan y) (add @x1 v ρ2)
+                runSExp (f (var,var)) ρ2' c
+
     -- letPair e e' = SExp $ \ρ c ->  do 
     --                      let (ρ1,ρ2) = split ρ
     --                      (x1,x2) <- newU
@@ -226,6 +241,15 @@ instance HasTensor (LExp Sessions) where
 --                                                                        ρ2)) c
     
 instance HasOne (LExp Sessions) where
+    unit = SExp $ \_ (c :: UChan One) -> sendOne c
+
+    letUnit e e' = SExp $ \ρ (c :: UChan τ) -> do
+                let (ρ1,ρ2) = split ρ
+                (x,x') <- newU @One
+                forkIO $ runSExp e ρ1 x
+                recvBot x' -- important, wait for result before continuing
+                runSExp e' ρ2 c
+
 --   -- unit = SExp $ \_ _ -> return ()
 --   -- letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
 --   --                                  forkIO $ runSExp e ρ1 undefined
@@ -239,6 +263,18 @@ instance HasOne (LExp Sessions) where
 --                                    runSExp e' ρ2 c
 
 instance HasLower (LExp Sessions) where
+    put a = SExp $ \_ (c :: UChan (Lower α)) -> sendLower c a
+
+    (>!) :: forall γ1 γ2 γ α τ. CMerge γ1 γ2 γ
+         => LExp Sessions γ1 (Lower α) -> (α -> LExp Sessions γ2 τ) 
+         -> LExp Sessions γ τ
+    e >! f = SExp $ \ρ (c :: UChan τ) -> do
+                let (ρ1,ρ2) = split ρ
+                (x,x') <- newU @(Lower α)
+                forkIO $ runSExp e ρ1 x
+                a <- recvLower x'
+                runSExp (f a) ρ2 c
+
   -- put a  = SExp $ \_ c -> sendU c (Just a)
 
   -- e >! f = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
