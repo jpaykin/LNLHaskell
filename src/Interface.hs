@@ -354,7 +354,7 @@ runLStateT :: HasMILL sig
 runLStateT st s = suspend $ force st ^ force s
 
 execLStateT :: HasMILL sig
-            => LinT sig (LState' σ) a -> Lift sig σ -> Lift sig σ
+            => LStateT sig σ a -> Lift sig σ -> Lift sig σ
 execLStateT st s = suspend $ force (runLStateT st s) `letPair` \(s,a) -> 
                              a >! \_ -> s
 
@@ -364,6 +364,9 @@ evalLStateT :: HasMILL sig
 evalLStateT st s free = suspend $ force (runLStateT st s) `letPair` \(s,a) ->
                                    force free ^ s `letUnit` a
 
+
+-- for convenience
+type LStateT sig σ α = LinT sig (LState' σ) α
 
 class HasVar exp where
   var :: forall x (σ :: LType) (γ :: Ctx). 
