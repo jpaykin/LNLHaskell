@@ -63,7 +63,7 @@ class HasOne exp where
 
 -- Tensor ---------------------------------------------  
 
-type Var sig x σ = LExp sig (Singleton x σ) σ
+type Var sig x σ = LExp sig (SingletonF x σ) σ
 
 data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
@@ -168,7 +168,7 @@ class HasLower exp where
 
 λbang :: ( HasLower (LExp sig), HasLolli (LExp sig), WFFresh (Lower a) γ)
    => (a -> LExp sig γ τ) -> LExp sig γ (Lower a ⊸ τ)
-λbang f = λ $ \x -> x >! f
+λbang f = λ $ (>! f)
 
 -- Lift --------------------------------------------------
 

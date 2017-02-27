@@ -31,7 +31,7 @@ instance CInN x σ g => CIn x σ ('N g)
 
 -- Add To Context ----------------------------------------------
 
-class (γ' ~ Add x σ γ, γ ~ Remove x γ')
+class (γ' ~ AddF x σ γ, γ ~ Remove x γ')
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
     | x σ γ -> γ', x γ' -> σ γ
   where
@@ -42,7 +42,7 @@ instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountNMinus1 γ')
   where
     add v g = SN $ addN @x v g
 
-class (γ' ~ AddN x σ γ, γ ~ RemoveN x γ', len ~ CountNMinus1 γ')
+class (γ' ~ AddNF x σ γ, γ ~ RemoveN x γ', len ~ CountNMinus1 γ')
    => CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
   where
@@ -83,14 +83,14 @@ type family CountNMinus1 γ :: Nat where
   CountNMinus1 ('Cons 'Nothing γ)  = CountNMinus1 γ
 type CountN γ = S (CountNMinus1 γ)
 
-type family IsSingleton  g :: Bool where
-  IsSingleton ('End σ)            = 'True
-  IsSingleton ('Cons ('Just _) _) = 'False
-  IsSingleton ('Cons 'Nothing   g) = IsSingleton g
+type family IsSingletonF  g :: Bool where
+  IsSingletonF ('End σ)            = 'True
+  IsSingletonF ('Cons ('Just _) _) = 'False
+  IsSingletonF ('Cons 'Nothing   g) = IsSingletonF g
 
 type family IsDouble g :: Bool where
   IsDouble ('End σ) = 'False
-  IsDouble ('Cons ('Just _) g) = IsSingleton g
+  IsDouble ('Cons ('Just _) g) = IsSingletonF g
   IsDouble ('Cons 'Nothing g)   = IsDouble g
 
 class CIsSingleton (g :: NCtx) (flag :: Bool) | g -> flag where
@@ -101,9 +101,9 @@ instance CIsSingleton g b => CIsSingleton ('Cons 'Nothing g) b where
 
 -- Singleton Context ------------------------------------------
 
-type WFVar x σ γ = ( CSingletonCtx x σ (Singleton x σ)
-                   , CAddCtx x σ γ (Add x σ γ) 
-                   , CMerge γ (Singleton x σ) (Add x σ γ)
+type WFVar x σ γ = ( CSingletonCtx x σ (SingletonF x σ)
+                   , CAddCtx x σ γ (AddF x σ γ) 
+                   , CMerge γ (SingletonF x σ) (AddF x σ γ)
                    , WFCtx γ
                    )
 class WFVar (Fresh γ) σ γ => WFFresh σ γ
@@ -116,12 +116,12 @@ instance WFNCtx γ => WFNFresh σ (Cons Nothing γ)
 --instance WFNFresh σ γ => WFNFresh σ (Cons (Just τ) γ)
 -- TODO
 
-class (g ~ Singleton x σ, Remove x g ~ Empty)
+class (g ~ SingletonF x σ, Remove x g ~ Empty)
    => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
       | x σ -> g, g -> x σ where
   singleton :: LVal m σ -> SCtx m g
   singletonInv :: SCtx m g -> LVal m σ
-class (g ~ SingletonN x σ, RemoveN x g ~ Empty, CountNMinus1 g ~ Z)
+class (g ~ SingletonNF x σ, RemoveN x g ~ Empty, CountNMinus1 g ~ Z)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (g :: NCtx) 
     | x σ -> g, g -> x σ where
   singletonN :: LVal m σ -> SNCtx m g
@@ -179,10 +179,10 @@ instance (CMergeNForward g1 g2 g3, CMergeNForward g2 g1 g3, CDivN g3 g2 (N g1), 
     => CMergeN g1 g2 g3
 
 
-class (g3 ~ Merge12 g1 g2)
+class (g3 ~ MergeF g1 g2)
    => CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
   split :: SCtx m g3 -> (SCtx m g1, SCtx m g2)
-class (g3 ~ Merge12N g1 g2) 
+class (g3 ~ MergeNF g1 g2) 
    => CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
   splitN :: SNCtx m g3 -> (SNCtx m g1, SNCtx m g2)
 

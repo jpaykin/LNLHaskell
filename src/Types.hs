@@ -85,24 +85,24 @@ type family DivN (γ :: NCtx) (γ0 :: NCtx) = (r :: Ctx) where
   DivN γ                   γ0                   = TypeError
     (ShowType γ0 :<>: Text " must be a subcontext of " :<>: ShowType γ)
 
-type family SingletonN x (σ :: LType) :: NCtx where
-  SingletonN x σ = AddN x σ 'Empty
-type family Singleton x (σ :: LType) :: Ctx where
-  Singleton x σ = 'N (SingletonN x σ)
+type family SingletonNF x (σ :: LType) :: NCtx where
+  SingletonNF x σ = AddNF x σ 'Empty
+type family SingletonF x (σ :: LType) :: Ctx where
+  SingletonF x σ = 'N (SingletonNF x σ)
 
 
-type family Add (x :: Nat) (σ :: LType) (g :: Ctx) :: Ctx where
-  Add x σ g = 'N (AddN x σ g)
+type family AddF (x :: Nat) (σ :: LType) (g :: Ctx) :: Ctx where
+  AddF x σ g = 'N (AddNF x σ g)
 
-type family AddN (x :: Nat) (σ :: LType) (g :: Ctx) :: NCtx where
-  AddN 'Z     σ 'Empty = 'End σ
-  AddN ('S x) σ 'Empty = 'Cons 'Nothing (AddN x σ 'Empty)
-  AddN x      σ ('N g) = AddNN x σ g
+type family AddNF (x :: Nat) (σ :: LType) (g :: Ctx) :: NCtx where
+  AddNF 'Z     σ 'Empty = 'End σ
+  AddNF ('S x) σ 'Empty = 'Cons 'Nothing (AddNF x σ 'Empty)
+  AddNF x      σ ('N g) = AddNNF x σ g
 
-type family AddNN x σ (g :: NCtx) :: NCtx where
-  AddNN ('S x) σ ('End τ)          = 'Cons ('Just τ) (SingletonN x σ)
-  AddNN 'Z     σ ('Cons 'Nothing g) = 'Cons ('Just σ) g
-  AddNN ('S x) σ ('Cons u       g) = 'Cons u (AddNN x σ g)
+type family AddNNF x σ (g :: NCtx) :: NCtx where
+  AddNNF ('S x) σ ('End τ)          = 'Cons ('Just τ) (SingletonNF x σ)
+  AddNNF 'Z     σ ('Cons 'Nothing g) = 'Cons ('Just σ) g
+  AddNNF ('S x) σ ('Cons u       g) = 'Cons u (AddNNF x σ g)
 
 type family Remove (x :: Nat) (g :: Ctx) :: Ctx where
   Remove x 'Empty = TypeError (Text "Cannot remove anything from an empty context")
@@ -112,16 +112,16 @@ type family RemoveN (x :: Nat) (γ :: NCtx) :: Ctx where
   RemoveN 'Z ('Cons ('Just _) γ) = 'N ('Cons 'Nothing γ)
   RemoveN ('S x) ('Cons u γ)     = ConsN u (RemoveN x γ)
 
-type family Merge12 (g1 :: Ctx) (g2 :: Ctx) :: Ctx where
-  Merge12 'Empty 'Empty = 'Empty
-  Merge12 'Empty ('N g2) = 'N g2
-  Merge12 ('N g1) 'Empty = 'N g1
-  Merge12 ('N g1) ('N g2) = 'N (Merge12N g1 g2)
-type family Merge12N (g1 :: NCtx) (g2 :: NCtx) :: NCtx where
-  Merge12N ('End σ) ('Cons 'Nothing g2) = 'Cons ('Just σ) g2
-  Merge12N ('Cons 'Nothing g1) ('End σ) = 'Cons ('Just σ) g1
-  Merge12N ('Cons 'Nothing g1) ('Cons 'Nothing g2) = 'Cons Nothing (Merge12N g1 g2)
-  Merge12N ('Cons ('Just σ) g1) ('Cons 'Nothing g2) = 'Cons ('Just σ) (Merge12N g1 g2)
-  Merge12N ('Cons 'Nothing g1) ('Cons ('Just σ) g2) = 'Cons ('Just σ) (Merge12N g1 g2)
+type family MergeF (g1 :: Ctx) (g2 :: Ctx) :: Ctx where
+  MergeF 'Empty 'Empty = 'Empty
+  MergeF 'Empty ('N g2) = 'N g2
+  MergeF ('N g1) 'Empty = 'N g1
+  MergeF ('N g1) ('N g2) = 'N (MergeNF g1 g2)
+type family MergeNF (g1 :: NCtx) (g2 :: NCtx) :: NCtx where
+  MergeNF ('End σ) ('Cons 'Nothing g2) = 'Cons ('Just σ) g2
+  MergeNF ('Cons 'Nothing g1) ('End σ) = 'Cons ('Just σ) g1
+  MergeNF ('Cons 'Nothing g1) ('Cons 'Nothing g2) = 'Cons Nothing (MergeNF g1 g2)
+  MergeNF ('Cons ('Just σ) g1) ('Cons 'Nothing g2) = 'Cons ('Just σ) (MergeNF g1 g2)
+  MergeNF ('Cons 'Nothing g1) ('Cons ('Just σ) g2) = 'Cons ('Just σ) (MergeNF g1 g2)
 
 

@@ -10,96 +10,109 @@ module FileHandles where
 
 import qualified System.IO as IO
 import Data.Proxy
+import Prelude hiding (read, (^), take)
+import Control.Monad (forM_)
 
 import Types
-import Context
+import Classes
 import Lang
 import Interface
+import DeepEmbedding as D
+import ShallowEmbedding as S
 
 -- Signature
 
 data FHSig sig = FHSig
-type Handle = (LType' sig 'FHSig :: LType sig)
+type Handle = MkLType 'FHSig
 
-data FHLExp lang g τ where
-  Open      :: String -> FHLExp lang 'Empty Handle
-  ReadLine  :: LExp lang g Handle -> FHLExp lang g (Handle ⊗ Lower String)
-  WriteLine :: LExp lang g Handle -> String -> FHLExp lang g Handle
-  Close     :: LExp lang g Handle -> FHLExp lang g One
+class HasMILL sig => HasFH sig where
+  open :: String -> LExp sig Empty Handle
+  read :: LExp sig γ Handle -> LExp sig γ (Handle ⊗ Lower Char)
+  write :: LExp sig γ Handle -> Char -> LExp sig γ Handle
+  close :: LExp sig γ Handle -> LExp sig γ One
 
-data FHLVal lang τ where
-  VHandle :: IO.Handle -> FHLVal lang Handle
+type instance Effect _ = IO
+data instance LVal _ Handle = VHandle (IO.Handle)
 
-type FHDom = '(FHLExp, FHLVal)
+instance HasFH Shallow where
+  open s  = SExp $ \ρ -> VHandle <$> IO.openFile s IO.ReadWriteMode
+  read e  = SExp $ \ρ -> do VHandle h <- runSExp e ρ
+                            c <- IO.hGetChar h
+                            return $ S.VPair (VHandle h) (S.VPut c)
+  write e c = SExp $ \ρ → do VHandle h <- runSExp e ρ
+                             IO.hPutChar h c
+                             return $ VHandle h
+  close e = SExp $ \ρ -> do VHandle h <- runSExp e ρ 
+                            IO.hClose h
+                            return S.VUnit
+                             
+data FHExp :: Sig -> Exp where
+  Open :: String -> FHExp sig Empty Handle
+  Read :: LExp sig γ Handle -> FHExp sig γ (Handle ⊗ Lower Char)
+  Write :: LExp sig γ Handle -> Char -> FHExp sig γ Handle
+  Close :: LExp sig γ Handle -> FHExp sig γ One
 
-type HasFHDom (lang :: Lang sig) = 
-    ( WFDomain FHDom lang
-    , Domain OneDom lang, Domain TensorDom lang
-    , Domain LowerDom lang, Domain LolliDom lang
-    , SigEffect sig ~ IO
-    )
+instance Domain Deep FHExp where
+  evalDomain (Open s)    _ = VHandle <$> IO.openFile s IO.ReadWriteMode
+  evalDomain (Read e)    ρ = do VHandle h <- eval e ρ
+                                c <- IO.hGetChar h
+                                return $ D.VPair (VHandle h) (D.VPut c)
+  evalDomain (Write e c) ρ = do VHandle h <- eval e ρ
+                                IO.hPutChar h c
+                                return $ VHandle h
+  evalDomain (Close e)   ρ = do VHandle h <- eval e ρ
+                                IO.hClose h
+                                return D.VUnit
+                                
 
-instance HasFHDom lang => Domain FHDom lang where
-  evalDomain SEmpty (Open s) = do
-    h <- IO.openFile s IO.ReadWriteMode
-    return $ vhandle h
-  evalDomain ρ (ReadLine e) = do
-    VHandle h <- toDomain @FHDom <$> eval' ρ e
-    IO.hFlush h
-    s <- IO.hGetLine h
-    return $ vhandle h `vpair` vput s
-  evalDomain ρ (WriteLine e s) = do
-    VHandle h <- toDomain @FHDom <$> eval' ρ e
-    IO.hPutStrLn h s
-    return $ vhandle h
-  evalDomain ρ (Close e) = do
-    VHandle h <- toDomain @FHDom <$> eval' ρ e
-    return vunit
-
-
-vhandle :: HasFHDom lang => IO.Handle -> LVal lang Handle
-vhandle = vdom @FHDom . VHandle
-
-open :: HasFHDom lang 
-     => String -> Lift lang Handle
-open s = Suspend . dom @FHDom $ Open s
-
-readLine :: HasFHDom lang
-         => LinT lang (LState' Handle) String
-readLine = suspendT . λ $ \h -> dom @FHDom (ReadLine h)
-
-writeLine :: HasFHDom lang
-          => String -> LinT lang (LState' Handle) ()
-writeLine s = suspendT . λ $ \h -> 
-  dom @FHDom (WriteLine h s) `letin` \h ->
-  h ⊗ put ()
-
-close :: HasFHDom lang
-      => Lift lang (Handle ⊸ One)
-close = Suspend . λ $ \ h -> dom @FHDom (Close h)
+-- Examples ----------------------------------
 
 
-instance Show (FHLExp lang g τ) where
-  show (Open s)     = "Open " ++ show s
-  show (ReadLine h) = "ReadLine(" ++ show h ++ ")"
-  show (WriteLine h s) = "WriteLine(" ++ show h ++ ", " ++ show s ++ ")"
-  show (Close h)       = "Close(" ++ show h ++ ")"
+writeString :: HasFH sig => String -> LExp sig γ Handle -> LExp sig γ Handle
+writeString s e = foldl write e s
 
+readWriteTwice :: HasFH sig => LExp sig Empty (Handle ⊸ Handle)
+readWriteTwice = λ $ \h -> read h `letPair` \(h,x) ->
+                           x >! \c ->
+                           writeString [c,c] h
 
--- Examples
+withFile :: HasFH sig => String -> Lift sig (Handle ⊸ Handle ⊗ Lower a) -> Lin sig a
+withFile name f = suspend $ force f ^ open name `letPair` \(h,a) -> 
+                            close h `letUnit` a
 
-withFile :: HasFHDom lang 
-         => String -> LinT lang (LState' Handle) a -> Lin lang a
-withFile s f = evalLState f (open s) close
+readM :: HasFH sig => LExp sig Empty (LState Handle (Lower Char))
+readM = λ read
 
-type MyFHSig = ( 'Sig IO '[ FHSig, TensorSig, OneSig, LowerSig, LolliSig ] :: Sig)
-type MyFHDom = ( 'Lang '[ FHDom, TensorDom, OneDom, LowerDom, LolliDom ] :: Lang MyFHSig )
+writeM :: HasFH sig => Char -> LExp sig Empty (LState Handle One)
+writeM c = λ $ \h -> write h c ⊗ unit
 
-ex1 :: Lin MyFHDom String
-ex1 = withFile "helloworld.txt" $ do
-        x <- readLine
-        y <- readLine
-        z <- readLine
-        writeLine "Anyway3"
-        return $ x ++ y ++ z
-        
+readWriteTwiceM :: HasFH sig => Lift sig (LState Handle One)
+readWriteTwiceM = suspend $ readM    =>>= (λbang $ \c ->
+                            writeM c =>>= (λunit $ \() -> writeM c))
+
+readT :: HasFH sig => LStateT sig Handle Char
+readT = suspend readM
+
+writeT :: HasFH sig => Char -> LStateT sig Handle ()
+writeT c = suspend $ writeM c =>>= (λunit $ \() -> lpure $ put ())
+
+readWriteTwiceT :: HasFH sig => LStateT sig Handle ()
+readWriteTwiceT = do c <- readT
+                     writeT c
+                     writeT c
+
+take :: HasFH sig => Int -> LStateT sig Handle String
+take n | n <= 0    = return ""
+take n | otherwise = do c <- readT
+                        s <- take (n-1)
+                        return $ c:s
+
+writeStringT :: HasFH sig => String -> LStateT sig Handle ()
+writeStringT s = forM_ s writeT
+
+withFileT :: HasFH sig => String -> LStateT sig Handle a -> Lin sig a
+withFileT name st = evalLStateT st (suspend $ open name) (suspend $ λ close)
+
+test :: Lin Shallow String
+test = do withFileT "foo" $ writeStringT "Hello world!"
+          withFileT "foo" $ take 7
