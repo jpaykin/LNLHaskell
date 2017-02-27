@@ -1,8 +1,11 @@
 # LNLHaskell
 
-Linear types for haskell in the style of Linear/Non-Linear logic
+Linear types for Haskell in the style of Linear/Non-Linear logic
 
 Author: Jennifer Paykin (jpaykin)
+
+This iteration of the code is accompanied by a paper in submission "The Linearity
+Monad" by Jennifer Paykin and Steve Zdancewic, submitted to ICFP 2017. 
 
 ------------------
 
@@ -15,15 +18,22 @@ build` to compile the project or `stack ghci` to load the project in `ghci`.
 - `stack.yaml` : stack configuration file, lists ghci version and extra
   dependencies 
 - `src` : Haskell source code
+  * `src/Prelim.hs` : preliminary data about type-level natural numbers,
+    booleans, and lists
   * `src/Types.hs` : linear types
-  * `src/Context.hs` : singleton types describing predicates about contexts
-  * `src/Proofs.hs` : proofs about the predicates in `Context.hs`
   * `src/Classes.hs` : type classes corresponding to the predicates about
     contexts 
-  * `src/Lang.hs` : data structure representing linear terms
-  * `src/Subst.hs` : substitution and evaluation functions
   * `src/Interface.hs` : interface to linear terms using type classes
-  * `src/Examples.hs` : example linear terms
+  * `src/DeepEmbedding.hs` : implementation of language as a deep embedding
+  * `src/ShallowEmbedding.hs` : implementation of language as a shallow
+    embedding 
+  * `src/examples/` : implementation of domain-specific languages
+    * `src/examples/Array.hs` : implementation of mutable functional arrays
+    * `src/examples/FileHandles.hs` : implementation of functional file handles
+	* `src/examples/LinTrans.hs` : linear algebra library for quantum computing
+      example
+	* `src/examples/Quantum.hs` : implementation of the quantum lambda calculus
+	* `src/examples/Sessions.hs` : implementation of session types
 
 
 [stack]: www.haskellstack.org/
