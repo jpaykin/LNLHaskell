@@ -1,11 +1,9 @@
 # LNLHaskell
 
-Linear types for Haskell in the style of Linear/Non-Linear logic
+Linear types for Haskell in the style of Linear/Non-Linear logic.
 
-Author: Jennifer Paykin (jpaykin)
-
-This iteration of the code is accompanied by a paper in submission "The Linearity
-Monad" by Jennifer Paykin and Steve Zdancewic, submitted to ICFP 2017. 
+This iteration of the code is accompanied by a paper in submission to ICFP 2017:
+"The Linearity Monad"
 
 ------------------
 
