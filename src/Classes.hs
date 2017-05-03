@@ -152,8 +152,6 @@ instance WFNCtx ('End σ)
 instance WFNCtx γ => WFNCtx ('Cons 'Nothing γ)
 instance WFNCtx γ => WFNCtx ('Cons ('Just σ) γ)
 
--- Merge ----------------------------------------------------
-
 
 class CMergeU (u1 :: Maybe a) (u2 :: Maybe a) (u3 :: Maybe a)
       | u1 u2 -> u3, u1 u3 -> u2, u2 u3 -> u1 where
@@ -224,7 +222,6 @@ instance CMergeNForward g1 g2 g3
 
 
 
-
 -- Div ---------------------------------------
 
 class (g3 ~ Div g1 g2)
@@ -254,8 +251,6 @@ instance (CDivN g1 g2 g3, g3' ~ ConsN ('Just σ) g3)
       => CDivN ('Cons ('Just σ) g1) ('Cons 'Nothing g2) g3'
 instance (CDivN g1 g2 g3, g3' ~ ConsN 'Nothing g3)
       => CDivN ('Cons ('Just σ) g1) ('Cons ('Just σ) g2) g3'
-
-
 
 
 

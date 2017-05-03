@@ -15,7 +15,6 @@ import Control.Monad (forM_)
 
 import Types
 import Classes
-import Lang
 import Interface
 import DeepEmbedding as D
 import ShallowEmbedding as S

@@ -7,7 +7,7 @@
              MagicHash, RecursiveDo
 #-}
 
-module Main where
+module Sessions where
 
 import Control.Concurrent
 import GHC.Prim

@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
                                -fno-warn-name-shadowing #-}
 
-module Main where
+module Quantum where
 
 --import Data.Kind
 --import Control.Applicative
@@ -137,6 +137,7 @@ control = Alt Identity
 
 
 
+
 -- instance HasQuantumEffect ('Sig DensityMonad sigs) where
 -- --  type QUnitary ('Sig DensityMonad sigs) = Density
 type QUnitary σ = Squared (NumQubits σ)
@@ -158,6 +159,44 @@ type family   NumQubits (τ :: LType) :: Nat
 type instance NumQubits One            = 'Z
 type instance NumQubits Qubit          = 'S 'Z
 type instance NumQubits (τ1 ⊗ τ2) = NumQubits τ1 `Plus` NumQubits τ2
+
+{-
+instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
+
+  evalDomain _ (New b)   = do
+    i <- newQubit @sig b
+    return $ vqubit i
+  evalDomain ρ (Meas e)  = do
+    VQubit i <- toDomain @QuantumDom <$> eval' ρ e
+    b <- measQubit @sig i
+    return $ vput b
+  evalDomain ρ (Unitary u e) = do
+    v  <- eval' ρ e
+    qs <- valToQubits @sig v
+    applyU @sig u qs
+    return v 
+    
+type Qubits (τ :: LType sig) = [QId]
+
+valToQubits :: forall sig (lang :: Lang sig) τ.
+              HasQuantumDom lang => LVal lang τ -> SigEffect sig (Qubits τ)
+valToQubits v = case toDomain' @QuantumDom v of
+    Just (VQubit i) -> return [i]
+    Nothing -> case toDomain' @OneDom v of
+      Just VUnit -> return []
+      Nothing -> case toDomain' @TensorDom v of
+        Just (VPair v1 v2) -> liftA2 (++) (valToQubits v1) (valToQubits v2)
+        Nothing -> return [] 
+--        case fromLVal' proxyLower v of
+--          Just (VPut _) -> return []
+--          Nothing       -> error "Cannot extract qubits from the given value"
+
+type family   NumQubits (τ :: LType sig) :: Nat 
+type instance NumQubits ('LType _ 'OneSig)            = 'Z
+type instance NumQubits ('LType _ 'QubitSig)          = 'S 'Z
+type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Plus` NumQubits τ2
+-}
+
 --type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
 type instance NumQubits (Lower _)      = 'Z
   

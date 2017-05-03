@@ -405,10 +405,72 @@ match :: (Matchable exp σ, HasLolli exp, CMerge γ1 γ2 γ, WFVar (Fresh γ2) �
       => exp γ1 σ -> PatMatch exp γ2 σ τ -> exp γ τ
 match e f = (λcase f) ^ e
 
+<<<<<<< HEAD
 
 instance HasOne exp => Matchable exp One where
   pat U = unit
   λcase f = λ $ \x -> x `letUnit` f U
+=======
+-- Defunctionalization from singletons library!
+class LFunctor lang (f :: LType sig ~> LType sig) where
+--  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
+  lfmap :: CMerge γ1 γ2 γ 
+        => LExp lang γ1 (σ ⊸ τ) -> LExp lang γ2 (f @@ σ) -> LExp lang γ (f @@ τ)
+class LFunctor lang f => LApplicative lang f where
+  lpure :: LExp lang 'Empty (τ ⊸ f @@ τ)
+  llift :: LExp lang 'Empty (f @@ (σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
+class LApplicative lang m => LMonad lang m where
+  lbind :: LExp lang 'Empty (m @@ σ ⊸ (σ ⊸ m @@ τ) ⊸ m @@ τ)
+
+
+-- Linearity monad transformer
+data LinT lang (m :: LType sig ~> LType sig) :: * -> * where
+  LinT :: Lift lang (m @@ Lower a) -> LinT lang m a
+
+forceT :: LinT lang m a -> LExp lang 'Empty (m @@ Lower a)
+forceT (LinT e) = force e
+suspendT :: LExp lang 'Empty (m @@ Lower a) -> LinT lang m a
+suspendT = LinT . Suspend
+
+lowerT :: (Domain LolliDom lang, Domain LowerDom lang)
+       => LExp lang 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
+lowerT = λ $ \g -> λ $ \ x -> 
+          g >! \f ->
+          x >! \a -> put $ f a
+
+lowerT2 :: (Domain LolliDom lang, Domain LowerDom lang)
+        => LExp lang 'Empty (Lower (a -> b -> c) ⊸ Lower a ⊸ Lower b ⊸ Lower c)
+lowerT2 = λ $ \f -> λ $ \x -> λ $ \y ->
+    f >! \g -> x >! \a -> y >! \b -> put $ g a b
+
+instance (Domain LowerDom lang, Domain LolliDom lang, LFunctor lang f) 
+      => Functor (LinT lang f) where
+  fmap (g :: a -> b) (x :: LinT lang f a) = 
+    suspendT $ lfmap @lang @f (lowerT `app` put g) (forceT x)
+instance (Domain LowerDom lang, Domain LolliDom lang, LApplicative lang f) 
+      => Applicative (LinT lang f) where
+  pure a = suspendT $ lpure @lang @f `app` put a
+
+  (<*>) :: forall a b. LinT lang f (a -> b) -> LinT lang f a -> LinT lang f b
+  g <*> a = suspendT $ foo `app` forceT a
+    where
+      g' :: LExp lang 'Empty (f @@ (Lower a ⊸ Lower b))
+--      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
+--            `app` lowerT `app` forceT g
+      g' = lfmap @lang @f (lowerT @lang @a @b) (forceT g)
+      foo :: LExp lang 'Empty (f @@ (Lower a) ⊸ f @@ (Lower b))
+      foo = llift @lang @f @(Lower a) @(Lower b) `app` g'
+
+instance (Domain LowerDom lang, Domain LolliDom lang, LMonad lang m)
+      => Monad (LinT lang m) where
+  (>>=) :: forall a b. LinT lang m a -> (a -> LinT lang m b) -> LinT lang m b
+  x >>= f = suspendT mb
+    where
+      f' :: LExp lang 'Empty (Lower a ⊸ m @@ (Lower b))
+      f' = λ $ \ x -> x >! (forceT . f)
+      mb :: LExp lang 'Empty (m @@ Lower b)
+      mb = lbind @lang @m @(Lower a) @(Lower b) `app` forceT x `app` f'   
+>>>>>>> master
 
 instance HasLower exp => Matchable exp (Lower a) where
   pat (Put a) = put a
@@ -443,6 +505,7 @@ instance (HasPlus exp, Matchable exp σ1, Matchable exp σ2)
 --foo = λcase . Match $ \ Pair p1 p2 -> pat p2 ⊗ pat p1
 
 
+<<<<<<< HEAD
 -- data PatMatch exp γ (σs :: [LType]) τ where
 --   X   :: (CAddTypes σs γ γ', x ~ Fresh γ)
 --       => (Tuple γ σs -> exp γ' τ) -> PatMatch exp γ σs τ
@@ -450,6 +513,17 @@ instance (HasPlus exp, Matchable exp σ1, Matchable exp σ2)
 --   Pair :: (CAddCtx x σ1 γ γ', x ~ Fresh γ)
 --        => PatMatch2 exp γ σ1 σ2 τ -> PatMatch exp γ (σ1 ⊗ σ2) τ
   
+=======
+instance HasLStateDom lang => LFunctor lang (LState' σ) where
+  lfmap :: forall γ1 γ2 γ τ1 τ2. CMerge γ1 γ2 γ 
+        => LExp lang γ1 (τ1 ⊸ τ2) -> LExp lang γ2 (LState σ τ1) -> LExp lang γ (LState σ τ2)
+  lfmap f fs = force lfmap' `app` f `app` fs
+    where
+      lfmap' :: Lift lang ((τ1 ⊸ τ2) ⊸ LState σ τ1 ⊸ LState σ τ2)
+      lfmap' = Suspend . λ $ \f -> λ $ \fs -> λ $ \r ->
+        fs `app` r `letPair` \(r,s) ->
+        r ⊗ (f `app` s)
+>>>>>>> master
 
 -- λcase :: HasLolli exp => PatMatch exp γ σ τ -> exp γ (σ ⊸ τ)
 -- λcase (X f)   = λ f
