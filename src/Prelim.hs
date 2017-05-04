@@ -333,6 +333,10 @@ bNat (SomeSing m) = case compareSNat m (sing :: Sing n) of
            Left Dict -> BNat m
            Right Dict -> error $ "Cannot construct BNat: " ++ show m ++ " not less than bound " ++ show (sing :: Sing n)
 
+coerceBNat :: forall m n. m < n~True => BNat m -> BNat n
+coerceBNat (BNat (i :: Sing i)) = 
+    case ltTrans @i @m @n of Dict -> BNat i
+
 ltS :: Sing x -> Dict (x < 'S x ~ 'True)
 ltS SZ = Dict
 ltS (SS x) = case ltS x of Dict -> Dict
@@ -340,6 +344,12 @@ ltS (SS x) = case ltS x of Dict -> Dict
 succLtTrans :: 'S x < y ~ 'True => Sing x -> Sing y -> Dict (x < y ~ 'True)
 succLtTrans SZ (SS _) = Dict
 succLtTrans (SS x) (SS y) = case succLtTrans x y of Dict -> Dict
+
+ltTrans :: forall x y z. (x < y ~ True, y < z ~ True) => Dict (x < z ~ True)
+ltTrans = unsafeCoerce (Dict :: Dict ())
+
+ltTwoRaiseTo :: forall n. Dict ((n < (Two `RaiseTo` n)) ~ True)
+ltTwoRaiseTo = undefined
 
 ltSTrans :: x < y ~ True => Sing x -> Sing y -> Dict (x < S y ~ True)
 ltSTrans SZ     (SS _) = Dict

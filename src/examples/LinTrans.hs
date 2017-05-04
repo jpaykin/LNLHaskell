@@ -16,7 +16,7 @@ import Data.Complex (Complex(..))
 import Control.Monad.State.Lazy
 import Data.Singletons
 import Data.Maybe (fromJust)
-import Data.Tuple (swap)
+--import Data.Tuple hiding (swap)
 import Unsafe.Coerce
 import Data.Constraint (Dict(..))
 import Data.List ( (\\) )
@@ -62,7 +62,8 @@ instance Show ℂ where
                         else show α ++ " + " ++ show β ++ "i"
 
 
-
+-- A matrix of dimension m × n is a function from 
+-- pairs of nats bounded by m and n respectively.
 type Matrix m n = (BNat m,BNat n) -> ℂ
 type Squared n = Matrix (Two `RaiseTo` n) (Two `RaiseTo` n)
 
@@ -71,6 +72,9 @@ matrix ls (i,j) = ls !! (n * fromIntegral i + fromIntegral j)
   where
     n = toInt (sing :: Sing n)
 
+--------------
+-- Printing --
+--------------
 rows :: forall m n. (SingI m, SingI n) => Matrix m n -> [[ℂ]]
 rows mat = fmap f $ allBNat (sing :: Sing m)
   where
@@ -82,32 +86,43 @@ showRows mat = show <$> rows mat
 instance (SingI m, SingI n) => Show (Matrix m n) where
   show mat = unlines $ showRows mat
 
+---------------------------------------
+-- Primitive matrices and operatoins --
+---------------------------------------
+
 ident :: Matrix m m
 ident (i,j) = if i==j then 1 else 0
 
 transpose :: Matrix m n -> Matrix n m
 transpose mat (i,j) = conjugate $ mat (j,i)
 
-transposeD :: Density -> Density 
-transposeD (Density m ρ) = Density m $ transpose ρ
-
+{-
+-- if i : BNat m then raise m n = i : BNat (S m)
+-- so pruneRows mat is just the first m rows of mat
 pruneRows :: Sing m -> Matrix (S m) n -> Matrix m n
 pruneRows m mat (i,j) = mat (raise m i,j)
 
 pruneCols :: Sing n -> Matrix m (S n) -> Matrix m n
 pruneCols n mat (i,j) = mat (i,raise n j)
+-}
+
+sumTo :: Sing n -> BNat n -> (BNat n -> ℂ) -> ℂ
+sumTo _ (BNat SZ)     _ = 0
+sumTo n (BNat (SS m)) f = f m' + sumTo n m' f 
+  where
+    m' = case succLtTrans m n of Dict -> BNat m -- m < S m < n
 
 dot :: Sing n -> Matrix (S Z) n -> Matrix n (S Z) -> ℂ
-dot SZ _ _ = 0
-dot (SS n) mat1 mat2 = 
-    (mat1 (0,maxBNat (SS n)) * mat2 (maxBNat (SS n), 0)) 
-  + dot n (pruneCols n mat1) (pruneRows n mat2)
+dot n v1 v2 = sumTo n (maxBNat n) (\x -> v1 (0,x) * v2(x,0))
 
 row :: BNat m -> Matrix m n -> Matrix (S Z) n
 row i mat (_,j) = mat (i,j)
 
 col :: BNat n -> Matrix m n -> Matrix m (S Z)
 col j mat (i,_) = mat (i,j)
+
+plus :: Matrix m n -> Matrix m n -> Matrix m n
+plus mat1 mat2 (i,j) = mat1(i,j) + mat2(i,j)
 
 mult :: forall m n p. SingI n => Matrix m n -> Matrix n p -> Matrix m p
 mult mat1 mat2 (i,j) = 
@@ -120,13 +135,11 @@ kron mat1 mat2 (BNat i,BNat j) =
 --    Tr.trace ("Computing ⊗ for " ++ show (m1, n1) ++ "×" ++ show (m2, n2)) $
     mat1 (bNat i1, bNat j1) * mat2 (bNat i2,bNat j2)
   where
-    i1 = i `divSNat` (sing :: Sing m2)
-    i2 = i `modSNat` (sing :: Sing m2)
-    j1 = j `divSNat` (sing :: Sing n2)
-    j2 = j `modSNat` (sing :: Sing n2)
-    m1 = (sing :: Sing m1)
+    i1 = i `divSNat` m2
+    i2 = i `modSNat` m2
+    j1 = j `divSNat` n2
+    j2 = j `modSNat` n2
     m2 = (sing :: Sing m2)
-    n1 = (sing :: Sing n1)
     n2 = (sing :: Sing n2)
 
 trace :: forall m. SingI m => Matrix m m -> ℂ
@@ -135,8 +148,227 @@ trace mat = foldr f 0 ls
     ls = allBNat (sing :: Sing m)
     f i x = mat (i,i) + x
 
+----------------------
+-- Quantum Matrices --
+----------------------
+
+square :: forall n. SingI n => [ℂ] -> Squared n
+square ls = withSingI (two `raiseToSNat` (sing :: Sing n)) $ matrix ls
+
+density0 :: Matrix Two Two
+density0 = matrix [1,0
+                  ,0,0]
+
+density1 :: Matrix Two Two
+density1 = matrix [0,0
+                  ,0,1]
+
+hadamard = square @One $ [1/sqrt 2, 1/sqrt 2
+                         ,1/sqrt 2, -1/sqrt 2]
+
+ 
+
+pauliX = square @One $ [0,1,1,0]
+pauliY = square @One $ [0,-i,i,0]
+pauliZ = square @One $ [1,0,0,-1]
+
+cnotD  = square @Two $ [1,0,0,0
+                       ,0,1,0,0
+                       ,0,0,0,1
+                       ,0,0,1,0]
+
+newD :: Bool -> Squared One
+newD True  = density1
+newD False = density0 
+
 --------------------------------------------------------------------
 
+
+----------------------
+-- Density Matrices --
+----------------------
+
+data Density where
+  Density :: Sing n -> Squared n -> Density
+instance Show Density where
+  show (Density n m) = withSingI (two `raiseToSNat` n) $ show m
+
+
+
+size :: forall m. SingI m => Matrix m m -> Int
+size _ = toInt (sing :: Sing m)
+logsizeD :: Density -> Int
+logsizeD (Density n mat) = toInt n
+sizeD :: Density -> Int
+sizeD ρ = 2 ^ logsizeD ρ
+
+transposeD :: Density -> Density 
+transposeD (Density m ρ) = Density m $ transpose ρ
+
+multD :: Density -> Density -> Density
+multD = undefined
+
+kronD :: Density -> Density -> Density
+kronD (Density m mat1) (Density n mat2) = 
+      withSingI (raiseToSNat two n) $ 
+      withSingI (raiseToSNat two m) $ 
+      withSingI (raiseToSNat two (plusSNat m n)) $
+      case raiseToPlus two m n of {Dict -> 
+        Density (m `plusSNat` n) $ mat1 `kron` mat2
+      }
+
+identD :: Int -> Density
+identD n = case fromIntegral @_ @(SomeSing Nat) n of SomeSing n' -> Density n' ident
+
+nil :: Int -> Density
+nil n = case fromIntegral n of
+          SomeSing n' -> withSingI (two `raiseToSNat` n') $
+                         Density n' . matrix $ fromIntegral <$> repeat 0
+
+
+------------------
+-- Permutations --
+------------------
+
+-- encode and decode modulo a key k
+encode :: Int -> [Int] -> Int
+encode k [] = 0
+encode k (i : ls) = i + k * encode k ls
+
+decode :: Int -> Int -> [Int]
+decode k i | i == 0 = []
+decode k i | otherwise = i `mod` k : decode k (i `div` k)
+
+fromAssocList :: [(Int,Int)] -> Int -> Int
+fromAssocList []           = id
+fromAssocList ((a,b) : ls) = assocFun a b . fromAssocList ls
+  where
+    assocFun a b i = if i == a then b else i
+
+-- Check if two lists are equal up to the permutation specified, i.e.
+-- if permuting ls1 by f is equal to ls2
+isPermutation :: Eq a => (Int -> Int) -> [a] -> [a] -> Bool
+isPermutation f ls1 ls2 = all (\i -> ls1 !! i == ls2 !! f i) [0..len]
+  where
+    len = length ls1
+    
+
+swapFun :: forall n. SingI n => (Int -> Int) -> Squared n
+swapFun f (i,j) = if isPermutation f (decode n' i') (decode n' j') then 1 else 0
+  where
+    n' = toInt (sing :: Sing n)
+    i' = toInt i
+    j' = toInt j
+
+-- swap takes a list of qubit/bit variables and produces a matrix that permutes
+-- those qubits.
+-- i.e. swap ls |φ_0 ⋯ φ_n⟩ = |φ_f(0) ⋯ ρ_f(n)⟩ 
+-- where f = fromAssocList ls
+swap :: forall n. SingI n => [Int] -> Squared n
+swap ls = swapFun @n (fromAssocList $ zip [0..] ls)
+
+-------------------
+-- Density Monad --
+-------------------
+
+-- A density monad is a nondeterminism state monad:
+-- Density -> [Density]
+-- An element op of type DensityMonad corresponds to the superoperator
+-- \ρ -> ∑ (op ρ)
+type DensityMonad = StateT Density []
+
+newM :: Bool -> DensityMonad Int
+newM b = do
+    ρ <- get
+    put $ ρ `kronD` (Density one $ newD b)
+    return $ sizeD ρ
+
+-- runQ applies the superoperator to the identity density matrix of size 1.
+runQ :: DensityMonad a -> [(a,Density)]
+runQ m = runStateT m (Density SZ ident)
+
+-- getDensity combines the result of runQ into a single density matrix
+getDensity :: DensityMonad a -> Density
+getDensity m = foldr f (nil n) ls
+  where
+    ls = runQ m
+    n = logsizeD . snd $ head ls
+    f (_,ρ) ρ0 = ρ + ρ0
+
+
+-----------------
+-- Application --
+-----------------
+
+superM :: forall m n. Matrix (Two `RaiseTo` m) (Two `RaiseTo` n) -> DensityMonad ()
+superM mat = do Density _ ρ ← get
+                put . Density _ $ mat `mult` ρ `mult` transpose mat
+  where
+    matD = Density (sing :: Sing m) mat
+
+applyUnitaryM :: forall m. SingI m => Squared m -> [Int] -> DensityMonad ()
+applyUnitaryM u ls = do superM @m σ -- moves the relevant qubits to the front of the density matrix
+                        superM @m u -- applies operation
+                        superM @m $ transpose σ -- moves the qubits back
+  where
+    σ = swap @m ls
+
+applyMatrixM :: Matrix (Two `RaiseTo` m) (Two `RaiseTo` n) 
+             -> [Int] -> DensityMonad ()
+applyMatrixM mat ls = undefined
+
+measM :: Int -> DensityMonad Bool
+measM i = do
+    ρ <- get
+    (b,ρ') <- lift [ (False, applyMatrixD @One density0 [i] ρ)
+                   , (True,  applyMatrixD @One density1 [i] ρ) ]
+    put ρ'
+    return b
+
+------------------
+-- Num instance --
+------------------
+
+instance (SingI m, SingI n) => Num (Matrix m n) where
+  (+) mat1 mat2 (i,j) = mat1(i,j) + mat2(i,j)
+  (-) mat1 mat2 (i,j) = mat1(i,j) - mat2(i,j)
+  (*) mat1 mat2 (i,j) = mat1(i,j) * mat2(i,j)
+  abs mat (i,j) = abs $ mat(i,j)
+  signum mat = undefined -- trace mat
+  fromInteger n = matrix . repeat $ fromIntegral n
+instance Num Density where
+  Density n1 mat1 + Density n2 mat2 = 
+    withSingI (two `raiseToSNat` n1) $
+    withSingI (two `raiseToSNat` n2) $
+    case eqSNat n1 n2 of 
+      Left Dict -> Density n1 $ mat1 + mat2
+      Right _   -> error $ "Cannot add mismatched matrices " 
+                            ++ show mat1 ++ " and " ++ show mat2
+  _ - _ = undefined
+  _ * _ = undefined
+  abs _ = undefined
+  signum = undefined
+  fromInteger n = undefined
+
+
+
+instance Show (DensityMonad a) where
+  show = show . getDensity
+
+-- Debugging help
+m0 = square @Two [1,0,0,0
+                 ,0,1,0,0
+                 ,0,0,0,1
+                 ,0,0,1,0]
+rho = Density three $ \case
+  (0,0) -> -0.5
+  (0,2) ->  0.5
+  (3,0) -> -0.5
+  (3,2) ->  0.5
+  (_,_) -> 0
+
+
+{-
 -- produces an association list
 listToAssoc :: forall n. SingI n => [Int] -> [(BNat n, BNat n)]
 listToAssoc ls = (fromIntegral <$> [0..n]) `zip` (fromIntegral <$> pad ls)
@@ -187,76 +419,6 @@ applyMatrix mat ls ρ =
     minus :: Sing (p `Minus` m)
     minus = minusSNat p m
 
---------------------------------------------------------------
-
-data Density where
-  Density :: Sing n -> Squared n -> Density
-instance Show Density where
-  show (Density n m) = withSingI (two `raiseToSNat` n) $ show m
-
-size :: forall m. SingI m => Matrix m m -> Int
-size _ = toInt (sing :: Sing m)
-logsizeD :: Density -> Int
-logsizeD (Density n mat) = toInt n
-sizeD :: Density -> Int
-sizeD ρ = 2 ^ logsizeD ρ
-
-
-
-kronD :: Density -> Density -> Density
-kronD (Density m mat1) (Density n mat2) = 
-    kronD' m n mat1 mat2
-  where
-    kronD' :: forall m n. Sing m -> Sing n -> Squared m -> Squared n 
-           -> Density
-    kronD' m n mat1 mat2 = 
---      Tr.trace ("Computing ⊗ for " ++ show m ++ "×" ++ show n) $
-      withSingI (raiseToSNat two n) $ 
-      withSingI (raiseToSNat two m) $ 
-      withSingI (raiseToSNat two (plusSNat m n)) $
-      case raiseToPlus two m n of 
-        Dict -> Density (m `plusSNat` n) $ mat1 `kron` mat2
-
--- Some matrices
-
-square :: forall n. SingI n => [ℂ] -> Squared n
-square ls = withSingI (two `raiseToSNat` (sing :: Sing n)) $ matrix ls
-
-density0 :: Matrix Two Two
-density0 = matrix [1,0
-                  ,0,0]
-
-density1 :: Matrix Two Two
-density1 = matrix [0,0
-                  ,0,1]
-
-hadamard = square @One $ [1/sqrt 2, 1/sqrt 2
-                         ,1/sqrt 2, -1/sqrt 2]
-
- 
-
-pauliX = square @One $ [0,1,1,0]
-pauliY = square @One $ [0,-i,i,0]
-pauliZ = square @One $ [1,0,0,-1]
-
-cnotD  = square @Two $ [1,0,0,0
-                       ,0,1,0,0
-                       ,0,0,0,1
-                       ,0,0,1,0]
-
-newD :: Bool -> Squared One
-newD True  = density1
-newD False = density0 
-
---densityI :: Sing m -> Matrix m m -> Density
---densityI m mat = withSingI m $ Density m mat
-
-identD :: Int -> Density
-identD n = case fromIntegral @_ @(SomeSing Nat) n of 
-             SomeSing n' -> Density n' ident
-
-type DensityMonad = StateT Density []
-
 applyMatrixD :: forall m. SingI m => Squared m -> [Int] -> Density -> Density
 applyMatrixD mat perm (Density (p :: Sing p) ρ) = 
   Tr.trace ("Applying " ++ mat' ++ " to qubits " ++ show perm ++ " of \n" ++ show (Density p ρ)) $
@@ -270,13 +432,6 @@ applyMatrixD mat perm (Density (p :: Sing p) ρ) =
   where
     mat' = withSingI (two `raiseToSNat` (sing :: Sing m)) $ show mat
 
-
-newM :: Bool -> DensityMonad Int
-newM b = do
-    ρ <- get
-    put $ ρ `kronD` (Density one $ newD b)
-    return $ sizeD ρ
-
 applyUnitaryM :: forall m. SingI m => Squared m -> [Int] -> DensityMonad ()
 applyUnitaryM mat ls = get >>= \ρ -> put $ applyMatrixD @m mat ls ρ
 
@@ -288,58 +443,5 @@ measM i = do
     put ρ'
     return b
 
-runQ :: DensityMonad a -> [(a,Density)]
-runQ m = runStateT m (Density SZ ident)
+-}
 
--- todo: getDensity :: DensityMoand a -> Density
-
--- Num instance
-instance (SingI m, SingI n) => Num (Matrix m n) where
-  (+) mat1 mat2 (i,j) = mat1(i,j) + mat2(i,j)
-  (-) mat1 mat2 (i,j) = mat1(i,j) - mat2(i,j)
-  (*) mat1 mat2 (i,j) = mat1(i,j) * mat2(i,j)
-  abs mat (i,j) = abs $ mat(i,j)
-  signum mat = undefined -- trace mat
-  fromInteger n = matrix . repeat $ fromIntegral n
-instance Num Density where
-  Density n1 mat1 + Density n2 mat2 = 
-    withSingI (two `raiseToSNat` n1) $
-    withSingI (two `raiseToSNat` n2) $
-    case eqSNat n1 n2 of 
-      Left Dict -> Density n1 $ mat1 + mat2
-      Right _   -> error $ "Cannot add mismatched matrices " 
-                            ++ show mat1 ++ " and " ++ show mat2
-  _ - _ = undefined
-  _ * _ = undefined
-  abs _ = undefined
-  signum = undefined
-  fromInteger n = undefined
-
-nil :: Int -> Density
-nil n = case fromIntegral n of
-          SomeSing n' -> withSingI (two `raiseToSNat` n') $
-                         Density n' . matrix $ fromIntegral <$> repeat 0
-
-getDensity :: DensityMonad a -> Density
-getDensity m = foldr f (nil n) ls
-  where
-    ls = runQ m
-    n = logsizeD . snd $ head ls
---    nil = case fromIntegral n of 
---            SomeSing n' -> withSingI (two `raiseToSNat` n') $
---                           Density n' . matrix $ fromIntegral <$> [0..]
-    f (_,ρ) ρ0 = ρ + ρ0
-
-instance Show (DensityMonad a) where
-  show = show . getDensity
-
-m0 = square @Two [1,0,0,0
-                 ,0,1,0,0
-                 ,0,0,0,1
-                 ,0,0,1,0]
-rho = Density three $ \case
-  (0,0) -> -0.5
-  (0,2) ->  0.5
-  (3,0) -> -0.5
-  (3,2) ->  0.5
-  (_,_) -> 0
