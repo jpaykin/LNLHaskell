@@ -202,10 +202,10 @@ toListT = foldArrayT snoc []
 fromList :: forall sig a. HasArray sig => [a] -> ExistsArray (Lift sig) a
 fromList ls = case alloc (length ls) (head ls) of 
     ExistsArray new -> ExistsArray $ 
-      foldr (execLStateT . f) (suspend new) $ zip [0..] ls
+      foldr (execLStateT . f) (suspend new) $ zip ls [0..]
   where
-    f :: (Int,a) -> LStateT sig (Array token a) ()
-    f (i,a) = writeT i a
+    f :: (a,Int) -> LStateT sig (Array token a) ()
+    f (a,i) = writeT i a
 
 
 
@@ -237,7 +237,6 @@ myArrayToList = evalArrayState st' myArray
              return $ (arr,bounds)
     
 
-{-
 -------------------------------
 -- Compare to plain IOArrays --
 -------------------------------
@@ -272,6 +271,8 @@ toFromListIO ls = fromListIO' ls >>= IO.getElems
 
 compareIO :: Int -> IO ()
 compareIO n = do
+--    ls <- run $ toFromList [3,5,2]
+--    putStrLn $ "Test: " ++ show ls
     print $ "Calling toFromList on a list of size " ++ show n
     putStr "Linear:\t"
     timeIt . void . run $ toFromList ls
@@ -286,4 +287,3 @@ compareUpTo :: Int -> IO ()
 compareUpTo n = forM_ ls compareIO 
   where
     ls = ((Prelude.^) 2) <$> [0..n]
--}

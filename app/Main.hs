@@ -1,6 +1,11 @@
 module Main where
 
-import Lib
+--import Arrays
+
+--main :: IO ()
+--main = compareUpTo 100
+
+import Sessions
 
 main :: IO ()
-main = someFunc
+main = compareUpTo 50

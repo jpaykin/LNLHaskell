@@ -11,8 +11,11 @@ module Sessions where
 
 import Control.Concurrent
 import GHC.Prim
+import Control.Monad
+import System.TimeIt
 
 import Prelude hiding ((^))
+import qualified Prelude as Prelude
 import Types
 import Classes
 import Interface
@@ -90,7 +93,7 @@ simpl = connect server client where
                        c >! \s ->
                        put $ "Hello " ++ s
 
-main = run simpl >>= print
+--main = run simpl >>= print
 
 
 -- May need a separate fork
@@ -103,41 +106,47 @@ type family Dual (σ :: LType) = (r :: LType) | r -> σ where
 --    Dual (Lower α) = Lower α ⊸ Bot
 
 -- Untyped channels
-data UChan (σ :: LType) = UChan (Chan Any, Chan Any)
+data UChan = UChan (Chan Any, Chan Any)
 
 
-newU :: forall σ. IO (UChan σ,UChan (Dual σ))
+newU :: forall σ. IO (UChan,UChan) -- UChan σ, UChan (Dual σ)
 newU = do 
     c1 <- newChan
     c2 <- newChan
     return $ (UChan (c1,c2), UChan (c2,c1))
 
-sendU :: (Chan Any, Chan Any) -> a -> IO ()
-sendU (cin,cout) a = writeChan cout $ unsafeCoerce# a
+sendU :: UChan -> a -> IO ()
+sendU (UChan (cin,cout)) a = writeChan cout $ unsafeCoerce# a
 
-recvU :: (Chan Any, Chan Any) -> IO a
-recvU (cin,cout) = unsafeCoerce# <$> readChan cin
+recvU :: UChan -> IO a
+recvU (UChan (cin,cout)) = unsafeCoerce# <$> readChan cin
 
 -- if you have a UChan σ, σ is YOUR protocol
 -- so if you have a UChan (σ ⊗ τ), you must send a $σ$ and then continue as $τ$
-sendTensor :: UChan (σ ⊗ τ) -> LVal sig σ -> IO (UChan τ)
-sendTensor (UChan c) v = sendU c v >> return (UChan c)
+--sendTensor :: UChan (σ ⊗ τ) -> LVal sig σ -> IO (UChan τ)
+sendTensor :: UChan -> LVal sig σ -> IO UChan
+sendTensor c v = sendU c v >> return c
 
-recvLolli :: UChan (σ ⊸ τ) -> IO (LVal sig σ, UChan τ)
-recvLolli (UChan c) = do v <- recvU c
-                         return (v,UChan c)
+--recvLolli :: UChan (σ ⊸ τ) -> IO (LVal sig σ, UChan τ)
+recvLolli :: UChan -> IO (LVal sig σ, UChan)
+recvLolli c = do v <- recvU c
+                 return (v,c)
 
-sendLower :: UChan (Lower α) -> α -> IO ()
-sendLower (UChan c) a = sendU c a
+--sendLower :: UChan (Lower α) -> α -> IO ()
+sendLower :: UChan -> α -> IO ()
+sendLower c a = sendU c a
 
-recvLower :: UChan (Dual (Lower α)) -> IO α
-recvLower (UChan c) = recvU c
+--recvLower :: UChan (Dual (Lower α)) -> IO α
+recvLower :: UChan -> IO α
+recvLower c = recvU c
 
-sendOne :: UChan One -> IO ()
-sendOne (UChan c) = sendU c ()
+--sendOne :: UChan One -> IO ()
+sendOne :: UChan -> IO ()
+sendOne c = sendU c ()
 
-recvBot :: UChan Bottom -> IO ()
-recvBot (UChan c) = recvU c
+--recvBot :: UChan Bottom -> IO ()
+recvBot :: UChan -> IO ()
+recvBot c = recvU c
 
 
 
@@ -151,11 +160,12 @@ recvBot (UChan c) = recvU c
 --yank (cin,cout) = (cout,cin)
 
 --class WFSession τ where
-forward :: (Chan Any, Chan Any) -> (Chan Any, Chan Any) -> IO ()
+forward :: UChan -> UChan -> IO ()
 forward c1 c2 = recvU c1 >>= sendU c2 >> forward c1 c2
 
-linkU :: UChan τ -> UChan (Dual τ) -> IO ()
-linkU (UChan c1) (UChan c2) = do
+--linkU :: UChan τ -> UChan (Dual τ) -> IO ()
+linkU :: UChan -> UChan -> IO ()
+linkU c1 c2 = do
     forkIO $ forward c1 c2
     forward c2 c1
 
@@ -164,9 +174,11 @@ linkU (UChan c1) (UChan c2) = do
 
 data Sessions
 -- The UChan is the output channel
-data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan τ -> IO ()}
+--data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan τ -> IO ()}
+data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan -> IO ()}
 data instance LVal Sessions τ where
-  Chan  :: UChan (Dual τ) -> LVal Sessions τ
+--  Chan  :: UChan (Dual τ) -> LVal Sessions τ
+    Chan :: UChan -> LVal Sessions τ
 type instance Effect Sessions = IO
 
 instance Eval Sessions where
@@ -178,7 +190,7 @@ instance Eval Sessions where
 
 instance HasVar (LExp Sessions) where
   var :: forall x σ γ. CSingletonCtx x σ γ => LExp Sessions γ σ
-  var = SExp $ \γ (c :: UChan σ) -> 
+  var = SExp $ \γ (c :: UChan) -> 
             case singletonInv γ of Chan c' -> linkU c c'
 
 
@@ -186,13 +198,13 @@ instance HasLolli (LExp Sessions) where
   λ :: forall x σ γ γ' γ'' τ. 
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
     => (LExp Sessions γ'' σ -> LExp Sessions γ' τ) -> LExp Sessions γ (σ ⊸ τ)  
-  λ f = SExp $ \ρ (c :: UChan (σ ⊸ τ)) -> do
+  λ f = SExp $ \ρ (c :: UChan) -> do
             (v,c) <- recvLolli c
             runSExp (f var) (add @x v ρ) c
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => LExp Sessions γ1 (σ ⊸ τ) -> LExp Sessions γ2 σ -> LExp Sessions γ τ
-  e1 ^ e2 = SExp $ \ρ (c :: UChan τ) -> do 
+  e1 ^ e2 = SExp $ \ρ (c :: UChan) -> do 
             let (ρ1,ρ2) = split ρ
             (x,x') <- newU @σ -- x :: UChan σ, x' :: UChan σ⊥
             (y,y') <- newU @(σ ⊸ τ) -- y :: UChan (σ ⊸ τ), y' :: UChan (σ ⊗ Dual τ)
@@ -202,9 +214,9 @@ instance HasLolli (LExp Sessions) where
             linkU c z
 
 instance HasTensor (LExp Sessions) where
-    e1 ⊗ e2 = SExp $ \ρ (c :: UChan (σ1 ⊗ σ2)) -> do
+    e1 ⊗ e2 = SExp $ \ρ (c :: UChan) -> do
             let (ρ1,ρ2) = split ρ
-            (x,x') <- newU @σ1
+            (x,x') <- newU -- @σ1
             forkIO $ runSExp e1 ρ1 x
             c' <- sendTensor c (Chan x')
             runSExp e2 ρ2 c'
@@ -225,7 +237,7 @@ instance HasTensor (LExp Sessions) where
       => LExp Sessions γ1 (σ1 ⊗ σ2)
       -> ((LExp Sessions γ21 σ1, LExp Sessions γ22 σ2) -> LExp Sessions γ2'' τ)
       -> LExp Sessions γ τ
-    letPair e f = SExp $ \ρ (c :: UChan τ) -> do
+    letPair e f = SExp $ \ρ (c :: UChan) -> do
                 let (ρ1,ρ2) = split ρ
                 (x,x') <- newU @(σ1 ⊗ σ2) -- x' :: Chan (σ1 ⊸ Dual σ2)
                 forkIO $ runSExp e ρ1 x
@@ -242,9 +254,9 @@ instance HasTensor (LExp Sessions) where
 --                                                                        ρ2)) c
     
 instance HasOne (LExp Sessions) where
-    unit = SExp $ \_ (c :: UChan One) -> sendOne c
+    unit = SExp $ \_ (c :: UChan) -> sendOne c
 
-    letUnit e e' = SExp $ \ρ (c :: UChan τ) -> do
+    letUnit e e' = SExp $ \ρ (c :: UChan) -> do
                 let (ρ1,ρ2) = split ρ
                 (x,x') <- newU @One
                 forkIO $ runSExp e ρ1 x
@@ -264,12 +276,12 @@ instance HasOne (LExp Sessions) where
 --                                    runSExp e' ρ2 c
 
 instance HasLower (LExp Sessions) where
-    put a = SExp $ \_ (c :: UChan (Lower α)) -> sendLower c a
+    put a = SExp $ \_ (c :: UChan) -> sendLower c a
 
     (>!) :: forall γ1 γ2 γ α τ. CMerge γ1 γ2 γ
          => LExp Sessions γ1 (Lower α) -> (α -> LExp Sessions γ2 τ) 
          -> LExp Sessions γ τ
-    e >! f = SExp $ \ρ (c :: UChan τ) -> do
+    e >! f = SExp $ \ρ (c :: UChan) -> do
                 let (ρ1,ρ2) = split ρ
                 (x,x') <- newU @(Lower α)
                 forkIO $ runSExp e ρ1 x
@@ -284,3 +296,51 @@ instance HasLower (LExp Sessions) where
   --                            Chan x <- recvU c2
   --                            Just a <- recvU x
   --                            runSExp (f a) ρ2 c
+
+----------------
+-- Comparison --
+----------------
+
+serverIO :: UChan -> IO ()
+serverIO c = do item ← recvU c
+                cc ← recvU c
+                sendU c $ processOrder item cc
+                sendU c ()
+
+clientIO :: UChan -> IO String
+clientIO c = do sendU c "Tea"
+                sendU c 1234
+                receipt ← recvU c
+                () ← recvU c
+                return receipt
+              
+
+transactionIO :: IO String
+transactionIO = do (x,x') ← newU 
+                   forkIO $ serverIO x
+                   clientIO x'
+
+transactions :: Int -> IO ()
+transactions n = forM_ [0..n] (\_ -> run transaction)
+
+transactionsIO :: Int -> IO ()
+transactionsIO n = forM_ [0..n] (\_ -> transactionIO)
+
+--transactions n = do
+--    print $ "Executinr transaction " ++ show n ++ " times"
+--    putStr "Linear:\t"
+--    timeIt . void . run $ transaction
+
+compareIO :: Int -> IO ()
+compareIO n = do
+    print $ "Executing transaction " ++ show n ++ " times"
+    putStr "Linear:\t"
+    timeIt $ transactions n
+    putStr "Direct:\t"
+    timeIt $ transactionsIO n
+
+compareUpTo :: Int -> IO ()
+compareUpTo n = forM_ ls compareIO 
+  where
+--    ls = [0..n]
+    ls = ((Prelude.^) 2) <$> [0..n]
