@@ -22,8 +22,7 @@ import Types
 import Interface
 import DeepEmbedding
 
---import Density hiding (cnot)
-import LinTrans
+import LinTrans2 hiding (cnot)
 
 -- Signature
 data QuantumSig sig = MkQubit
@@ -35,7 +34,7 @@ class HasMILL sig => HasQuantum sig where
   meas :: LExp sig γ Qubit -> LExp sig γ (Lower Bool)
   unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> LExp sig γ σ
 
-controlBy :: (HasQuantum sig,KnownType σ, KnownQubits σ) 
+controlBy :: (HasQuantum sig,KnownType σ) 
           => Unitary σ -> LExp sig γ (Qubit ⊗ σ) -> LExp sig γ (Qubit ⊗ σ)
 controlBy u e = unitary (control u) e
 
@@ -73,18 +72,22 @@ instance Domain Deep QuantumExp where
                                   return v
 
 applyU :: forall σ. KnownType σ => Unitary σ -> LVal Deep σ -> DensityMonad ()
-applyU u v = withSingI (unitarySing u) $
-            applyUnitaryM @(NumQubits σ) (interpU u) (valToQubits v)
+applyU u v = applyMatrix (interpU u) (valToQubits v)
 
 class KnownType σ where
+  numQubits :: Int
   valToQubits :: LVal Deep σ -> [Int]
 instance KnownType Qubit where
+  numQubits = 1
   valToQubits (QId i) = [i]
 instance KnownType One where
+  numQubits = 1
   valToQubits VUnit = []
 instance (KnownType σ1,KnownType σ2) => KnownType (σ1 ⊗ σ2) where
+  numQubits = numQubits @σ1 + numQubits @σ2
   valToQubits (VPair v1 v2) = valToQubits v1 ++ valToQubits v2
 instance KnownType (Lower α) where
+  numQubits = 0
   valToQubits (VPut _) = []
 
 
@@ -108,16 +111,19 @@ instance Show (Unitary σ) where
 
 -- Add more?
 data Unitary (σ :: LType) where
-  Identity  :: KnownQubits σ => Unitary σ
+  Identity  :: KnownType σ => Unitary σ
   Hadamard  :: Unitary Qubit
   PauliX    :: Unitary Qubit -- (NOT)
   PauliY    :: Unitary Qubit
   PauliZ    :: Unitary Qubit
   R         :: Int -> Unitary Qubit
-  Alt       :: Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
+  Alt       :: KnownType σ => Unitary σ -> Unitary σ -> Unitary (Qubit ⊗ σ)
   Transpose :: Unitary σ -> Unitary σ
 
+control :: KnownType σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
+control = Alt Identity
 
+{-
 type KnownQubits σ = SingI (NumQubits σ)
 
 unitarySing :: forall σ. Unitary σ -> Sing (NumQubits σ)
@@ -129,29 +135,25 @@ unitarySing PauliZ   = one
 unitarySing (R _)    = one
 unitarySing (Alt u0 _)    = SS $ unitarySing u0
 unitarySing (Transpose u) = unitarySing u
+-}
 
 
-
-control :: KnownQubits σ  => Unitary σ -> Unitary (Qubit ⊗ σ)
-control = Alt Identity
 
 
 
 
 -- instance HasQuantumEffect ('Sig DensityMonad sigs) where
 -- --  type QUnitary ('Sig DensityMonad sigs) = Density
-type QUnitary σ = Squared (NumQubits σ)
+--type QUnitary σ = Squared (NumQubits σ)
 
-interpU :: Unitary σ -> QUnitary σ
-interpU Identity = ident
+interpU :: forall σ. KnownType σ => Unitary σ -> Matrix
+interpU Identity = ident $ numQubits @σ
 interpU Hadamard = hadamard
 interpU PauliX   = pauliX
 interpU PauliY   = pauliY
 interpU PauliZ   = pauliZ
 interpU (R m)    = undefined -- rotation about the z axis by 2πi/2^m?
-interpU (Alt (u0 :: Unitary σ') u1) = 
-  withSingI (two `raiseToSNat` unitarySing (Alt u0 u1)) $ 
-  withSingI (two `raiseToSNat` unitarySing u0) $
+interpU (Alt (u0 :: Unitary σ') u1) =
     (newD False `kron` interpU u0) + (newD True `kron` interpU u1)
 interpU (Transpose u) = transpose $ interpU u
 
