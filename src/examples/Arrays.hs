@@ -287,3 +287,44 @@ compareUpTo :: Int -> IO ()
 compareUpTo n = forM_ ls compareIO 
   where
     ls = ((Prelude.^) 2) <$> [0..n]
+
+
+quicksortIO :: Ord α => IO.IOArray Int α -> (Int,Int) -> IO ()
+quicksortIO arr (lo,hi) = partitionIO arr [lo..hi-1] >>= \case
+                            Nothing -> return ()
+                            Just i  -> quicksortIO arr (lo,i) >> quicksortIO arr (i,hi)
+                             
+
+partitionIO :: Ord α => IO.IOArray Int α -> [Int] -> IO (Maybe Int)
+partitionIO arr [] = return Nothing
+partitionIO arr [_] = return Nothing
+partitionIO arr (lo:bounds) = do p ← IO.readArray arr lo
+                                 (lastclosed,i) ← pivotIO arr (lo:bounds) p
+                                 swapIO arr lo lastclosed
+                                 return $ Just i
+
+swapIO :: Ord α => IO.IOArray Int α -> Int -> Int -> IO ()
+swapIO arr i j = do a ← IO.readArray arr i
+                    b ← IO.readArray arr j
+                    IO.writeArray arr i b
+                    IO.writeArray arr j a
+
+pivotIO :: Ord α => IO.IOArray Int α -> [Int] -> α -> IO (Int,Int)
+pivotIO arr (i:bounds) p = do (lastclosed,open) <- foldM f (i,[]) bounds
+                              return (lastclosed, head open)
+  where
+    f :: (Int,[Int]) -> Int -> IO (Int,[Int])
+    f (lastclosed,open) j = do
+        let newopen = open ++ [j]
+        b ← IO.readArray arr j
+        if b < p
+          then do let close = head newopen
+                  swapIO arr j close
+                  return (close, tail newopen)
+          else return (lastclosed,newopen)
+
+testIO :: IO [Int]
+testIO = do arr <- fromListIO [3,1,4,1,5,9,2,6,5,3]
+            bounds <- IO.getBounds arr
+            quicksortIO arr bounds
+            toListIO arr
