@@ -13,9 +13,8 @@ import Data.Kind
 import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Proxy
 
-data LType where
+data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
-  MkLType :: ty LType -> LType
 
 type Sig = Type
 type Exp = Ctx -> LType -> Type
