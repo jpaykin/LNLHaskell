@@ -17,6 +17,7 @@ import Data.Maybe
 import Debug.Trace
 import GHC.TypeLits (Symbol(..))
 import Control.Monad (liftM2)
+import Data.Singletons
 
 import Prelim hiding (One)
 import Types
@@ -30,7 +31,7 @@ data Deep
 -- individual domains. This allows domains to be easily composed.
 type Dom = Sig -> Exp
 data instance LExp Deep γ τ where
-  Var :: CSingletonCtx x τ γ => LExp Deep γ τ
+  Var :: CSingletonCtx x τ γ => Sing x -> LExp Deep γ τ
   Dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
          Domain Deep dom 
       => dom Deep γ τ
@@ -43,35 +44,33 @@ data instance LExp Deep γ τ where
 class Domain sig (dom :: Dom) where
   evalDomain  :: Monad (Effect sig) 
               => dom sig g σ
-              -> SCtx sig g
+              -> ECtx sig g
               -> Effect sig (LVal sig σ)
 
 instance Eval Deep where
   eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
-          LExp Deep γ τ -> SCtx Deep γ -> Effect Deep (LVal Deep τ)
-  eval Var     γ = return $ singletonInv γ
+          LExp Deep γ τ -> ECtx Deep γ -> Effect Deep (LVal Deep τ)
+  eval (Var x) γ = return $ lookup x γ
   eval (Dom e) γ = evalDomain e γ
 
   fromVPut (VPut a) = return a
-
-
 
 
 -----------------------------------------------------------
 -- Interface-----------------------------------------------
 -----------------------------------------------------------
 
-data VarName x σ = VarName
+data VarName x σ = VarName (Sing x)
 
 instance HasVar (LExp Deep) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => LExp Deep γ σ
+  var :: forall x σ γ. CSingletonCtx x σ γ => Sing x -> LExp Deep γ σ
   var = Var
 
 -- Lolli -------------------------------------------------
 
 data LolliExp :: Sig -> Exp where
   Abs :: CAddCtx x σ γ γ'
-      => VarName x σ
+      => Sing x
       -> LExp sig γ' τ
       -> LolliExp sig γ (σ ⊸ τ)
   App :: CMerge γ1 γ2 γ
@@ -80,8 +79,8 @@ data LolliExp :: Sig -> Exp where
       -> LolliExp sig γ τ
 data instance LVal Deep (σ ⊸ τ) where
   VAbs :: CAddCtx x σ γ γ'
-       => SCtx Deep γ
-       -> VarName x σ
+       => ECtx Deep γ
+       -> Sing x
        -> LExp Deep γ' τ
        -> LVal Deep (σ ⊸ τ)
 
@@ -89,15 +88,16 @@ instance HasLolli (LExp Deep) where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
           => (LExp Deep γ'' σ -> LExp Deep γ' τ) -> LExp Deep γ (σ ⊸ τ)
-  λ f     = Dom $ Abs (VarName @x) (f Var)
+  λ f     = Dom $ Abs x (f $ Var x)
+    where x = (sing :: Sing x)
   e1 ^ e2 = Dom $ App e1 e2
 
 instance Domain Deep LolliExp where
   evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: LExp Deep γ1 (σ ⊸ τ)) (e2 :: LExp Deep γ2 σ)) ρ = do
-    VAbs ρ' (x :: VarName x σ) e1' <- eval e1 ρ1
+    VAbs ρ' (x :: Sing x) e1' <- eval e1 ρ1
     v2 <- eval e2 ρ2
-    eval e1' (add @x v2 ρ')
+    eval e1' (add x v2 ρ')
     where
       (ρ1,ρ2) = split @γ1 @γ2 ρ
 
@@ -131,7 +131,8 @@ data TensorExp :: Sig -> Exp where
   LetPair :: ( CMerge γ1 γ2 γ
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2'' )
-          => VarName x1 σ1 -> VarName x2 σ2
+--          => VarName x1 σ1 -> VarName x2 σ2
+          => Sing x1 -> Sing x2
           -> LExp sig γ1 (σ1 ⊗ σ2)
           -> LExp sig γ2'' τ
           -> TensorExp sig γ τ
@@ -152,23 +153,23 @@ instance HasTensor (LExp Deep) where
       => LExp Deep γ1 (σ1 ⊗ σ2)
       -> ((Var Deep x1 σ1, Var Deep x2 σ2) -> LExp Deep γ2'' τ)
       -> LExp Deep γ τ
-  letPair e f = Dom $ LetPair (VarName @x1 @σ1) (VarName @x2 @σ2) e $ f (x1,x2)
+  letPair e f = Dom $ LetPair x1 x2 e $ f (Var x1,Var x2)
     where
-      x1 :: Var Deep x1 σ1
-      x1 = Var
-      x2 :: Var Deep x2 σ2
-      x2 = Var
+      x1 :: Sing x1
+      x1 = sing
+      x2 :: Sing x2
+      x2 = sing
 
 instance  Domain Deep TensorExp where
   evalDomain (Pair (e1 :: LExp Deep γ1 τ1) (e2 :: LExp Deep γ2 τ2)) ρ =
       liftM2 VPair (eval e1 ρ1) (eval e2 ρ2)
     where
       (ρ1,ρ2) = split ρ
-  evalDomain (LetPair (_ :: VarName x1 σ1) (_ :: VarName x2 σ2)
+  evalDomain (LetPair x1 x2
                       (e  :: LExp Deep γ1 (σ1 ⊗ σ2))
                       e' :: TensorExp Deep γ τ) ρ = do
       VPair v1 v2 <- eval e ρ1
-      eval e' (add @x2 @σ2 v2 (add @x1 @σ1 v1 ρ2))
+      eval e' (add x2 v2 (add x1 v1 ρ2))
     where
       (ρ1,ρ2) = split @γ1 @(Div γ γ1) ρ
 
@@ -182,7 +183,7 @@ data PlusExp :: Sig -> Exp where
   Inl :: LExp sig γ σ1 -> PlusExp sig γ (σ1 ⊕ σ2)
   Inr :: LExp sig γ σ2 -> PlusExp sig γ (σ1 ⊕ σ2)
   Case :: (CMerge γ1 γ2 γ, CAddCtx x1 σ1 γ2 γ21, CAddCtx x2 σ2 γ2 γ22)
-       => VarName x1 σ1 -> VarName x2 σ2
+       => Sing x1 -> Sing x2
        -> LExp sig γ1 (σ1 ⊕ σ2) -> LExp sig γ21 τ -> LExp sig γ22 τ -> PlusExp sig γ τ
 data instance LVal Deep (σ1 ⊕ σ2) = 
     VInl (LVal Deep σ1) | VInr (LVal Deep σ2)
@@ -200,16 +201,18 @@ instance  HasPlus (LExp Deep) where
         -> (LExp Deep γ21' σ1 -> LExp Deep γ21 τ)
         -> (LExp Deep γ22' σ2 -> LExp Deep γ22 τ)
         -> LExp Deep γ τ
-  caseof e f1 f2 = Dom $ Case (VarName @x) (VarName @x) e (f1 var) (f2 var)
+  caseof e f1 f2 = Dom $ Case x x e (f1 $ var x) (f2 $ var x)
+    where
+      x = (sing :: Sing x)
 
 instance  Domain Deep PlusExp where
   evalDomain (Inl e) ρ = VInl <$> eval e ρ
   evalDomain (Inr e) ρ = VInr <$> eval e ρ
-  evalDomain (Case (_ :: VarName x1 σ1) (_ :: VarName x2 σ2)
+  evalDomain (Case x1 x2
                    (e :: LExp Deep γ1 (σ1 ⊕ σ2)) e1 e2 :: PlusExp Deep γ τ) ρ = 
       eval e ρ1 >>= \case 
-        VInl v1 -> eval e1 (add @x1 v1 ρ2)
-        VInr v2 -> eval e2 (add @x2 v2 ρ2)
+        VInl v1 -> eval e1 (add x1 v1 ρ2)
+        VInr v2 -> eval e2 (add x2 v2 ρ2)
     where
       (ρ1,ρ2) = split @γ1 @(Div γ γ1) ρ
 
@@ -221,7 +224,7 @@ data WithExp :: Sig -> Exp where
   Proj1 :: LExp sig γ (τ1 & τ2) -> WithExp sig γ τ1
   Proj2 :: LExp sig γ (τ1 & τ2) -> WithExp sig γ τ2
 data instance LVal Deep (σ1 & σ2) where
-  VWith :: SCtx Deep γ -> LExp Deep γ σ1 -> LExp Deep γ σ2 
+  VWith :: ECtx Deep γ -> LExp Deep γ σ1 -> LExp Deep γ σ2 
         -> LVal Deep (σ1 & σ2)
 
 instance  HasWith (LExp Deep) where

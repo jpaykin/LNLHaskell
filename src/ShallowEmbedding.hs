@@ -12,6 +12,7 @@
 module ShallowEmbedding where
 
 import Control.Monad (liftM2)
+import Data.Singletons
 
 --import Prelim hiding (One)
 import Types
@@ -22,7 +23,7 @@ import Interface
 -- Shallow Embedding
 data Shallow
 
-data instance LExp Shallow γ τ = SExp {runSExp :: SCtx Shallow γ-> Effect Shallow (LVal Shallow τ)}
+data instance LExp Shallow γ τ = SExp {runSExp :: ECtx Shallow γ-> Effect Shallow (LVal Shallow τ)}
 --  SExp :: forall (γ :: Ctx) (τ :: LType).
 --          (SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)) 
 --       -> LExp Shallow γ τ
@@ -31,11 +32,8 @@ instance Monad (Effect Shallow) => Eval Shallow where
   eval f γ = runSExp f γ
   fromVPut (VPut a) = return a
 
-
-
 instance Monad (Effect Shallow) => HasVar (LExp Shallow) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => LExp Shallow γ σ
-  var = SExp $ \g -> return $ singletonInv g
+  var x = SExp $ \g -> return $ Classes.lookup x g
 
 -----------------------------------------------------------
 -----------------------------------------------------------
@@ -44,8 +42,10 @@ data instance LVal Shallow (MkLType ('LolliSig σ τ)) =
     VAbs (LVal Shallow σ -> Effect Shallow (LVal Shallow τ))
 
 instance Monad (Effect Shallow) => HasLolli (LExp Shallow) where
-  λ f = SExp $ \(γ :: SCtx Shallow γ) -> return . VAbs $ \s -> 
-         runSExp (f var) (add @(Fresh γ) s γ)
+  λ f = SExp $ \(γ :: ECtx Shallow γ) -> return . VAbs $ \s -> 
+         let x = (sing :: Sing (Fresh γ)) 
+         in runSExp (f $ var x) (add x s γ)
+
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => LExp Shallow γ1 (σ ⊸ τ) -> LExp Shallow γ2 σ -> LExp Shallow γ τ
   f ^ s = SExp $ \g -> do let (g1,g2) = split g
@@ -75,13 +75,17 @@ instance Monad (Effect Shallow) => HasTensor (LExp Shallow) where
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
-             , CSingletonCtx x2 σ2 γ22 )
+             , CSingletonCtx x2 σ2 γ22 
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
       => LExp Shallow γ1 (σ1 ⊗ σ2)
       -> ((LExp Shallow γ21 σ1, LExp Shallow γ22 σ2) -> LExp Shallow γ2'' τ)
       -> LExp Shallow γ τ
   letPair e f = SExp $ \ρ -> do let (ρ1,ρ2) = split ρ
                                 VPair v1 v2 <- runSExp e ρ1
-                                runSExp (f (var,var)) (add @x2 v2 (add @x1 v1 ρ2))
+                                runSExp (f (var x1,var x2)) (add x2 v2 (add x1 v1 ρ2))
+    where
+      x1 = (sing :: Sing x1)
+      x2 = (sing :: Sing x2)
 
 
 data instance LVal Shallow (MkLType 'BottomSig)
@@ -101,8 +105,10 @@ instance Monad (Effect Shallow) => HasPlus (LExp Shallow) where
   caseof e f1 f2 = SExp $ \g ->
       let (g1,g2) = split g
       in runSExp e g1 >>= \case
-        VLeft  s1 -> runSExp (f1 var) $ add @x @σ1 s1 g2
-        VRight s2 -> runSExp (f2 var) $ add @x @σ2 s2 g2
+        VLeft  s1 -> runSExp (f1 $ var x) $ add @σ1 x s1 g2
+        VRight s2 -> runSExp (f2 $ var x) $ add @σ2 x s2 g2
+    where
+      x = (sing :: Sing x)
 
 data instance LVal Shallow (MkLType ('WithSig σ τ)) = VWith (LVal Shallow σ) (LVal Shallow τ)
 instance Monad (Effect Shallow) => HasWith (LExp Shallow) where

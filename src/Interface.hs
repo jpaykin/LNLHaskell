@@ -20,7 +20,7 @@ type (~>) a b = Sing.TyFun a b -> Type
 
 
 class Eval (sig :: Sig) where
-  eval     :: Monad (Effect sig) => LExp sig γ τ -> SCtx sig γ -> Effect sig (LVal sig τ)
+  eval     :: Monad (Effect sig) => LExp sig γ τ -> ECtx sig γ -> Effect sig (LVal sig τ)
   fromVPut :: Monad (Effect sig) => LVal sig (Lower a) -> Effect sig a
 
 
@@ -258,7 +258,7 @@ instance (HasLower (LExp sig)) => Monad (Lin sig) where
                        force (f a)
 
 run :: forall sig a. (Monad (Effect sig), Eval sig) => Lin sig a -> Effect sig a
-run e = eval (force e) SEmpty >>= fromVPut
+run e = eval (force e) eEmpty >>= fromVPut
 
 ---------------------------------------------------------------
 -- Linearity Monad Transformer --------------------------------
@@ -370,7 +370,7 @@ type LStateT sig σ α = LinT sig (LState' σ) α
 
 class HasVar exp where
   var :: forall x (σ :: LType) (γ :: Ctx). 
-         CSingletonCtx x σ γ => exp γ σ
+         CSingletonCtx x σ γ => Sing x -> exp γ σ
 
 {-
 

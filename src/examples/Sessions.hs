@@ -175,7 +175,7 @@ linkU c1 c2 = do
 data Sessions
 -- The UChan is the output channel
 --data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan τ -> IO ()}
-data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan -> IO ()}
+data instance LExp Sessions γ τ = SExp {runSExp :: ECtx Sessions γ -> UChan -> IO ()}
 data instance LVal Sessions τ where
 --  Chan  :: UChan (Dual τ) -> LVal Sessions τ
     Chan :: UChan -> LVal Sessions τ
@@ -189,9 +189,9 @@ instance Eval Sessions where
     fromVPut (Chan c) = recvLower c
 
 instance HasVar (LExp Sessions) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => LExp Sessions γ σ
-  var = SExp $ \γ (c :: UChan) -> 
-            case singletonInv γ of Chan c' -> linkU c c'
+  var :: forall x σ γ. CSingletonCtx x σ γ => Sing x -> LExp Sessions γ σ
+  var x = SExp $ \γ (c :: UChan) -> 
+            case eLookup x γ of Chan c' -> linkU c c'
 
 
 instance HasLolli (LExp Sessions) where
@@ -200,7 +200,9 @@ instance HasLolli (LExp Sessions) where
     => (LExp Sessions γ'' σ -> LExp Sessions γ' τ) -> LExp Sessions γ (σ ⊸ τ)  
   λ f = SExp $ \ρ (c :: UChan) -> do
             (v,c) <- recvLolli c
-            runSExp (f var) (add @x v ρ) c
+            runSExp (f $ var x) (add x v ρ) c
+    where
+      x = fresh @γ
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => LExp Sessions γ1 (σ ⊸ τ) -> LExp Sessions γ2 σ -> LExp Sessions γ τ
@@ -242,8 +244,11 @@ instance HasTensor (LExp Sessions) where
                 (x,x') <- newU @(σ1 ⊗ σ2) -- x' :: Chan (σ1 ⊸ Dual σ2)
                 forkIO $ runSExp e ρ1 x
                 (v,y) <- recvLolli x' -- v :: LVal σ1, y :: UChan (Dual σ2)
-                let ρ2' = add @x2 (Chan y) (add @x1 v ρ2)
-                runSExp (f (var,var)) ρ2' c
+                let ρ2' = add x2 (Chan y) (add x1 v ρ2)
+                runSExp (f (var x1,var x2)) ρ2' c
+      where 
+        x1 = fresh @γ2
+        x2 = fresh @γ2'
 
     -- letPair e e' = SExp $ \ρ c ->  do 
     --                      let (ρ1,ρ2) = split ρ

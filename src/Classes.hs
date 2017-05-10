@@ -1,9 +1,9 @@
 {-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             InstanceSigs, TypeApplications, ScopedTypeVariables,
+             InstanceSigs, TypeApplications, ScopedTypeVariables, RankNTypes,
              EmptyCase, FlexibleContexts, UndecidableInstances,
-             ConstraintKinds
+             ConstraintKinds, PartialTypeSignatures
 #-}
 {-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
                                -fno-warn-redundant-constraints #-}
@@ -11,6 +11,10 @@
 module Classes where
 
 import Prelude hiding (div)
+import Data.Singletons
+import Data.Constraint
+import Data.Type.Equality
+import Unsafe.Coerce
 
 import Prelim
 --import Context
@@ -31,47 +35,69 @@ instance CInN x σ g => CIn x σ ('N g)
 
 -- Add To Context ----------------------------------------------
 
-class (γ' ~ AddF x σ γ, γ ~ Remove x γ')
+class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
     | x σ γ -> γ', x γ' -> σ γ
   where
-    add    :: forall m. LVal m σ -> SCtx m γ -> SCtx m γ'
---    remove :: SCtx γ' -> (LVal σ, SCtx γ)
-instance CAddCtxN x (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (CountNMinus1 γ')
-      => CAddCtx x σ γ ('N γ') 
-  where
-    add v g = SN $ addN @x v g
+    addLookupNEq :: (x == y) ~ False 
+                 => Sing x -> Sing y -> Dict (Lookup γ' y ~ Lookup γ y)
 
-class (γ' ~ AddNF x σ γ, γ ~ RemoveN x γ', len ~ CountNMinus1 γ')
+instance (CAddCtxN x σ γ γ' (CountNMinus1 γ')) => 
+         CAddCtx x σ γ (N γ')
+  where
+--    addLookupNEq _ = addLookupNNEq @x @σ @γ @γ'
+    addLookupNEq _ = unsafeCoerce (Dict :: Dict ())
+
+class ( γ' ~ AddNNF x σ γ, N γ ~ RemoveN x γ'
+      , len ~ CountNMinus1 γ', LookupN γ' x ~ Just σ)
+    => CAddNCtxN (x :: Nat) (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (len :: Nat)
+    | x σ γ -> γ' len, x γ' len -> σ γ
+--  where
+--    addLookupNNNEq :: (x == y) ~ False 
+--                   => Sing y -> Dict (LookupN γ' y ~ LookupN γ y)
+
+instance (CountNMinus1 γ ~ len, WFNCtx γ)
+      => CAddNCtxN Z σ (Cons Nothing γ) (Cons (Just σ) γ) (S len)
+--  where
+--    addLookupNNNEq (SS _) = Dict
+instance (CSingletonNCtx x σ γ', WFNCtx γ')
+      => CAddNCtxN (S x) σ (End τ) (Cons (Just τ) γ') (S Z)
+--  where
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = singLookupNNEq @x @σ y
+instance CAddNCtxN x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (S n)
+      => CAddNCtxN (S x) σ (Cons Nothing γ) (Cons Nothing γ') (S n)
+--  where
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+instance CAddNCtxN x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (S n)
+      => CAddNCtxN (S x) σ (Cons (Just τ) γ) (Cons (Just τ) γ') (S (S n))
+--  where
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+
+class ( γ' ~ AddNF x σ γ, γ ~ RemoveN x γ'
+      , len ~ CountNMinus1 γ' -- ~ Count γ
+      , LookupN γ' x ~ Just σ)
    => CAddCtxN (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
-  where
-    addN    :: forall m. LVal m σ -> SCtx m γ -> SNCtx m γ'
+--  where
+--    addLookupNNEq :: (x == y) ~ False 
+--                  => Sing y -> Dict (LookupN γ' y ~ Lookup γ y)
+
+instance CAddNCtxN x σ γ γ' (S len) => CAddCtxN x σ (N γ) γ' (S len)
+--  where
+--    addLookupNNEq = addLookupNNNEq @x @σ @γ
+instance CSingletonNCtx x σ γ'  => CAddCtxN x σ Empty γ' Z
+--  where
+--    addLookupNNEq = singLookupNEq @x @σ
 
 
-instance (CSingletonNCtx x σ γ', WFNCtx γ')
-      => CAddCtxN x σ Empty γ' Z
-  where
-    addN s SEmpty = singletonN @x s
-
-instance (CountNMinus1 γ ~ n, WFNCtx γ)
-      => CAddCtxN Z σ (N (Cons Nothing γ)) (Cons (Just σ) γ) (S n)
-  where
-    addN s (SN (SCons _ g)) = SCons (SJust s) g
-
-
-instance (CSingletonNCtx x σ γ', WFNCtx γ')
-      => CAddCtxN (S x) σ (N (End τ)) (Cons (Just τ) γ') (S Z)
-  where
-    addN s (SN (SEnd t)) = SCons (SJust t) $ singletonN @x s
-instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S n)
-      => CAddCtxN (S x) σ (N (Cons Nothing γ)) (Cons Nothing γ') (S n)
-  where
-    addN s (SN (SCons _ g)) = SCons SNothing (addN @x s (SN g))
-instance CAddCtxN x (σ :: LType) (N (γ :: NCtx)) (γ' :: NCtx) (S n)
-      => CAddCtxN (S x) σ (N (Cons (Just τ) γ)) (Cons (Just τ) γ') (S (S n))
-  where
-    addN s (SN (SCons u g)) = SCons u $ addN @x s (SN g)
+add :: forall σ γ γ' x sig. CAddCtx x σ γ γ' 
+    => Sing x -> LVal sig σ -> ECtx sig γ -> ECtx sig γ'
+add x v (ECtx f) = ECtx $ \Dict y -> case eqSNat x y of
+  Left  Dict -> v
+  Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
 
 ---------------------
 
@@ -116,27 +142,29 @@ instance WFNCtx γ => WFNFresh σ (Cons Nothing γ)
 --instance WFNFresh σ γ => WFNFresh σ (Cons (Just τ) γ)
 -- TODO
 
-class (g ~ SingletonF x σ, Remove x g ~ Empty)
+class (g ~ SingletonF x σ, Remove x g ~ Empty, Lookup g x ~ Just σ, SingI x)
    => CSingletonCtx (x :: Nat) (σ :: LType) (g :: Ctx) 
       | x σ -> g, g -> x σ where
-  singleton :: LVal m σ -> SCtx m g
-  singletonInv :: SCtx m g -> LVal m σ
-class (g ~ SingletonNF x σ, RemoveN x g ~ Empty, CountNMinus1 g ~ Z)
+  singLookupNEq :: forall y.  (x == y) ~ False 
+                => Sing y -> Dict (Lookup g y ~ Nothing)
+class (g ~ SingletonNF x σ, RemoveN x g ~ Empty, CountNMinus1 g ~ Z
+      , LookupN g x ~ Just σ, SingI x)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (g :: NCtx) 
     | x σ -> g, g -> x σ where
-  singletonN :: LVal m σ -> SNCtx m g
-  singletonNInv :: SNCtx m g -> LVal m σ
+--  singLookupNNEq :: forall y. (x == y) ~ False 
+--                 => Sing y -> Dict (LookupN g y ~ Nothing)
 
 instance CSingletonNCtx 'Z σ ('End σ) where
-  singletonN v = SEnd v
-  singletonNInv (SEnd v) = v
+--  singLookupNNEq (SS _) = Dict
 instance CSingletonNCtx x σ g => CSingletonNCtx ('S x) σ ('Cons 'Nothing g) where
-  singletonN v = SCons SNothing $ singletonN @x v
-  singletonNInv (SCons _ g) = singletonNInv @x g
-
+--  singLookupNNEq SZ = Dict
+--  singLookupNNEq (SS y) = singLookupNNEq @x @σ y
 instance CSingletonNCtx x σ g => CSingletonCtx x σ ('N g) where
-  singleton v = SN $ singletonN @x v
-  singletonInv (SN g) = singletonNInv @x g
+--  singLookupNEq y = singLookupNNEq @x @σ y
+  singLookupNEq _ = unsafeCoerce (Dict :: Dict ())
+
+lookup :: CSingletonCtx x σ γ => Sing x -> ECtx sig γ -> LVal sig σ
+lookup x (ECtx f) = f Dict x
 
 -- Well-formed contexts --------------------------------
 
@@ -177,48 +205,72 @@ instance (CMergeNForward g1 g2 g3, CMergeNForward g2 g1 g3, CDivN g3 g2 (N g1), 
     => CMergeN g1 g2 g3
 
 
-class (g3 ~ MergeF g1 g2)
-   => CMergeForward (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
-  split :: SCtx m g3 -> (SCtx m g1, SCtx m g2)
-class (g3 ~ MergeNF g1 g2) 
-   => CMergeNForward g1 g2 g3 | g1 g2 -> g3 where
-  splitN :: SNCtx m g3 -> (SNCtx m g1, SNCtx m g2)
+split :: forall γ1 γ2 γ sig. CMergeForward γ1 γ2 γ 
+       => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
+split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ x) x
+                 ,ECtx $ \Dict x -> f (lookupMerge2 @γ1 @γ2 @γ x) x)
 
-instance CMergeForward ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
-  split _ = (SEmpty,SEmpty)
+class (MergeF γ1 γ2 ~ γ)
+   => CMergeForward (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) | γ1 γ2 -> γ 
+  where
+    lookupMerge1 :: forall x σ. Lookup γ1 x ~ Just σ
+                 => Sing x 
+                 -> Dict (Lookup γ x ~ Just σ)
+    lookupMerge2 :: Lookup γ2 x ~ Just σ
+                 => Sing x 
+                 -> Dict (Lookup γ x ~ Just σ)
+
+
+class (MergeNF γ1 γ2 ~ γ)
+   => CMergeNForward γ1 γ2 γ | γ1 γ2 -> γ where
+--  lookupMergeN1 :: LookupN γ1 x ~ Just σ
+--                => Sing x
+--                -> Dict (LookupN γ x ~ Just σ)
+--  lookupMergeN2 :: LookupN γ2 x ~ Just σ
+--                => Sing x
+--                -> Dict (LookupN γ x ~ Just σ)
+
+
+
+instance CMergeForward ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx)
+    -- lookupMerge1 and lookupMerge2 are inaccessible here
 instance CMergeForward 'Empty ('N g) ('N g) where
-  split g = (SEmpty,g)
+    lookupMerge2 _ = Dict
+    -- lookupMerge1 is inaccessible
 instance CMergeForward ('N g) 'Empty ('N g) where
-  split g = (g,SEmpty)
+    lookupMerge1 _ = Dict
 instance CMergeNForward g1 g2 g3 => CMergeForward ('N g1) ('N g2) ('N g3) where
-  split (SN g) = let (g1,g2) = splitN g
-                 in (SN g1, SN g2)
+--    lookupMerge1 x = lookupMergeN1 @g1 @g2 @g3 x
+--    lookupMerge2 x = lookupMergeN2 @g1 @g2 @g3 x
+    lookupMerge1 _ = unsafeCoerce (Dict :: Dict ())
+    lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
 
 instance CMergeNForward ('End σ) ('Cons 'Nothing g2) ('Cons ('Just σ) g2) where
-  splitN (SCons (SJust v) g) = (SEnd v, SCons SNothing g)
+--    lookupMergeN1 SZ     = Dict
+--    lookupMergeN2 (SS _) = Dict
 instance CMergeNForward ('Cons 'Nothing g1) ('End σ) ('Cons ('Just σ) g1) where
-  splitN (SCons (SJust v) g) = (SCons SNothing g, SEnd v)
+--    lookupMergeN1 (SS _) = Dict
+--    lookupMergeN2 SZ     = Dict
 -- u1=Nothing, u2=Nothing
 instance CMergeNForward g1 g2 g3
     => CMergeNForward ('Cons 'Nothing g1) ('Cons 'Nothing g2) ('Cons 'Nothing g3) 
   where
-    splitN (SCons SNothing g) = (SCons SNothing g1, SCons SNothing g2)
-      where
-        (g1,g2) = splitN g
+--    lookupMergeN1 (SS x) = lookupMergeN1 @g1 @g2 @g3 x
+--    lookupMergeN2 (SS x) = lookupMergeN2 @g1 @g2 @g3 x
 -- u1=Just σ, u2= Nothing
 instance CMergeNForward g1 g2 g3
     => CMergeNForward ('Cons ('Just σ) g1) ('Cons 'Nothing g2) ('Cons ('Just σ) g3) 
   where
-    splitN (SCons (SJust v) g) = (SCons (SJust v) g1, SCons SNothing g2)
-      where
-        (g1,g2) = splitN g
+--    lookupMergeN1 SZ = Dict
+--    lookupMergeN1 (SS x) = lookupMergeN1 @g1 @g2 @g3 x
+--    lookupMergeN2 (SS x) = lookupMergeN2 @g1 @g2 @g3 x
 -- u1=Nothing, u2= Just σ
 instance CMergeNForward g1 g2 g3
     => CMergeNForward ('Cons 'Nothing g1) ('Cons ('Just σ) g2) ('Cons ('Just σ) g3) 
   where
-    splitN (SCons (SJust v) g) = (SCons SNothing g1, SCons (SJust v) g2) 
-      where
-        (g1,g2) = splitN g
+--    lookupMergeN1 (SS x) = lookupMergeN1 @g1 @g2 @g3 x
+--    lookupMergeN2 SZ = Dict
+--    lookupMergeN2 (SS x) = lookupMergeN2 @g1 @g2 @g3 x
 
 
 
@@ -226,31 +278,19 @@ instance CMergeNForward g1 g2 g3
 
 class (g3 ~ Div g1 g2)
    => CDiv (g1 :: Ctx) (g2 :: Ctx) (g3 :: Ctx) | g1 g2 -> g3 where
---  split' :: SCtx m g1 -> (SCtx m g2, SCtx m g3)
 
 instance CDiv ('Empty :: Ctx) ('Empty :: Ctx) ('Empty :: Ctx) where
---  split' () = ((),())
 instance CDiv ('N g) 'Empty ('N g) where
---  split' g = ((),g)
 instance CDivN g1 g2 g3 => CDiv ('N g1) ('N g2) g3 where
---  split' = splitN @g1 @g2 @g3
 
 class (g3 ~ DivN g1 g2)
    => CDivN (g1 :: NCtx) (g2 :: NCtx) (g3 :: Ctx) | g1 g2 -> g3 where
---  splitN :: SNCtx m g1 -> (SNCtx m g2, SCtx m g3)
 
 instance σ ~ τ => CDivN ('End σ :: NCtx) ('End τ) ('Empty :: Ctx) where
---  splitN g = (g,())
 instance CDivN ('Cons ('Just σ) g) ('End σ) ('N ('Cons 'Nothing g)) where
---  splitN (s,g) = (s,g)
---instance (CMergeU u3 u2 u1, CDivN g1 g2 g3, g3' ~ ConsN u3 g3)
---      => CDivN ('Cons u1 g1) ('Cons u2 g2) g3' where
 instance (CDivN g1 g2 g3, g3' ~ ConsN 'Nothing g3)
       => CDivN ('Cons 'Nothing g1) ('Cons 'Nothing g2) g3'
 instance (CDivN g1 g2 g3, g3' ~ ConsN ('Just σ) g3)
       => CDivN ('Cons ('Just σ) g1) ('Cons 'Nothing g2) g3'
 instance (CDivN g1 g2 g3, g3' ~ ConsN 'Nothing g3)
       => CDivN ('Cons ('Just σ) g1) ('Cons ('Just σ) g2) g3'
-
-
-

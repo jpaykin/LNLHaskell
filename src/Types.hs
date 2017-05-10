@@ -3,6 +3,7 @@
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
              ScopedTypeVariables, EmptyCase, FlexibleContexts, TypeFamilyDependencies
+           , RankNTypes
 #-}
 
 module Types where
@@ -12,6 +13,8 @@ import Prelim
 import Data.Kind
 import GHC.TypeLits (TypeError, ErrorMessage(..))
 import Data.Proxy
+import Data.Singletons
+import Data.Constraint
 
 data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
@@ -28,6 +31,23 @@ type family Effect (sig :: Sig) :: Type -> Type
 data Ctx  = Empty | N (NCtx)
 data NCtx = End (LType) | Cons (Maybe (LType)) (NCtx)
 
+data instance Sing (γ :: Ctx) where
+  SSEmpty :: Sing Empty
+  SSN     :: Sing γ -> Sing (N γ)
+data instance Sing (γ :: NCtx) where
+  SSEnd  :: Sing (End σ)
+  SSCons :: Sing u -> Sing γ -> Sing (Cons u γ)
+data instance Sing (m :: Maybe α) where
+  SSNothing :: Sing Nothing
+  SSJust    :: Sing (Just a) -- cuts off
+instance SingI Empty where sing = SSEmpty
+instance SingI γ => SingI (N γ) where sing = SSN sing
+instance SingI (End σ) where sing = SSEnd
+instance (SingI u, SingI γ) => SingI (Cons u γ) where
+  sing = SSCons sing sing
+instance SingI Nothing where sing = SSNothing
+instance SingI (Just a) where sing = SSJust
+
 data SCtx sig (γ :: Ctx) where
   SEmpty :: SCtx sig Empty
   SN     :: SNCtx sig γ -> SCtx sig (N γ)
@@ -38,6 +58,15 @@ data SMaybe sig (u :: Maybe LType) where
   SNothing :: SMaybe sig 'Nothing
   SJust    :: LVal sig σ -> SMaybe sig ('Just σ)
 
+-- Define an evaluation context that may have extra entries, which makes
+-- splitting a context a no-op, increasing performance.
+
+data ECtx sig γ where
+  ECtx :: (forall x σ. Dict (Lookup γ x ~ Just σ) -> Sing x -> LVal sig σ) 
+       -> ECtx sig γ
+
+eEmpty :: ECtx sig Empty
+eEmpty = ECtx (\d x -> case d of)
 
 type family ConsN (u :: Maybe (LType)) (g :: Ctx) :: Ctx where
   ConsN ('Just σ) 'Empty = 'N ('End σ)
@@ -65,8 +94,27 @@ type family Fresh2 (g::Ctx) :: Nat where
   Fresh2 'Empty = 'S 'Z
   Fresh2 ('N g) = FreshN2 g
 
+fresh :: forall γ. SingI γ => Sing (Fresh γ)
+fresh = case (sing :: Sing γ) of
+          SSEmpty -> SZ
+          SSN γ   -> freshN γ
+freshN :: forall γ. Sing γ -> Sing (FreshN γ)
+freshN SSEnd = (SS SZ)
+freshN (SSCons SSNothing _) = SZ
+freshN (SSCons SSJust γ) = SS $ freshN γ
+
 
 -- Type families
+
+type family Lookup (γ :: Ctx) (x :: Nat) :: Maybe LType where
+  Lookup Empty _ = Nothing
+  Lookup (N γ) x = LookupN γ x
+type family LookupN (γ :: NCtx) (x :: Nat) :: Maybe LType where
+  LookupN (End σ)    Z     = Just σ
+  LookupN (End _)    (S _) = Nothing
+  LookupN (Cons u _) Z     = u
+  LookupN (Cons _ γ) (S x) = LookupN γ x
+  
 
 type family Div (γ :: Ctx) (γ0 :: Ctx) = (r :: Ctx) where
 --  Div γ γ = 'Empty
@@ -122,5 +170,3 @@ type family MergeNF (g1 :: NCtx) (g2 :: NCtx) :: NCtx where
   MergeNF ('Cons 'Nothing g1) ('Cons 'Nothing g2) = 'Cons Nothing (MergeNF g1 g2)
   MergeNF ('Cons ('Just σ) g1) ('Cons 'Nothing g2) = 'Cons ('Just σ) (MergeNF g1 g2)
   MergeNF ('Cons 'Nothing g1) ('Cons ('Just σ) g2) = 'Cons ('Just σ) (MergeNF g1 g2)
-
-
