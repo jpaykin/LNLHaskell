@@ -380,12 +380,10 @@ compareIO :: Int -> IO ()
 compareIO n = do
     print $ "Calling quicksort on a list of size " ++ show n
     ls <- randomList n
---    print ls
+    seq ls $ return ()
     putStr "Linear:\t"
---    timeIt . void . run $ toFromList ls
     timeIt . void . run $ test ls
     putStr "Direct:\t"
---    timeIt . void $ toFromListIO ls
     timeIt . void $ testIO ls
 
 randomList :: Int -> IO([Int])
