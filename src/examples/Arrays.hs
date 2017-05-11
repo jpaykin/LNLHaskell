@@ -18,7 +18,7 @@ import Data.Proxy
 import Data.List (insert, sort)
 import Data.Constraint
 import System.TimeIt
-import Control.Monad (void, foldM, forM_)
+import Control.Monad (void, foldM, forM_, replicateM_)
 import Debug.Trace
 import Control.Monad.State.Lazy (State(..), runState)
 import Control.Concurrent.MVar
@@ -191,7 +191,7 @@ sizeT = do bounds <- scopeT
 
         
 foldArrayT :: HasArray sig
-            => (a -> b -> b)
+            => (a -> b -> (a,b))
             -> b -> LinT sig (LState' (Array token a)) b
 foldArrayT f b = do
     bounds <- scopeT
@@ -199,10 +199,12 @@ foldArrayT f b = do
   where
     f' b i = do
         a <- readT i
-        return $ f a b
+        let (a',b') = f a b
+        writeT i a'
+        return b'
 
 toListT :: HasArray sig => LinT sig (LState' (Array token a)) [a]
-toListT = foldArrayT snoc []
+toListT = foldArrayT (\a b -> (a,snoc a b)) []
   where
     snoc a ls = ls ++ [a]
 
@@ -242,23 +244,30 @@ myArrayToList = evalArrayState st' myArray
     st' = do arr <- toListT
              bounds <- scopeT
              return $ (arr,bounds)
+
+-- testFold n 
+-- applies a successor function n times to a list of all 0's that has length 100.
+testFold :: Int -> Lin Shallow [Int]
+testFold n = evalArrayList (replicateM_ n $ foldArrayT (\i b -> (i+1,b)) False) $ replicate 100 0
     
 
 -------------------------------
 -- Compare to plain IOArrays --
 -------------------------------
 
-foldArrayIO :: (a -> b -> b) -> b -> IO.IOArray Int a -> IO b
+foldArrayIO :: (a -> b -> (a,b)) -> b -> IO.IOArray Int a -> IO b
 foldArrayIO f b arr = do
     (low,high) <- IO.getBounds arr
     foldM f' b [low..high]
   where
     f' b i = do
         a <- IO.readArray arr i
-        return $ f a b
+        let (a',b') = f a b
+        IO.writeArray arr i a'
+        return $ b'
 
 toListIO :: IO.IOArray Int a -> IO [a]
-toListIO = foldArrayIO snoc []
+toListIO = foldArrayIO (\ a b -> (a,snoc a b)) []
   where
     snoc a ls = ls ++ [a]
 
@@ -373,11 +382,17 @@ testIO ls = do arr <- fromListIO ls
 testIO' :: IO [Int]
 testIO' = testIO [3,1,4,1,5,9,2,6,5,3]
 
+testFoldIO :: Int -> IO [Int]
+testFoldIO n = do arr <- fromListIO $ replicate 100 0
+                  replicateM_ n $ foldArrayIO (\i b -> (i+1,b)) False arr
+                  toListIO arr
+
+
 
 -- Comparison --
 
-compareIO :: Int -> IO ()
-compareIO n = do
+compareQuicksort :: Int -> IO ()
+compareQuicksort n = do
     print $ "Calling quicksort on a list of size " ++ show n
     ls <- randomList n
     seq ls $ return ()
@@ -386,16 +401,27 @@ compareIO n = do
     putStr "Direct:\t"
     timeIt . void $ testIO ls
 
+compareFold :: Int -> IO ()
+compareFold n = do
+    print $ "Calling fold " ++ show n ++ " times"
+    putStr "Linear:\t"
+    timeIt . void . run $ testFold n
+    putStr "Direct:\t"
+    timeIt . void $ testFoldIO n
+    
+
 randomList :: Int -> IO([Int])
 randomList 0 = return []
 randomList n = do
-  r  <- randomRIO (1,n)
+  r  <- randomRIO (1,100)
   rs <- randomList (n-1)
   return (r:rs) 
 
 
 compareUpTo :: Int -> IO ()
-compareUpTo n = forM_ ls compareIO 
+--compareUpTo n = forM_ ls compareFold
+compareUpTo n = forM_ ls compareQuicksort
   where
     ls = ((Prelude.^) 2) <$> [0..n]
+--    ls = [1..n]
 
