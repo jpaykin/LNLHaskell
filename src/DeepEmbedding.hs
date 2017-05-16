@@ -88,8 +88,7 @@ instance HasLolli (LExp Deep) where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
           => (LExp Deep γ'' σ -> LExp Deep γ' τ) -> LExp Deep γ (σ ⊸ τ)
-  λ f     = Dom $ Abs x (f $ Var x)
-    where x = (sing :: Sing x)
+  λ f     = Dom $ Abs x (f $ Var x) where x = (sing :: Sing x)
   e1 ^ e2 = Dom $ App e1 e2
 
 instance Domain Deep LolliExp where

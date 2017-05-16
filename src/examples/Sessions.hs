@@ -2,9 +2,9 @@
              TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
              TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
              UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds,
+             ScopedTypeVariables, ConstraintKinds, PartialTypeSignatures,
              EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies,
-             MagicHash, RecursiveDo
+             MagicHash, RecursiveDo, LambdaCase
 #-}
 
 module Sessions where
@@ -13,8 +13,9 @@ import Control.Concurrent
 import GHC.Prim
 import Control.Monad
 import System.TimeIt
+import Data.Singletons (sing,Sing(..))
 
-import Prelude hiding ((^))
+import Prelude hiding (lookup,(^))
 import qualified Prelude as Prelude
 import Types
 import Classes
@@ -22,7 +23,14 @@ import Interface
 import DeepEmbedding (Dom, Domain(..), VarName(..), LolliExp(..), OneExp(..))
 
 
+data RecSig ty where
+  RecSig :: (ty ~> ty) -> RecSig ty
+type Rec (f :: LType ~> LType) = MkLType ('RecSig f)
 
+type HasSessions exp = (HasOne exp, HasTensor exp, HasLolli exp, HasWith exp, HasLower exp)
+class HasSessions exp => HasRecSessions exp where
+  fold   :: exp γ (f @@ Rec f) -> exp γ (Rec f)
+  unfold :: exp γ (Rec f) -> exp γ (f @@ Rec f)
 
 send :: (HasTensor exp, CMerge γ1 γ2 γ)
      => exp γ1 σ1 -> exp γ2 σ2 -> exp γ (σ1 ⊗ σ2)
@@ -56,8 +64,37 @@ wait = letUnit
 done :: HasOne exp => exp Empty One
 done = unit
 
-type HasSessions exp = (HasOne exp, HasTensor exp, HasLolli exp, HasLower exp)
 
+-- Print Server
+data PrintProto :: LType ~> LType
+type instance PrintProto @@ print = One & (Lower String ⊸ Lower String ⊗ print)
+
+type PrintProto1 = One & (Lower String ⊸ Lower String ⊗ One)
+
+printer :: HasSessions (LExp sig) => Lift sig PrintProto1
+--printer = suspend . fold $ unit & λbang (\s -> put (process s) ⊗ force printer)
+printer = suspend $ unit & λbang (\s → put (process s) ⊗ unit)
+  where
+    process :: String -> String
+    process s = "Printing: " ++ s
+
+print1 :: HasSessions (LExp sig) => String -> Lin sig String
+print1 s = suspend $ (proj2 $ force printer) ^ put s `letPair` \(receipt,o) ->
+           o `letUnit` receipt
+
+printAll :: HasSessions (LExp sig) 
+--         => [String] -> Lift sig (Rec PrintProto ⊸ Lower String)
+         => [String] -> Lin sig String
+printAll []     = suspend $ proj1 (force printer) `letUnit` put "Done"
+printAll (s:ls) = do receipt <- print1 s
+                     receipts <- printAll ls
+                     return $ receipt ++ receipts
+--printAll (s:ls) = suspend . λ $ \c → 
+--    (proj2 (unfold c) ^ put s) `letPair` \(x,c) → x >! \receipt →
+--    force (printAll ls) ^ c >! \receipt' → 
+--    put $ receipt ++ receipt'
+
+-- Marketplace Example
 type ServerProto = Lower String ⊸ Lower Int ⊸ Lower String ⊗ One
 
 
@@ -191,7 +228,7 @@ instance Eval Sessions where
 instance HasVar (LExp Sessions) where
   var :: forall x σ γ. CSingletonCtx x σ γ => Sing x -> LExp Sessions γ σ
   var x = SExp $ \γ (c :: UChan) -> 
-            case eLookup x γ of Chan c' -> linkU c c'
+            case Classes.lookup x γ of Chan c' -> linkU c c'
 
 
 instance HasLolli (LExp Sessions) where
@@ -202,7 +239,7 @@ instance HasLolli (LExp Sessions) where
             (v,c) <- recvLolli c
             runSExp (f $ var x) (add x v ρ) c
     where
-      x = fresh @γ
+      x = (sing :: Sing (Fresh γ))
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => LExp Sessions γ1 (σ ⊸ τ) -> LExp Sessions γ2 σ -> LExp Sessions γ τ
@@ -247,8 +284,8 @@ instance HasTensor (LExp Sessions) where
                 let ρ2' = add x2 (Chan y) (add x1 v ρ2)
                 runSExp (f (var x1,var x2)) ρ2' c
       where 
-        x1 = fresh @γ2
-        x2 = fresh @γ2'
+        x1 = (sing :: Sing x1)
+        x2 = (sing :: Sing x2)
 
     -- letPair e e' = SExp $ \ρ c ->  do 
     --                      let (ρ1,ρ2) = split ρ
@@ -301,6 +338,20 @@ instance HasLower (LExp Sessions) where
   --                            Chan x <- recvU c2
   --                            Just a <- recvU x
   --                            runSExp (f a) ρ2 c
+
+instance HasWith (LExp Sessions) where
+    e1 & e2 = SExp $ \ρ (c :: UChan) -> recvU c >>= \case
+       Left  () -> runSExp e1 ρ c
+       Right () -> runSExp e2 ρ c
+
+    proj1 e = SExp $ \ρ c -> do sendU c (Left ())
+                                runSExp e ρ c
+    proj2 e = SExp $ \ρ c -> do sendU c (Right ())
+                                runSExp e ρ c
+
+instance HasRecSessions (LExp Sessions) where
+  fold e   = SExp $ \ρ c → runSExp e ρ c
+  unfold e = SExp $ \ρ c → runSExp e ρ c
 
 ----------------
 -- Comparison --
