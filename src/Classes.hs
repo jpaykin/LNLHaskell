@@ -42,6 +42,7 @@ add x v (ECtx f) = ECtx $ \Dict y -> case eqSNat x y of
   Left  Dict -> v
   Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
 
+-- Classes --
 
 class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
@@ -50,57 +51,61 @@ class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ)
     addLookupNEq :: (x == y) ~ False 
                  => Sing x -> Sing y -> Dict (Lookup γ' y ~ Lookup γ y)
 
-instance (CAddCtx' x σ γ γ' (CountNMinus1 γ')) => 
-         CAddCtx x σ γ (N γ')
-  where
---    addLookupNEq _ = addLookupNNEq @x @σ @γ @γ'
-    addLookupNEq _ = unsafeCoerce (Dict :: Dict ())
-
 class ( γ' ~ AddNNF x σ γ, N γ ~ RemoveN x γ'
       , len ~ CountN γ, LookupN γ' x ~ Just σ)
     => CAddNCtx' (x :: Nat) (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> γ' len, x γ' len -> σ γ
---  where
---    addLookupNNNEq :: (x == y) ~ False 
---                   => Sing y -> Dict (LookupN γ' y ~ LookupN γ y)
-
-instance (CountN γ ~ len, WFNCtx γ)
-      => CAddNCtx' Z σ (Cons Nothing γ) (Cons (Just σ) γ) len
---  where
---    addLookupNNNEq (SS _) = Dict
-instance (CSingletonNCtx x σ γ', WFNCtx γ')
-      => CAddNCtx' (S x) σ (End τ) (Cons (Just τ) γ') (S Z)
---  where
---    addLookupNNNEq SZ = Dict
---    addLookupNNNEq (SS y) = singLookupNNEq @x @σ y
-instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) n
-      => CAddNCtx' (S x) σ (Cons Nothing γ) (Cons Nothing γ') n
---  where
---    addLookupNNNEq SZ = Dict
---    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
-instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (S n)
-      => CAddNCtx' (S x) σ (Cons (Just τ) γ) (Cons (Just τ) γ') (S (S n))
---  where
---    addLookupNNNEq SZ = Dict
---    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+  where
+    addLookupNNNEq :: (x == y) ~ False 
+                   => Sing y -> Dict (LookupN γ' y ~ LookupN γ y)
 
 class ( γ' ~ AddNF x σ γ, γ ~ RemoveN x γ'
       , len ~ Count γ -- ~ Count γ
       , LookupN γ' x ~ Just σ)
    => CAddCtx' (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: NCtx) (len :: Nat)
     | x σ γ -> len γ', x γ' len -> σ γ 
---  where
---    addLookupNNEq :: (x == y) ~ False 
---                  => Sing y -> Dict (LookupN γ' y ~ Lookup γ y)
+  where
+    addLookupNNEq :: (x == y) ~ False 
+                  => Sing y -> Dict (LookupN γ' y ~ Lookup γ y)
+
+-- Instances --
+
+instance (CAddCtx' x σ γ γ' (CountNMinus1 γ')) => 
+         CAddCtx x σ γ (N γ')
+  where
+    addLookupNEq _ = addLookupNNEq @x @σ @γ @γ'
+--    addLookupNEq _ = unsafeCoerce (Dict :: Dict ())
+
+
+instance (CountN γ ~ len, WFNCtx γ)
+      => CAddNCtx' Z σ (Cons Nothing γ) (Cons (Just σ) γ) len
+  where
+    addLookupNNNEq (SS _) = Dict
+instance (CSingletonNCtx x σ γ', WFNCtx γ')
+      => CAddNCtx' (S x) σ (End τ) (Cons (Just τ) γ') (S Z)
+  where
+    addLookupNNNEq SZ = Dict
+    addLookupNNNEq (SS y) = singLookupNNEq @x @σ y
+instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) n
+      => CAddNCtx' (S x) σ (Cons Nothing γ) (Cons Nothing γ') n
+  where
+    addLookupNNNEq SZ = Dict
+    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (S n)
+      => CAddNCtx' (S x) σ (Cons (Just τ) γ) (Cons (Just τ) γ') (S (S n))
+  where
+    addLookupNNNEq SZ = Dict
+    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+
 
 instance CAddNCtx' x σ γ γ' (S len) => CAddCtx' x σ (N γ) γ' (S len)
---  where
---    addLookupNNEq = addLookupNNNEq @x @σ @γ
+  where
+    addLookupNNEq = addLookupNNNEq @x @σ @γ
 instance CSingletonNCtx x σ γ'  => CAddCtx' x σ Empty γ' Z
---  where
---    addLookupNNEq = singLookupNEq @x @σ
+  where
+    addLookupNNEq = singLookupNEq @x @σ
 
----------------------
+-- Helper Type families --
 
 -- outputs the number of variables used in the NCtx
 -- since every NCtx has size >= 1, we first compute |γ|-1 and then add one.
@@ -113,23 +118,7 @@ type family Count γ :: Nat where
   Count Empty = 'Z
   Count (N γ) = CountN γ
 
-type family IsSingletonF  γ :: Bool where
-  IsSingletonF ('End σ)            = 'True
-  IsSingletonF ('Cons ('Just _) _) = 'False
-  IsSingletonF ('Cons 'Nothing   γ) = IsSingletonF γ
 
-type family IsDouble γ :: Bool where
-  IsDouble ('End σ) = 'False
-  IsDouble ('Cons ('Just _) γ) = IsSingletonF γ
-  IsDouble ('Cons 'Nothing γ)   = IsDouble γ
-
-class CIsSingleton (γ :: NCtx) (flag :: Bool) | γ -> flag where
-
-instance CIsSingleton ('End σ) 'True where
-instance CIsSingleton ('Cons ('Just σ) γ) 'False where
-instance CIsSingleton γ b => CIsSingleton ('Cons 'Nothing γ) b where
-
--- Singleton Context ------------------------------------------
 
 type WFVar x σ γ = ( CSingletonCtx x σ (SingletonF x σ)
                    , CAddCtx x σ γ (AddF x σ γ) 
@@ -146,11 +135,13 @@ instance WFNCtx γ => WFNFresh σ (Cons Nothing γ)
 --instance WFNFresh σ γ => WFNFresh σ (Cons (Just τ) γ)
 -- TODO
 
+-- Singleton Contexts ------------------------------------------
+
 class (γ ~ SingletonF x σ, Remove x γ ~ Empty, Lookup γ x ~ Just σ, SingI x)
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx) 
       | x σ -> γ, γ -> x σ where
   singLookupNEq :: forall y.  (x == y) ~ False 
-                => Sing y -> Dict (Lookup γ y ~ Nothing)
+                => Sing y -> Dict (Lookup γ  ~ Nothing)
 class (γ ~ SingletonNF x σ, RemoveN x γ ~ Empty, CountNMinus1 γ ~ Z
       , LookupN γ x ~ Just σ, SingI x)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (γ :: NCtx) 
