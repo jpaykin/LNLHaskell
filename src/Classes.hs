@@ -14,7 +14,6 @@ import Prelude hiding (div)
 import Data.Singletons
 import Data.Constraint
 import Data.Type.Equality
-import Unsafe.Coerce
 
 import Prelim
 --import Context
@@ -141,7 +140,7 @@ class (γ ~ SingletonF x σ, Remove x γ ~ Empty, Lookup γ x ~ Just σ, SingI x
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx) 
       | x σ -> γ, γ -> x σ where
   singLookupNEq :: forall y.  (x == y) ~ False 
-                => Sing y -> Dict (Lookup γ  ~ Nothing)
+                => Sing y -> Dict (Lookup γ y ~ Nothing)
 class (γ ~ SingletonNF x σ, RemoveN x γ ~ Empty, CountNMinus1 γ ~ Z
       , LookupN γ x ~ Just σ, SingI x)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (γ :: NCtx) 
