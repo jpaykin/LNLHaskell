@@ -16,9 +16,7 @@ import Data.Constraint
 import Data.Type.Equality
 
 import Prelim
---import Context
 import Types
---import Proofs
 
 -- In Context ---------------------------------------------
 
@@ -200,7 +198,7 @@ instance (CMergeNForward γ1 γ2 γ, CMergeNForward γ2 γ1 γ, DivN γ γ2 ~ N 
 
 
 
-class (MergeF γ1 γ2 ~ γ)
+class (Merge γ1 γ2 ~ γ)
    => CMergeForward (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) | γ1 γ2 -> γ 
   where
     lookupMerge1 :: forall x σ. Dict (Lookup γ1 x ~ Just σ)
@@ -211,7 +209,7 @@ class (MergeF γ1 γ2 ~ γ)
                  -> Dict (Lookup γ x ~ Just σ)
 
 
-class (MergeNF γ1 γ2 ~ γ)
+class (MergeNF γ1 γ2 ~ Just γ)
    => CMergeNForward γ1 γ2 γ | γ1 γ2 -> γ where
  lookupMergeN1 :: LookupN γ1 x ~ Just σ
                => Sing x

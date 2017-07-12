@@ -11,7 +11,7 @@ module Types where
 import Prelim
 
 import Data.Kind
-import GHC.TypeLits (TypeError, ErrorMessage(..))
+import GHC.TypeLits hiding (Nat) --  (TypeError, ErrorMessage(..))
 import Data.Proxy
 import Data.Singletons
 import Data.Constraint
@@ -86,8 +86,8 @@ type family Fresh (g::Ctx) :: Nat where
   Fresh ('N g) = FreshN g
 
 type family FreshN2 g :: Nat where
-  FreshN2 ('End τ)           = 'S ('S 'Z)
-  FreshN2 ('Cons 'Nothing g)   = 'S (FreshN g)
+  FreshN2 ('End τ)            = 'S ('S 'Z)
+  FreshN2 ('Cons 'Nothing g)  = 'S (FreshN g)
   FreshN2 ('Cons ('Just σ) g) = 'S (FreshN2 g)
 
 type family Fresh2 (g::Ctx) :: Nat where
@@ -99,15 +99,18 @@ fresh = case (sing :: Sing γ) of
           SSEmpty -> SZ
           SSN γ   -> freshN γ
 freshN :: forall γ. Sing γ -> Sing (FreshN γ)
-freshN SSEnd = (SS SZ)
+freshN SSEnd                = (SS SZ)
 freshN (SSCons SSNothing _) = SZ
-freshN (SSCons SSJust γ) = SS $ freshN γ
+freshN (SSCons SSJust γ)    = SS $ freshN γ
 
 
 -- Type families
+type family MaybeError (m :: Maybe a) err :: a where
+  MaybeError (Just a) err = a
+  MaybeError Nothing  err = TypeError err
 
 type family Lookup (γ :: Ctx) (x :: Nat) :: Maybe LType where
-  Lookup Empty _ = Nothing
+  Lookup Empty x = Nothing
   Lookup (N γ) x = LookupN γ x
 type family LookupN (γ :: NCtx) (x :: Nat) :: Maybe LType where
   LookupN (End σ)    Z     = Just σ
@@ -117,8 +120,7 @@ type family LookupN (γ :: NCtx) (x :: Nat) :: Maybe LType where
   
 
 type family Div (γ :: Ctx) (γ0 :: Ctx) = (r :: Ctx) where
---  Div γ γ = 'Empty
-  Div γ 'Empty = γ
+  Div γ      'Empty  = γ
   Div ('N γ) ('N γ0) = DivN γ γ0
   Div γ      γ0      = TypeError
     (ShowType γ0 :<>: Text " must be a subcontext of " :<>: ShowType γ)
@@ -147,26 +149,46 @@ type family AddNF (x :: Nat) (σ :: LType) (g :: Ctx) :: NCtx where
   AddNF x      σ ('N g) = AddNNF x σ g
 
 type family AddNNF x σ (g :: NCtx) :: NCtx where
-  AddNNF ('S x) σ ('End τ)          = 'Cons ('Just τ) (SingletonNF x σ)
+  AddNNF 'Z     σ ('End τ)           = TypeError (Text "Cannot add " :<>: ShowType σ :<>: Text " to the context [" :<>: ShowType τ :<>: Text "]")
+  AddNNF ('S x) σ ('End τ)           = 'Cons ('Just τ) (SingletonNF x σ)
   AddNNF 'Z     σ ('Cons 'Nothing g) = 'Cons ('Just σ) g
-  AddNNF ('S x) σ ('Cons u       g) = 'Cons u (AddNNF x σ g)
+  AddNNF 'Z     σ ('Cons ('Just τ) g) = TypeError (Text "Cannot add " :<>: ShowType σ :<>: Text " to the context " :<>: ShowType τ :<>: Text "::" :<>: ShowType τ)
+  AddNNF ('S x) σ ('Cons u       g)  = 'Cons u (AddNNF x σ g)
 
 type family Remove (x :: Nat) (g :: Ctx) :: Ctx where
   Remove x 'Empty = TypeError (Text "Cannot remove anything from an empty context")
   Remove x ('N γ) = RemoveN x γ
 type family RemoveN (x :: Nat) (γ :: NCtx) :: Ctx where
-  RemoveN 'Z ('End _) = 'Empty
-  RemoveN 'Z ('Cons ('Just _) γ) = 'N ('Cons 'Nothing γ)
-  RemoveN ('S x) ('Cons u γ)     = ConsN u (RemoveN x γ)
+  RemoveN 'Z     ('End _)            = 'Empty
+  RemoveN 'Z     ('Cons ('Just _) γ) = 'N ('Cons 'Nothing γ)
+  RemoveN ('S x) ('Cons u γ)         = ConsN u (RemoveN x γ)
 
-type family MergeF (g1 :: Ctx) (g2 :: Ctx) :: Ctx where
-  MergeF 'Empty 'Empty = 'Empty
-  MergeF 'Empty ('N g2) = 'N g2
-  MergeF ('N g1) 'Empty = 'N g1
-  MergeF ('N g1) ('N g2) = 'N (MergeNF g1 g2)
-type family MergeNF (g1 :: NCtx) (g2 :: NCtx) :: NCtx where
-  MergeNF ('End σ) ('Cons 'Nothing g2) = 'Cons ('Just σ) g2
-  MergeNF ('Cons 'Nothing g1) ('End σ) = 'Cons ('Just σ) g1
-  MergeNF ('Cons 'Nothing g1) ('Cons 'Nothing g2) = 'Cons Nothing (MergeNF g1 g2)
-  MergeNF ('Cons ('Just σ) g1) ('Cons 'Nothing g2) = 'Cons ('Just σ) (MergeNF g1 g2)
-  MergeNF ('Cons 'Nothing g1) ('Cons ('Just σ) g2) = 'Cons ('Just σ) (MergeNF g1 g2)
+type family Merge (γ1 :: Ctx) (γ2 :: Ctx) :: Ctx where
+  Merge γ1 γ2 = MaybeError (MergeF γ1 γ2) 
+                           (Text "Cannot merge context " :<>: ShowType γ1 
+                       :<>: Text "with context " :<>: ShowType γ2)
+type family MergeN (γ1 :: NCtx) (γ2 :: NCtx) :: NCtx where
+  MergeN γ1 γ2 = MaybeError (MergeNF γ1 γ2) 
+                            (Text "Cannot merge non-empty context " :<>: ShowType γ1 
+                        :<>: Text "with non-empty context " :<>: ShowType γ2)
+
+
+type family MaybeMap (f :: a -> b) (m :: Maybe a) :: Maybe b where
+  MaybeMap f (Just a) = Just (f a)
+  MaybeMap f Nothing  = Nothing
+
+type family MergeF (g1 :: Ctx) (g2 :: Ctx) :: Maybe Ctx where
+  MergeF 'Empty  'Empty  = 'Just 'Empty
+  MergeF 'Empty  ('N g2) = 'Just ('N g2)
+  MergeF ('N g1) 'Empty  = 'Just ('N g1)
+  MergeF ('N g1) ('N g2) = MaybeMap 'N (MergeNF g1 g2)
+type family MergeNF (g1 :: NCtx) (g2 :: NCtx) :: Maybe NCtx where
+  MergeNF ('End σ)             ('Cons 'Nothing g2)  = Just ('Cons ('Just σ) g2)
+  MergeNF ('Cons 'Nothing g1)  ('End σ)             = Just ('Cons ('Just σ) g1)
+  MergeNF ('Cons 'Nothing g1)  ('Cons 'Nothing g2)  = 
+          MaybeMap ('Cons Nothing) (MergeNF g1 g2)
+  MergeNF ('Cons ('Just σ) g1) ('Cons 'Nothing g2)  = 
+          MaybeMap ('Cons ('Just σ)) (MergeNF g1 g2)
+  MergeNF ('Cons 'Nothing g1)  ('Cons ('Just σ) g2) = 
+          MaybeMap ('Cons ('Just σ)) (MergeNF g1 g2)
+  MergeNF ('Cons ('Just _) _) ('Cons ('Just _) _) = Nothing

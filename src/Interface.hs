@@ -372,6 +372,14 @@ class HasVar exp where
   var :: forall x (σ :: LType) (γ :: Ctx). 
          CSingletonCtx x σ γ => Sing x -> exp γ σ
 
+-- non-examples
+--discard :: HasMILL sig => Lift sig (σ ⊸ One)
+--discard = suspend . λ $ \_ → unit
+
+--dup :: HasMILL sig => Lift sig (σ ⊸ σ ⊗ σ)
+--dup = suspend . λ $ \x → x ⊗ x
+
+
 {-
 
 
