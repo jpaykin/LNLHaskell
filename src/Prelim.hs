@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeApplications, ScopedTypeVariables, TypeInType,
              TypeOperators, GADTs, TypeFamilies, UndecidableInstances,
              MultiParamTypeClasses, FlexibleInstances, AllowAmbiguousTypes,
-             InstanceSigs, RankNTypes
+             InstanceSigs, RankNTypes, ConstraintKinds
 #-}
 --{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors #-}
 
@@ -11,6 +11,7 @@ module Prelim where
 import Data.Constraint
 import Data.Array
 --import GHC.TypeLits (TypeError, ErrorMessage(..))
+import GHC.TypeLits
 import Data.Type.Equality
 import Data.Singletons
 import Unsafe.Coerce
@@ -19,27 +20,7 @@ import Unsafe.Coerce
 -- Nats ------------------------------------
 --------------------------------------------
 
-data Nat = Z | S Nat deriving (Eq, Ord)
---data SNat :: Nat -> * where
---  SZ :: SNat 'Z
---  SS :: SNat x -> SNat ('S x)
-data instance Sing (x :: Nat) where
-  SZ :: Sing Z
-  SS :: Sing x -> Sing (S x)
-instance SingI Z where
-  sing = SZ
-instance SingI x => SingI (S x) where
-  sing = SS sing
-
 {-
-class KnownNat n where
-  sNat :: SNat n
-instance KnownNat 'Z where
-  sNat = SZ
-instance KnownNat n => KnownNat ('S n) where
-  sNat = SS sNat
--}
-
 type family EqNat (m :: Nat) (n :: Nat) :: Bool where
   EqNat Z     Z     = True
   EqNat (S m) (S n) = EqNat m n
@@ -59,21 +40,14 @@ type family Times (m :: Nat) (n :: Nat) :: Nat where
 type family RaiseTo (m :: Nat) (n :: Nat) :: Nat where
   m `RaiseTo` Z = S Z
   m `RaiseTo` S n = m `Times` (m `RaiseTo` n)
+-}
 
 -- Some Nats
-type One   = S Z
-type Two   = S One
-type Three = S Two
-type Four  = S Three
+type One   = 1
+type Two   = 2
+type Three = 3
+type Four  = 4
 
-one :: Sing One
-one = SS SZ
-two :: Sing Two
-two = SS one
-three :: Sing Three
-three = SS two
-four :: Sing Four
-four = SS three
 
 {-
 type family Div (m :: Nat) (n :: Nat) :: Nat where
@@ -93,7 +67,7 @@ type family If (b :: Bool) (t :: k) (f :: k) :: k where
   If 'True  t f = t
   If 'False t f = f
 
-
+{-
 instance Num Nat where
   Z   + n   = n
   S m + n   = S (m+n)
@@ -118,43 +92,43 @@ instance Integral Nat where
   toInteger = fromIntegral . toInt
   quotRem m n = let (q,r) = quotRem (fromEnum m) (fromEnum n)
                 in (toEnum q, toEnum r)
+-}
 
--- Proofs about nats
--- using unsafeCoerce for efficiency, but may uncomment out proofs to check typing
+type S n = 1 + n
 
-plus0r :: forall n. Sing n -> Dict (Plus n Z ~ n)
+plus0r :: forall n. Sing n -> Dict ((n + 0) ~ n)
 plus0r _ = unsafeCoerce (Dict :: Dict ())
 --plus0r SZ = Dict
 --plus0r (SS n) = case plus0r n of Dict -> Dict
 
-plusSr :: Sing m -> Sing n -> Dict (Plus m (S n) ~ S (Plus m n))
+plusSr :: Sing m -> Sing n -> Dict ((m + S n) ~ S (m + n))
 plusSr _ _ = unsafeCoerce (Dict :: Dict ())
 --plusSr SZ _ = Dict
 --plusSr (SS m) n = case plusSr m n of Dict -> Dict
 
-plusMinus :: (n < m) ~ False 
-          => Sing m -> Sing n -> Dict (Plus m (Minus n m) ~ n)
+plusMinus :: (n < m)
+          => Sing m -> Sing n -> Dict ((m + (n - m)) ~ n)
 plusMinus _ _ = unsafeCoerce (Dict :: Dict ())
 --plusMinus SZ SZ = Dict
 --plusMinus SZ (SS _) = Dict
 --plusMinus (SS m) (SS n) = case plusMinus m n of Dict -> Dict
 
-times1r :: forall n. Sing n -> Dict (Times n (S Z) ~ n)
+times1r :: forall n. Sing n -> Dict ((n * 1) ~ n)
 times1r _ = unsafeCoerce (Dict :: Dict ())
 --times1r SZ = Dict
 --times1r (SS n) = case times1r n of Dict -> Dict
 
 timesAssoc :: Sing m -> Sing n -> Sing p 
-           -> Dict (Times m (Times n p) ~ Times (Times m n) p)
+           -> Dict ((m*(n*p)) ~ ((m*n)*p))
 timesAssoc _ _ _ = unsafeCoerce (Dict :: Dict ())
 
-timesSymm :: Sing m -> Sing n -> Dict (Times m n ~ Times n m)
+timesSymm :: Sing m -> Sing n -> Dict ((m*n) ~ (n*m))
 timesSymm _ _ = unsafeCoerce (Dict :: Dict ())
 
 -- really want SMT plugin here
 raiseToPlus :: forall m n1 n2. Sing m -> Sing n1 -> Sing n2
-                -> Dict (((m `RaiseTo` n1 ) `Times` (m `RaiseTo` n2) )
-                        ~ (m `RaiseTo` (n1 `Plus` n2)))
+                -> Dict (((m^n1 )*(m^n2) )
+                        ~ (m^(n1+n2)))
 raiseToPlus _ _ _ = unsafeCoerce (Dict :: Dict ())
 {-
 raiseToPlus m SZ n2 = case plus0r (raiseToSNat m n2) of Dict -> Dict
@@ -181,7 +155,7 @@ type SomeSNat = SomeSing Nat
 {-
 data SomeSNat where
   SomeSNat :: Sing n -> SomeSNat
--}
+
 instance Eq (SomeSing Nat) where
   SomeSing m == SomeSing n = case eqSNat m n of 
     Left  Dict -> True
@@ -209,22 +183,9 @@ instance Num (SomeSing Nat) where
 class ToInt a where
   toInt :: a -> Int
 
-instance ToInt Nat where
-  toInt Z = 0
-  toInt (S n) = toInt n + 1
-instance ToInt (Sing (n :: Nat)) where
-  toInt n = toInt $ toNat n
+-}
 
 
-instance Show Nat where
-  show n = show $ toInt n
-
-toNat :: forall (n :: Nat). Sing n -> Nat
-toNat SZ = Z
-toNat (SS n) = S $ toNat n
-
-instance forall (n :: Nat). Show (Sing n) where
-  show n = show $ toNat n
 
 --------------------------------------------
 -- Pairs -----------------------------------
@@ -239,18 +200,19 @@ type family Snd pair where
 -- Maps ------------------------------------
 --------------------------------------------
 
+{-
 data InMap (i :: Nat) (x :: a) (xs :: [a]) where
-  InZ :: InMap 'Z a (a ': as)
-  InS :: InMap i a as -> InMap ('S i) a (b ': as)
+  InZ :: InMap 0 a (a ': as)
+  InS :: InMap i a as -> InMap (S i) a (b ': as)
 
 data InList (x :: a) (xs :: [a]) where
   InList :: InMap i x xs -> InList x xs
 
 class MapsTo (i :: Nat) (x :: a) (xs :: [a]) where
   pfInMap :: InMap i x xs
-instance MapsTo 'Z a (a ': as) where
+instance MapsTo 0 a (a ': as) where
   pfInMap = InZ
-instance MapsTo i a as => MapsTo ('S i) a (b ': as) where
+instance MapsTo i a as => MapsTo (S i) a (b ': as) where
   pfInMap = InS pfInMap
 
 class CInList (x :: a) (xs :: [a]) where
@@ -259,8 +221,8 @@ instance MapsTo (GetIndex x xs) x xs => CInList x xs where
   pfInList = InList (pfInMap @_ @(GetIndex x xs))
 
 type family GetIndex (x :: a) (xs :: [a]) where
-  GetIndex x (x ': _) = 'Z
-  GetIndex x (_ ': ls) = 'S (GetIndex x ls)
+  GetIndex x (x ': _)  = 0
+  GetIndex x (_ ': ls) = S (GetIndex x ls)
 
 compareInList :: InList x1 ls -> InList x2 ls 
               -> Maybe (Dict( x1 ~ x2 ))
@@ -278,69 +240,18 @@ type family IsInList (ty :: a) (ls :: [a]) :: InList ty ls where
 
 type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
   InListCons ('InList pfM) = 'InList ('InS pfM)
+-}
 
--- Bounded Natural Numbers
+type x < y = CmpNat x y ~ LT
 
-type family (<) (m :: Nat) (n :: Nat) :: Bool where
-  'Z   < 'S n = 'True
-  _    < 'Z   = 'False
-  'S m < 'S n = m < n
+ltS :: forall x. KnownNat x => Dict (x < S x)
+ltS = undefined
+--ltS = case sameNat (Proxy :: Proxy x) (Proxy :: Proxy 0) of
+--        Just Refl -> Dict
+--        Nothing   -> case ltS @(x-1) of Dict -> Dict
+--ltS x = case ltS x of Dict -> Dict
 
-data BNat (n :: Nat) where
-  BNat :: (m < n) ~ 'True => Sing m -> BNat n
-
-instance ToInt (BNat n) where
-  toInt (BNat m) = toInt m
-instance Show (BNat n) where
-  show (BNat m) = show m
-instance Eq (BNat n) where
-  m1 == m2 = toInt m1 == toInt m2
-instance Ord (BNat n) where
-  m1 <= m2 = toInt m1 <= toInt m2
-
-compareSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n 
-            -> Either (Dict (m < n ~ 'True)) (Dict ((m < n) ~ 'False))
-compareSNat SZ SZ     = Right Dict
-compareSNat SZ (SS _) = Left  Dict
-compareSNat (SS _) SZ = Right Dict
-compareSNat (SS m) (SS n) = case compareSNat m n of
-    Left  Dict -> Left  Dict
-    Right Dict -> Right Dict
-
-
-eqSNat :: forall (m :: Nat) (n :: Nat). Sing m -> Sing n 
-       -> Either (Dict (m~n, (m==n) ~ 'True)) (Dict ((m == n) ~ 'False))
-eqSNat SZ SZ = Left Dict
-eqSNat SZ (SS _) = Right Dict
-eqSNat (SS _) SZ = Right Dict
-eqSNat (SS m) (SS n) = case eqSNat m n of
-    Left  Dict -> Left  Dict
-    Right Dict -> Right Dict
-
-fromIntegerBNat :: forall (n :: Nat). SingI n => Integer -> BNat n
-fromIntegerBNat m = 
-  case fromInteger m of {SomeSing m' -> 
-  case compareSNat m' n of
-           Left Dict -> BNat m'
-           Right Dict -> error $ "Cannot construct BNat: " ++ show m ++ " not less than bound " ++ show n
-  }
-  where
-    n = (sing :: Sing n)
-
-
-bNat :: forall n. SingI n => SomeSing Nat -> BNat n
-bNat (SomeSing m) = case compareSNat m (sing :: Sing n) of
-           Left Dict -> BNat m
-           Right Dict -> error $ "Cannot construct BNat: " ++ show m ++ " not less than bound " ++ show (sing :: Sing n)
-
-coerceBNat :: forall m n. m < n~True => BNat m -> BNat n
-coerceBNat (BNat (i :: Sing i)) = 
-    case ltTrans @i @m @n of Dict -> BNat i
-
-ltS :: Sing x -> Dict (x < 'S x ~ 'True)
-ltS SZ = Dict
-ltS (SS x) = case ltS x of Dict -> Dict
-
+{-
 succLtTrans :: 'S x < y ~ 'True => Sing x -> Sing y -> Dict (x < y ~ 'True)
 succLtTrans SZ (SS _) = Dict
 succLtTrans (SS x) (SS y) = case succLtTrans x y of Dict -> Dict
@@ -403,37 +314,5 @@ modSomeSing _ n | n == 0 = error "Modulo by zero"
 modSomeSing _ n | n == 1 = 0
 modSomeSing m n | m < n  = m
 modSomeSing m n | otherwise = (m-n) `modSomeSing` n
+-}
 
-instance SingI n => Num (BNat n) where
-  BNat m1 + BNat m2 = boundBNat (m1 `plusSNat`  m2)
-  BNat m1 - BNat m2 = boundBNat (m1 `minusSNat` m2)
-  BNat m1 * BNat m2 = boundBNat (m1 `timesSNat` m2)
-  signum _ = fromInteger 1 -- all nats are positive
-  abs n = n
-
-  fromInteger m = fromIntegerBNat m
-instance SingI n => Real (BNat n) where
-  toRational = fromIntegral . toInt
-instance SingI n => Enum (BNat n) where
-  toEnum = fromIntegral 
-  fromEnum = toInt
-instance SingI n => Integral (BNat n) where
-  quotRem (BNat i) (BNat j) = (bNat $ divSNat i j, bNat $ modSNat i j)
-  toInteger = fromIntegral . toInt 
-
-raise :: Sing n -> BNat n -> BNat ('S n)
-raise n (BNat m) = case ltSTrans m n of Dict -> BNat m
-
-allBNat :: Sing n -> [BNat n]
-allBNat SZ = []
-allBNat (SS n) = (raise n <$> allBNat n) ++ [maxBNat $ SS n]
-
-instance SingI n => Ix (BNat n) where
-  range :: (BNat n, BNat n) -> [BNat n]
-  range (BNat _, BNat _) = allBNat (sing :: Sing n)
-
-  index :: (BNat n, BNat n) -> BNat n -> Int
-  index (m1,m2) m = index (toInt m1, toInt m2) $ toInt m
-
-  inRange :: (BNat n, BNat n) -> BNat n -> Bool
-  inRange (m1,m2) m = inRange (toInt m1, toInt m2) $ toInt m

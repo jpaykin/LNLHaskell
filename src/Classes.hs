@@ -12,6 +12,7 @@ module Classes where
 
 import Prelude hiding (div)
 import Data.Singletons
+import GHC.TypeLits
 import Data.Constraint
 import Data.Type.Equality
 
@@ -25,9 +26,9 @@ import Types
 class CIn  (x :: Nat) (σ :: LType) (γ :: Ctx)
 class CInN (x :: Nat) (σ :: LType) (γ :: NCtx)
 
-instance CInN 'Z σ ('End σ)
-instance CInN 'Z σ ('Cons ('Just σ) γ)
-instance (CInN x σ γ) => CInN ('S x) σ ('Cons u γ)
+instance CInN 0 σ ('End σ)
+instance CInN 0 σ ('Cons ('Just σ) γ)
+instance (CInN x σ γ) => CInN (1+x) σ ('Cons u γ)
 
 instance CInN x σ γ => CIn x σ ('N γ)
   
@@ -77,30 +78,30 @@ instance (CAddCtx' x σ γ γ' (CountNMinus1 γ')) =>
 
 
 instance (CountN γ ~ len, WFNCtx γ)
-      => CAddNCtx' Z σ (Cons Nothing γ) (Cons (Just σ) γ) len
+      => CAddNCtx' 0 σ (Cons Nothing γ) (Cons (Just σ) γ) len
   where
-    addLookupNNNEq (SS _) = Dict
+--    addLookupNNNEq (SS _) = Dict
 instance (CSingletonNCtx x σ γ', WFNCtx γ')
-      => CAddNCtx' (S x) σ (End τ) (Cons (Just τ) γ') (S Z)
+      => CAddNCtx' (S x) σ (End τ) (Cons (Just τ) γ') 1
   where
-    addLookupNNNEq SZ = Dict
-    addLookupNNNEq (SS y) = singLookupNNEq @x @σ y
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = singLookupNNEq @x @σ y
 instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) n
       => CAddNCtx' (S x) σ (Cons Nothing γ) (Cons Nothing γ') n
   where
-    addLookupNNNEq SZ = Dict
-    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
 instance CAddNCtx' x (σ :: LType) (γ :: NCtx) (γ' :: NCtx) (S n)
       => CAddNCtx' (S x) σ (Cons (Just τ) γ) (Cons (Just τ) γ') (S (S n))
   where
-    addLookupNNNEq SZ = Dict
-    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
+--    addLookupNNNEq SZ = Dict
+--    addLookupNNNEq (SS y) = addLookupNNNEq @x @σ @γ y
 
 
 instance CAddNCtx' x σ γ γ' (S len) => CAddCtx' x σ (N γ) γ' (S len)
   where
     addLookupNNEq = addLookupNNNEq @x @σ @γ
-instance CSingletonNCtx x σ γ'  => CAddCtx' x σ Empty γ' Z
+instance CSingletonNCtx x σ γ'  => CAddCtx' x σ Empty γ' 0
   where
     addLookupNNEq = singLookupNEq @x @σ
 
@@ -109,12 +110,12 @@ instance CSingletonNCtx x σ γ'  => CAddCtx' x σ Empty γ' Z
 -- outputs the number of variables used in the NCtx
 -- since every NCtx has size >= 1, we first compute |γ|-1 and then add one.
 type family CountNMinus1 γ :: Nat where
-  CountNMinus1 ('End _) = 'Z
-  CountNMinus1 ('Cons ('Just _) γ) = 'S (CountNMinus1 γ)
+  CountNMinus1 ('End _) = 0
+  CountNMinus1 ('Cons ('Just _) γ) = S (CountNMinus1 γ)
   CountNMinus1 ('Cons 'Nothing γ)  = CountNMinus1 γ
 type CountN γ = S (CountNMinus1 γ)
 type family Count γ :: Nat where
-  Count Empty = 'Z
+  Count Empty = 0
   Count (N γ) = CountN γ
 
 
@@ -141,18 +142,18 @@ class (γ ~ SingletonF x σ, Remove x γ ~ Empty, Lookup γ x ~ Just σ, SingI x
       | x σ -> γ, γ -> x σ where
   singLookupNEq :: forall y.  (x == y) ~ False 
                 => Sing y -> Dict (Lookup γ y ~ Nothing)
-class (γ ~ SingletonNF x σ, RemoveN x γ ~ Empty, CountNMinus1 γ ~ Z
+class (γ ~ SingletonNF x σ, RemoveN x γ ~ Empty, CountNMinus1 γ ~ 0
       , LookupN γ x ~ Just σ, SingI x)
    => CSingletonNCtx (x :: Nat) (σ :: LType) (γ :: NCtx) 
     | x σ -> γ, γ -> x σ where
   singLookupNNEq :: forall y. (x == y) ~ False 
                  => Sing y -> Dict (LookupN γ y ~ Nothing)
 
-instance CSingletonNCtx 'Z σ ('End σ) where
-  singLookupNNEq (SS _) = Dict
-instance CSingletonNCtx x σ γ => CSingletonNCtx ('S x) σ ('Cons 'Nothing γ) where
-  singLookupNNEq SZ = Dict
-  singLookupNNEq (SS y) = singLookupNNEq @x @σ y
+instance CSingletonNCtx 0 σ ('End σ) where
+--  singLookupNNEq (SS _) = Dict
+instance CSingletonNCtx x σ γ => CSingletonNCtx (S x) σ ('Cons 'Nothing γ) where
+--  singLookupNNEq SZ = Dict
+--  singLookupNNEq (SS y) = singLookupNNEq @x @σ y
 instance CSingletonNCtx x σ γ => CSingletonCtx x σ ('N γ) where
   singLookupNEq y = singLookupNNEq @x @σ y
 --  singLookupNEq _ = unsafeCoerce (Dict :: Dict ())
@@ -240,29 +241,29 @@ instance CMergeNForward γ1 γ2 γ => CMergeForward ('N γ1) ('N γ2) ('N γ) wh
 --    lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
 
 instance CMergeNForward ('End σ) ('Cons 'Nothing γ2) ('Cons ('Just σ) γ2) where
-    lookupMergeN1 SZ     = Dict
-    lookupMergeN2 (SS _) = Dict
+--    lookupMergeN1 SZ     = Dict
+--    lookupMergeN2 (SS _) = Dict
 instance CMergeNForward ('Cons 'Nothing γ1) ('End σ) ('Cons ('Just σ) γ1) where
-    lookupMergeN1 (SS _) = Dict
-    lookupMergeN2 SZ     = Dict
+--    lookupMergeN1 (SS _) = Dict
+--    lookupMergeN2 SZ     = Dict
 -- u1=Nothing, u2=Nothing
 instance CMergeNForward γ1 γ2 γ
     => CMergeNForward ('Cons 'Nothing γ1) ('Cons 'Nothing γ2) ('Cons 'Nothing γ) 
   where
-    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
-    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
+--    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
+--    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
 -- u1=Just σ, u2= Nothing
 instance CMergeNForward γ1 γ2 γ
     => CMergeNForward ('Cons ('Just σ) γ1) ('Cons 'Nothing γ2) ('Cons ('Just σ) γ) 
   where
-    lookupMergeN1 SZ = Dict
-    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
-    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
+--    lookupMergeN1 SZ = Dict
+--    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
+--    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
 -- u1=Nothing, u2= Just σ
 instance CMergeNForward γ1 γ2 γ
     => CMergeNForward ('Cons 'Nothing γ1) ('Cons ('Just σ) γ2) ('Cons ('Just σ) γ) 
   where
-    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
-    lookupMergeN2 SZ = Dict
-    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
+--    lookupMergeN1 (SS x) = lookupMergeN1 @γ1 @γ2 @γ x
+--    lookupMergeN2 SZ = Dict
+--    lookupMergeN2 (SS x) = lookupMergeN2 @γ1 @γ2 @γ x
 

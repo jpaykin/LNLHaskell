@@ -138,13 +138,6 @@ zero n = Matrix (n,n) $ \_ -> 0
 scale :: ℂ -> Matrix -> Matrix
 scale c (Matrix (m,n) f) = Matrix (m,n) $ \(i,j) -> c * f(i,j)
 
-{-
-trace :: forall m. SingI m => Matrix m m -> ℂ
-trace mat = foldr f 0 ls
-  where
-    ls = allBNat (sing :: Sing m)
-    f i x = mat (i,i) + x
--}
 
 ----------------------
 -- Quantum Matrices --
