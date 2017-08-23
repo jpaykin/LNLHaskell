@@ -33,8 +33,8 @@ instance CInN x σ γ => CIn x σ ('N γ)
 -- Add To Context ----------------------------------------------
 
 
-add :: forall σ γ γ' x sig. CAddCtx x σ γ γ' 
-    => Sing x -> LVal sig σ -> ECtx sig γ -> ECtx sig γ'
+add :: forall σ γ γ' x. CAddCtx x σ γ γ' 
+    => Sing x -> LVal σ -> ECtx γ -> ECtx γ'
 add x v (ECtx f) = ECtx $ \Dict y -> case eqSNat x y of
   Left  Dict -> v
   Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
@@ -155,7 +155,7 @@ instance CSingletonNCtx x σ γ => CSingletonCtx x σ ('N γ) where
   singLookupNEq y = singLookupNNEq @x @σ y
 --  singLookupNEq _ = unsafeCoerce (Dict :: Dict ())
 
-lookup :: CSingletonCtx x σ γ => Sing x -> ECtx sig γ -> LVal sig σ
+lookup :: CSingletonCtx x σ γ => Sing x -> ECtx γ -> LVal σ
 lookup x (ECtx f) = f Dict x
 
 -- Well-formed contexts --------------------------------
@@ -174,8 +174,8 @@ instance WFNCtx γ => WFNCtx ('Cons ('Just σ) γ)
 
 -- Merging ---------------------------------------
 
-split :: forall γ1 γ2 γ sig. CMerge γ1 γ2 γ 
-       => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
+split :: forall γ1 γ2 γ. CMerge γ1 γ2 γ 
+       => ECtx γ -> (ECtx γ1, ECtx γ2)
 split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ Dict x) x
                  ,ECtx $ \Dict x -> f (lookupMerge2 @γ1 @γ2 @γ Dict x) x)
 
