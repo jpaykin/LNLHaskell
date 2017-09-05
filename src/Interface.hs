@@ -349,6 +349,9 @@ instance HasMILL sig => LMonad sig (LState' ρ) where
       lbind = suspend . λ $ \st -> λ $ \f -> λ $ \ r ->
                 st ^ r `letPair` \(r,s) -> f ^ s ^ r
 
+lstate1 :: HasMILL sig => Lift sig (σ ⊸ σ) -> LStateT sig σ ()
+lstate1 f = suspend . λ $ \s -> force f ^ s ⊗ put ()
+
 runLStateT :: HasMILL sig 
            => LinT sig (LState' σ) a -> Lift sig σ -> Lift sig (σ ⊗ Lower a)
 runLStateT st s = suspend $ force st ^ force s

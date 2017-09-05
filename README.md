@@ -32,6 +32,8 @@ build` to compile the project or `stack ghci` to load the project in `ghci`.
       example
 	* `src/examples/Quantum.hs` : implementation of the quantum lambda calculus
 	* `src/examples/Sessions.hs` : implementation of session types
+	* `src/examples/ByteString.hs` : preliminary (work in progress)
+      implementation of `ByteString`s
 
 
 [stack]: www.haskellstack.org/

@@ -26,7 +26,6 @@ import Control.Concurrent
 
 
 import Types
---import Context
 import Interface
 import Classes
 import ShallowEmbedding

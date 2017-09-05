@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src, src/examples
-  exposed-modules:     Lib, Prelim, Types, Classes, Interface, ShallowEmbedding, DeepEmbedding, Sessions
+  exposed-modules:     Lib, Prelim, Types, Classes, Interface, ShallowEmbedding, DeepEmbedding, Sessions, ByteString
   build-depends:       base >= 4.7 && < 5
                      , template-haskell == 2.11.*
                      , constraints >= 0.8
@@ -27,7 +27,7 @@ library
                      , mtl >= 2.2.1
                      , ghc-prim >= 0.5.0.0
                      , transformers >= 0.5.2
---                     , quickcheck >= 2.9.2
+                     , word8 >= 0.1.2
   default-language:    Haskell2010
 --  required-extentions:
 
