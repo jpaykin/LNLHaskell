@@ -28,7 +28,6 @@ import System.Random (randomRIO)
 
 
 import Types
---import Context
 import Interface
 import Classes
 import ShallowEmbedding
