@@ -174,10 +174,8 @@ linkU c1 c2 = do
 
 data Sessions
 -- The UChan is the output channel
---data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan τ -> IO ()}
 data instance LExp Sessions γ τ = SExp {runSExp :: SCtx Sessions γ -> UChan -> IO ()}
 data instance LVal Sessions τ where
---  Chan  :: UChan (Dual τ) -> LVal Sessions τ
     Chan :: UChan -> LVal Sessions τ
 type instance Effect Sessions = IO
 

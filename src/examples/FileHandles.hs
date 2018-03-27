@@ -21,6 +21,12 @@ import ShallowEmbedding as S
 
 -- Signature 
 
+--data LType where
+--  One :: LType
+--  Tensor :: LType -> LType -> LType
+--  Lolli :: LType -> LType -> LType
+--  Lower :: Type -> LType
+
 data FHSig sig = FHSig
 type Handle = MkLType 'FHSig
 
@@ -76,7 +82,7 @@ readWriteTwice = λ $ \h -> read h `letPair` \(h,x) ->
                            writeString [c,c] h
 
 withFile :: HasFH sig => String -> Lift sig (Handle ⊸ Handle ⊗ Lower a) -> Lin sig a
-withFile name f = suspend $ force f ^ open name `letPair` \(h,a) -> 
+withFile name f = suspend $ (force f ^ open name) `letPair` \(h,a) -> 
                             close h `letUnit` a
 
 readM :: HasFH sig => LExp sig Empty (LState Handle (Lower Char))

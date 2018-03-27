@@ -20,7 +20,7 @@ import Data.Word8
 import Control.Monad
 import Data.Maybe
 
-data ByteStringSig sig = HeapSig | BufferSig | PtrSig
+data ByteStringSig sig = BufferSig | PtrSig
 type Buffer = MkLType 'BufferSig
 type Ptr = MkLType 'PtrSig
 
@@ -38,18 +38,20 @@ class HasMILL sig => HasByteString sig where
   memmove :: Int -> Int -> Int -> LExp sig Empty (Ptr ⊸ Ptr ⊸ Ptr)
   memset :: Int -> Int -> Word8 -> LExp sig Empty (Ptr ⊸ Ptr)
 
-  empty  :: LExp sig Empty Buffer
-  size   :: LExp sig Empty (Buffer ⊸ Buffer ⊗ Lower Int)
+  empty   :: LExp sig Empty Buffer
+  size    :: LExp sig Empty (Buffer ⊸ Buffer ⊗ Lower Int)
   is_null :: LExp sig Empty (Buffer ⊸ Buffer ⊗ Lower Bool)
-  head   :: LExp sig Empty (Buffer ⊸ Buffer ⊗ Lower (Maybe Word8))
-  cons   :: Word8 -> LExp sig Empty (Buffer ⊸ Buffer)
-  append :: LExp sig Empty (Buffer ⊸ Buffer ⊸ Buffer ⊗ Buffer)
+  head    :: LExp sig Empty (Buffer ⊸ Buffer ⊗ Lower (Maybe Word8))
+  cons    :: Word8 -> LExp sig Empty (Buffer ⊸ Buffer)
+  append  :: LExp sig Empty (Buffer ⊸ Buffer ⊸ Buffer ⊗ Buffer)
   free_buffer :: LExp sig Empty (Buffer ⊸ One)
 
+-- is Lin a Hask monad transformer
 
 -- Monad transformer versions of some of the library operations
 -- Note: LStateT sig σ α is a non-linear (ordinary) monad
 -- with a linear state of type σ, returning a non-linear value of type α
+                             -- Lift (Buffer ⊸ Buffer ⊗ Lower Int)
 sizeT :: HasByteString sig => LStateT sig Buffer Int
 sizeT = suspend size
 
@@ -90,12 +92,11 @@ cons' b w = cons w ^ b
 pack :: HasByteString sig => [Word8] -> Lift sig Buffer
 pack ls = Suspend $ foldl cons' empty ls
 
-unpackT :: HasByteString sig => LStateT sig Buffer [Word8]
-unpackT = do n ← sizeT
-             ls ← replicateM n headT
-             return $ catMaybes ls
+unpackT :: HasByteString sig => Int -> LStateT sig Buffer [Word8]
+unpackT n = do ls ← replicateM n headT
+               return $ catMaybes ls
 
-unpack :: HasByteString sig => Lift sig Buffer -> Lin sig [Word8]
-unpack b = evalLStateT unpackT b (suspend free_buffer)
+unpack :: HasByteString sig => Int -> Lift sig Buffer -> Lin sig [Word8]
+unpack n b = evalLStateT (unpackT n) b (suspend free_buffer)
 
     

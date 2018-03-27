@@ -22,7 +22,8 @@ import Interface
 -- Shallow Embedding
 data Shallow
 
-data instance LExp Shallow γ τ = SExp {runSExp :: SCtx Shallow γ-> Effect Shallow (LVal Shallow τ)}
+data instance LExp Shallow γ τ = 
+  SExp {runSExp :: SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)}
 --  SExp :: forall (γ :: Ctx) (τ :: LType).
 --          (SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)) 
 --       -> LExp Shallow γ τ

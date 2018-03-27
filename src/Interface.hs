@@ -34,6 +34,7 @@ type (σ :: LType) ⊸ (τ :: LType) = MkLType ('LolliSig σ τ)
 infixr 0 ⊸
 
 -- 3) Define an interface
+-- Exp = Ctx -> LType -> Type
 class HasLolli (exp :: Exp) where
   λ :: forall x σ γ γ' γ'' τ.
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
@@ -216,6 +217,12 @@ composeL = suspend . λ $ \g -> λ $ \f -> λ $ \x -> g ^ (f ^ x)
 compose :: (HasMILL sig, CMerge γ1 γ2 γ)
         => LExp sig γ1 (τ ⊸ ρ) -> LExp sig γ2 (σ ⊸ τ) -> LExp sig γ (σ ⊸ ρ)
 compose g f = force composeL ^ g ^ f
+
+foo :: HasMILL sig => Lift sig (Lower α ⊸ Lower α ⊗ Lower α)
+foo = suspend . λ $ \x -> -- x :: exp _ (Lower α)
+                x >! \a -> -- a :: α
+                put a ⊗ put a
+
 
 --------------------------------------------------------------
 -- Comonad ---------------------------------------------------
