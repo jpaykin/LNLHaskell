@@ -41,7 +41,7 @@ data ArraySig sig = ArraySig Type Type
 type Array token a = MkLType ('ArraySig token a)
 
 class HasMILL sig => HasArray sig where
-  alloc   :: Int -> α -> ExistsArray (LExp sig Empty) α
+  alloc   :: Int -> α -> ExistsArray (LExp sig '[]) α
   drop    :: LExp sig γ (Array token a) -> LExp sig γ One
   slice   :: (Int -> Bool) 
           -> LExp sig γ (Array token a) 

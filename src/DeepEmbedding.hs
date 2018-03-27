@@ -31,7 +31,7 @@ data Deep
 -- individual domains. This allows domains to be easily composed.
 type Dom = Sig -> Exp
 data instance LExp Deep γ τ where
-  Var :: CSingletonCtx x τ γ => Sing x -> LExp Deep γ τ
+  Var :: CSingletonCtx x τ γ => Proxy x -> LExp Deep γ τ
   Dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
          Domain Deep dom 
       => dom Deep γ τ
@@ -60,17 +60,17 @@ instance Eval Deep where
 -- Interface-----------------------------------------------
 -----------------------------------------------------------
 
-data VarName x σ = VarName (Sing x)
+data VarName x σ = VarName (Proxy x)
 
 instance HasVar (LExp Deep) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => Sing x -> LExp Deep γ σ
+  var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> LExp Deep γ σ
   var = Var
 
 -- Lolli -------------------------------------------------
 
 data LolliExp :: Sig -> Exp where
   Abs :: CAddCtx x σ γ γ'
-      => Sing x
+      => Proxy x
       -> LExp sig γ' τ
       -> LolliExp sig γ (σ ⊸ τ)
   App :: CMerge γ1 γ2 γ
@@ -80,7 +80,7 @@ data LolliExp :: Sig -> Exp where
 data instance LVal Deep (σ ⊸ τ) where
   VAbs :: CAddCtx x σ γ γ'
        => ECtx Deep γ
-       -> Sing x
+       -> Proxy x
        -> LExp Deep γ' τ
        -> LVal Deep (σ ⊸ τ)
 
@@ -88,13 +88,13 @@ instance HasLolli (LExp Deep) where
   λ       :: forall x (σ :: LType) γ γ' γ'' τ.
              (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
           => (LExp Deep γ'' σ -> LExp Deep γ' τ) -> LExp Deep γ (σ ⊸ τ)
-  λ f     = Dom $ Abs x (f $ Var x) where x = (sing :: Sing x)
+  λ f     = Dom $ Abs x (f $ Var x) where x = (Proxy :: Proxy x)
   e1 ^ e2 = Dom $ App e1 e2
 
 instance Domain Deep LolliExp where
   evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: LExp Deep γ1 (σ ⊸ τ)) (e2 :: LExp Deep γ2 σ)) ρ = do
-    VAbs ρ' (x :: Sing x) e1' <- eval e1 ρ1
+    VAbs ρ' (x :: Proxy x) e1' <- eval e1 ρ1
     v2 <- eval e2 ρ2
     eval e1' (add x v2 ρ')
     where
@@ -105,7 +105,7 @@ instance Domain Deep LolliExp where
 -- One -------------------------------------------------
 
 data OneExp :: Sig -> Exp where
-  Unit :: OneExp sig 'Empty One
+  Unit :: OneExp sig '[] One
   LetUnit :: CMerge γ1 γ2 γ => LExp sig γ1 One -> LExp sig γ2 τ -> OneExp sig γ τ
 data instance LVal Deep One = VUnit
 
@@ -131,7 +131,7 @@ data TensorExp :: Sig -> Exp where
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2'' )
 --          => VarName x1 σ1 -> VarName x2 σ2
-          => Sing x1 -> Sing x2
+          => Proxy x1 -> Proxy x2
           -> LExp sig γ1 (σ1 ⊗ σ2)
           -> LExp sig γ2'' τ
           -> TensorExp sig γ τ
@@ -154,10 +154,10 @@ instance HasTensor (LExp Deep) where
       -> LExp Deep γ τ
   letPair e f = Dom $ LetPair x1 x2 e $ f (Var x1,Var x2)
     where
-      x1 :: Sing x1
-      x1 = sing
-      x2 :: Sing x2
-      x2 = sing
+      x1 :: Proxy x1
+      x1 = Proxy
+      x2 :: Proxy x2
+      x2 = Proxy
 
 instance  Domain Deep TensorExp where
   evalDomain (Pair (e1 :: LExp Deep γ1 τ1) (e2 :: LExp Deep γ2 τ2)) ρ =
@@ -182,7 +182,7 @@ data PlusExp :: Sig -> Exp where
   Inl :: LExp sig γ σ1 -> PlusExp sig γ (σ1 ⊕ σ2)
   Inr :: LExp sig γ σ2 -> PlusExp sig γ (σ1 ⊕ σ2)
   Case :: (CMerge γ1 γ2 γ, CAddCtx x1 σ1 γ2 γ21, CAddCtx x2 σ2 γ2 γ22)
-       => Sing x1 -> Sing x2
+       => Proxy x1 -> Proxy x2
        -> LExp sig γ1 (σ1 ⊕ σ2) -> LExp sig γ21 τ -> LExp sig γ22 τ -> PlusExp sig γ τ
 data instance LVal Deep (σ1 ⊕ σ2) = 
     VInl (LVal Deep σ1) | VInr (LVal Deep σ2)
@@ -202,7 +202,7 @@ instance  HasPlus (LExp Deep) where
         -> LExp Deep γ τ
   caseof e f1 f2 = Dom $ Case x x e (f1 $ var x) (f2 $ var x)
     where
-      x = (sing :: Sing x)
+      x = (Proxy :: Proxy x)
 
 instance  Domain Deep PlusExp where
   evalDomain (Inl e) ρ = VInl <$> eval e ρ
@@ -243,7 +243,7 @@ instance  Domain Deep WithExp where
 -- Lower -------------------------------------------------
 
 data LowerExp :: Sig -> Exp where
-  Put :: a -> LowerExp sig Empty (Lower a)
+  Put :: a -> LowerExp sig '[] (Lower a)
   LetBang :: CMerge γ1 γ2 γ
           => LExp sig γ1 (Lower a) -> (a -> LExp sig γ2 τ) -> LowerExp sig γ τ
 data instance LVal Deep (Lower a) = VPut a

@@ -14,6 +14,8 @@ import GHC.Prim
 import Control.Monad
 import System.TimeIt
 import Data.Singletons (sing,Sing(..))
+import Data.Proxy
+ 
 
 import Prelude hiding (lookup,(^))
 import qualified Prelude as Prelude
@@ -61,7 +63,7 @@ wait :: (HasOne exp, CMerge γ1 γ2 γ)
      => exp γ1 One -> exp γ2 τ -> exp γ τ
 wait = letUnit
 
-done :: HasOne exp => exp Empty One
+done :: HasOne exp => exp '[] One
 done = unit
 
 
@@ -226,7 +228,7 @@ instance Eval Sessions where
     fromVPut (Chan c) = recvLower c
 
 instance HasVar (LExp Sessions) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => Sing x -> LExp Sessions γ σ
+  var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> LExp Sessions γ σ
   var x = SExp $ \γ (c :: UChan) -> 
             case Classes.lookup x γ of Chan c' -> linkU c c'
 
@@ -239,7 +241,7 @@ instance HasLolli (LExp Sessions) where
             (v,c) <- recvLolli c
             runSExp (f $ var x) (add x v ρ) c
     where
-      x = (sing :: Sing (Fresh γ))
+      x = (Proxy :: Proxy (Fresh γ))
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => LExp Sessions γ1 (σ ⊸ τ) -> LExp Sessions γ2 σ -> LExp Sessions γ τ
@@ -284,8 +286,8 @@ instance HasTensor (LExp Sessions) where
                 let ρ2' = add x2 (Chan y) (add x1 v ρ2)
                 runSExp (f (var x1,var x2)) ρ2' c
       where 
-        x1 = (sing :: Sing x1)
-        x2 = (sing :: Sing x2)
+        x1 = (Proxy :: Proxy x1)
+        x2 = (Proxy :: Proxy x2)
 
     -- letPair e e' = SExp $ \ρ c ->  do 
     --                      let (ρ1,ρ2) = split ρ

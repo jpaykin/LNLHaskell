@@ -43,7 +43,7 @@ data instance LVal Shallow (MkLType ('LolliSig σ τ)) =
 
 instance Monad (Effect Shallow) => HasLolli (LExp Shallow) where
   λ f = SExp $ \(γ :: ECtx Shallow γ) -> return . VAbs $ \s -> 
-         let x = (sing :: Sing (Fresh γ)) 
+         let x = (Proxy :: Proxy (Fresh γ)) 
          in runSExp (f $ var x) (add x s γ)
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
@@ -84,8 +84,8 @@ instance Monad (Effect Shallow) => HasTensor (LExp Shallow) where
                                 VPair v1 v2 <- runSExp e ρ1
                                 runSExp (f (var x1,var x2)) (add x2 v2 (add x1 v1 ρ2))
     where
-      x1 = (sing :: Sing x1)
-      x2 = (sing :: Sing x2)
+      x1 = (Proxy :: Proxy x1)
+      x2 = (Proxy :: Proxy x2)
 
 
 data instance LVal Shallow (MkLType 'BottomSig)
@@ -108,7 +108,7 @@ instance Monad (Effect Shallow) => HasPlus (LExp Shallow) where
         VLeft  s1 -> runSExp (f1 $ var x) $ add @σ1 x s1 g2
         VRight s2 -> runSExp (f2 $ var x) $ add @σ2 x s2 g2
     where
-      x = (sing :: Sing x)
+      x = (Proxy :: Proxy x)
 
 data instance LVal Shallow (MkLType ('WithSig σ τ)) = VWith (LVal Shallow σ) (LVal Shallow τ)
 instance Monad (Effect Shallow) => HasWith (LExp Shallow) where

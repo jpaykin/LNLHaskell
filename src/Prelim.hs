@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeApplications, ScopedTypeVariables, TypeInType,
              TypeOperators, GADTs, TypeFamilies, UndecidableInstances,
              MultiParamTypeClasses, FlexibleInstances, AllowAmbiguousTypes,
-             InstanceSigs, RankNTypes, ConstraintKinds
+             InstanceSigs, RankNTypes, ConstraintKinds, DefaultSignatures
 #-}
 --{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors #-}
 
@@ -13,12 +13,22 @@ import Data.Array
 --import GHC.TypeLits (TypeError, ErrorMessage(..))
 import GHC.TypeLits
 import Data.Type.Equality
-import Data.Singletons
+import Data.Singletons hiding (Nat)
+import Data.Singletons.Prelude.Eq
 import Unsafe.Coerce
 
 --------------------------------------------
 -- Nats ------------------------------------
 --------------------------------------------
+
+
+
+eqSNat :: (KnownNat m, KnownNat n)
+       => proxy m -> proxy n
+       -> Either (Dict (m ~ n, (m == n) ~ 'True, (n == m) ~ 'True))
+                 (Dict ((m == n) ~ 'False, (n == m) ~ 'False))
+eqSNat x y = if natVal x == natVal y then Left (unsafeCoerce (Dict :: Dict ()))
+                                     else Right (unsafeCoerce (Dict :: Dict ()))
 
 {-
 type family EqNat (m :: Nat) (n :: Nat) :: Bool where
@@ -242,7 +252,25 @@ type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
   InListCons ('InList pfM) = 'InList ('InS pfM)
 -}
 
+type family CompareOrd (ord :: Ordering) (lt :: α) (eq :: α) (gt :: α) :: α where
+  CompareOrd LT lt eq gt = lt
+  CompareOrd EQ lt eq gt = eq
+  CompareOrd GT lt eq gt = gt
+
+type family (x :: Nat) ==? (y :: Nat) :: Bool where
+  x ==? y = CompareOrd (CmpNat x y) 'False 'True 'False
+
+type family Max (x :: Nat) (y :: Nat) :: Nat where
+  Max x y = CompareOrd (CmpNat x y) y y x
+
+--type family (x :: Nat) <==? (y :: Nat) :: Bool where
+--  x <==? y = CompareOrd (CmpNat x y) 'True 'True 'False
+
 type x < y = CmpNat x y ~ LT
+
+--test2 :: Dict (CmpNat 1 2 ~ 'LT)
+--test2 = Dict
+
 
 ltS :: forall x. KnownNat x => Dict (x < S x)
 ltS = undefined

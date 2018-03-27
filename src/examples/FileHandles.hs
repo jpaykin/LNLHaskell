@@ -25,7 +25,7 @@ data FHSig sig = FHSig
 type Handle = MkLType 'FHSig
 
 class HasMILL sig => HasFH sig where
-  open :: String -> LExp sig Empty Handle
+  open :: String -> LExp sig '[] Handle
   read :: LExp sig γ Handle -> LExp sig γ (Handle ⊗ Lower Char)
   write :: LExp sig γ Handle -> Char -> LExp sig γ Handle
   close :: LExp sig γ Handle -> LExp sig γ One
@@ -46,7 +46,7 @@ instance HasFH Shallow where
                             return S.VUnit
                              
 data FHExp :: Sig -> Exp where
-  Open :: String -> FHExp sig Empty Handle
+  Open :: String -> FHExp sig '[] Handle
   Read :: LExp sig γ Handle -> FHExp sig γ (Handle ⊗ Lower Char)
   Write :: LExp sig γ Handle -> Char -> FHExp sig γ Handle
   Close :: LExp sig γ Handle -> FHExp sig γ One
@@ -70,7 +70,7 @@ instance Domain Deep FHExp where
 writeString :: HasFH sig => String -> LExp sig γ Handle -> LExp sig γ Handle
 writeString s e = foldl write e s
 
-readWriteTwice :: HasFH sig => LExp sig Empty (Handle ⊸ Handle)
+readWriteTwice :: HasFH sig => LExp sig '[] (Handle ⊸ Handle)
 readWriteTwice = λ $ \h -> read h `letPair` \(h,x) ->
                            x >! \c ->
                            writeString [c,c] h
@@ -79,10 +79,10 @@ withFile :: HasFH sig => String -> Lift sig (Handle ⊸ Handle ⊗ Lower a) -> L
 withFile name f = suspend $ force f ^ open name `letPair` \(h,a) -> 
                             close h `letUnit` a
 
-readM :: HasFH sig => LExp sig Empty (LState Handle (Lower Char))
+readM :: HasFH sig => LExp sig '[] (LState Handle (Lower Char))
 readM = λ read
 
-writeM :: HasFH sig => Char -> LExp sig Empty (LState Handle One)
+writeM :: HasFH sig => Char -> LExp sig '[] (LState Handle One)
 writeM c = λ $ \h -> write h c ⊗ unit
 
 readWriteTwiceM :: HasFH sig => Lift sig (LState Handle One)

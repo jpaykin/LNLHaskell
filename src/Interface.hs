@@ -16,7 +16,11 @@ import Classes
 
 import Data.Kind
 import qualified Data.Singletons as Sing
+import Data.Singletons (Proxy)
+import Data.Constraint (Dict(..))
+
 type (~>) a b = Sing.TyFun a b -> Type
+
 
 
 class Eval (sig :: Sig) where
@@ -53,7 +57,7 @@ data OneSig ty = OneSig
 type One = (MkLType 'OneSig :: LType)
 
 class HasOne exp where
-  unit :: exp (Empty :: Ctx) (One :: LType)
+  unit :: exp ('[] :: Ctx) (One :: LType)
   letUnit :: CMerge γ1 γ2 γ 
           => exp γ1 One -> exp γ2 τ -> exp γ τ
 
@@ -81,7 +85,8 @@ class HasTensor exp where
              , CAddCtx x2 σ2 γ2' γ2''
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
+             , x1 ~ Fresh γ2, x2 ~ Fresh γ2'
+             )
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
@@ -163,7 +168,7 @@ data LowerSig ty = LowerSig Type
 type Lower a = (MkLType ('LowerSig a) :: LType)
 
 class HasLower exp where
-  put  :: a -> exp Empty (Lower a)
+  put  :: a -> exp '[] (Lower a)
   (>!) :: CMerge γ1 γ2 γ => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
 
 λbang :: ( HasLower (LExp sig), HasLolli (LExp sig), WFFresh (Lower a) γ)
@@ -173,10 +178,10 @@ class HasLower exp where
 -- Lift --------------------------------------------------
 
 class HasLift sig τ lift | lift -> sig τ where
-  suspend :: LExp sig Empty τ -> lift
-  force   :: lift -> LExp sig Empty τ
+  suspend :: LExp sig '[] τ -> lift
+  force   :: lift -> LExp sig '[] τ
 
-data Lift (sig :: Sig) (τ :: LType) = Suspend (LExp sig Empty τ)
+data Lift (sig :: Sig) (τ :: LType) = Suspend (LExp sig '[] τ)
 
 instance HasLift sig τ (Lift sig τ) where
   suspend = Suspend
@@ -202,10 +207,19 @@ idL = suspend . λ $ \x -> x
 sApp :: HasILL sig => Lift sig (σ ⊸ τ) -> Lift sig σ -> Lift sig τ
 sApp f e = suspend $ force  f ^ force e
 
+
+
+pair :: HasMILL sig => Lift sig (σ ⊸ τ ⊸ σ ⊗ τ)
+pair = suspend . λ $ \x ->
+                 λ $ \y ->
+                 x ⊗ y
+
+
 uncurryL :: HasMILL sig => Lift sig ((σ1 ⊸ σ2 ⊸ τ) ⊸ σ1 ⊗ σ2 ⊸ τ)
 uncurryL = suspend . λ $ \f -> λ $ \x -> 
     x `letPair` \(x1,x2) -> 
     f ^ x1 ^ x2
+
 uncurry :: (HasMILL sig, WFCtx γ) => LExp sig γ (σ1 ⊸ σ2 ⊸ τ) -> LExp sig γ (σ1 ⊗ σ2 ⊸ τ)
 uncurry e = force uncurryL ^ e
 
@@ -240,10 +254,10 @@ instance HasLift sig (Lower α) (Lin sig α) where
     force (Lin e) = force e
 
 
---suspendL :: LExp sig Empty (Lower a) -> Lin sig a
+--suspendL :: LExp sig '[] (Lower a) -> Lin sig a
 --suspendL = Lin . suspend
 
---forceL :: Lin sig a -> LExp sig Empty (Lower a)
+--forceL :: Lin sig a -> LExp sig '[] (Lower a)
 --forceL (Lin x) = force x
 
 instance (HasLower (LExp sig)) => Functor (Lin sig) where
@@ -270,17 +284,17 @@ instance τ ~ (f @@ (Lower α)) => HasLift sig τ (LinT sig f α) where
     suspend = LinT . suspend
     force (LinT x) = force x
 
---suspendT :: LExp sig Empty (f @@ (Lower a)) -> LinT sig f a
+--suspendT :: LExp sig '[] (f @@ (Lower a)) -> LinT sig f a
 --suspendT = LinT . suspend
 
---forceT :: forall f sig a. LinT sig f a -> LExp sig Empty (f @@ (Lower a))
+--forceT :: forall f sig a. LinT sig f a -> LExp sig '[] (f @@ (Lower a))
 --forceT (LinT e) = force e
 
-lowerT :: HasILL sig => (a -> b) -> LExp sig Empty (Lower a ⊸ Lower b)
+lowerT :: HasILL sig => (a -> b) -> LExp sig '[] (Lower a ⊸ Lower b)
 lowerT f = λ $ \x -> x >! \a -> put $ f a
 
 lowerT2 :: HasILL sig => (a -> b -> c) 
-        -> LExp sig Empty (Lower a ⊸ Lower b ⊸ Lower c)
+        -> LExp sig '[] (Lower a ⊸ Lower b ⊸ Lower c)
 lowerT2 f = λ $ \x -> x >! \a ->
             λ $ \y -> y >! \b -> put $ f a b
 
@@ -295,7 +309,7 @@ instance (HasILL sig, LApplicative sig f) => Applicative (LinT sig f) where
     (<*>) :: LinT sig f (a -> b) -> LinT sig f a -> LinT sig f b
     f <*> x = suspend $ (lowerT' <$$> force f) <**> force x
       where
-        lowerT' :: LExp sig Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
+        lowerT' :: LExp sig '[] (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
         lowerT' = λ $ \f -> f >! lowerT
 instance (HasILL sig, LMonad sig f) => Monad (LinT sig f) where
     x >>= f = suspend $ force x =>>= (λ $ \y -> y >! (force . f))
@@ -370,273 +384,5 @@ type LStateT sig σ α = LinT sig (LState' σ) α
 
 class HasVar exp where
   var :: forall x (σ :: LType) (γ :: Ctx). 
-         CSingletonCtx x σ γ => Sing x -> exp γ σ
+         CSingletonCtx x σ γ => Proxy x -> exp γ σ
 
-{-
-
-
----------------------------------------------------------------
--- Patterns ---------------------------------------------------
----------------------------------------------------------------
-
-
-
-
-
-data Pat γin γout γsing σ where
---  X    :: exp γ σ -> Pat exp γ σ
-  U    :: Pat γ γ Empty One
-  Put  :: a -> Pat γ γ Empty (Lower a)
-  Pair :: (CMerge γ1 γ2 γ, WFFresh σ1 γ1, WFFresh σ2 γ2)
-       => Pat γin1 γout1 γ1 σ1 -> Pat γout1 γout2 γ2 σ2 
-       -> Pat γin1 γout2 γ (σ1 ⊗ σ2)
-  Inl  :: Pat γin γout γ σ1 -> Pat γin γout γ (σ1 ⊕ σ2)
-  Inr  :: Pat γin γout γ σ2 -> Pat γin γout γ (σ1 ⊕ σ2)
-
-type PatMatch exp γin σ τ = forall γout γ. 
-        CMerge γin γ γout => Pat γin γout γ σ -> exp γout τ
-
-class Matchable exp σ where 
-  pat :: Pat γin γout γ σ -> exp γ σ
-  λcase :: (HasLolli exp, WFVar (Fresh γin) σ γin)
-        => PatMatch exp γin σ τ -> exp γin (σ ⊸ τ)
-
-match :: (Matchable exp σ, HasLolli exp, CMerge γ1 γ2 γ, WFVar (Fresh γ2) σ γ2)
-      => exp γ1 σ -> PatMatch exp γ2 σ τ -> exp γ τ
-match e f = (λcase f) ^ e
-
-<<<<<<< HEAD
-
-instance HasOne exp => Matchable exp One where
-  pat U = unit
-  λcase f = λ $ \x -> x `letUnit` f U
-=======
--- Defunctionalization from singletons library!
-class LFunctor lang (f :: LType sig ~> LType sig) where
---  lfmap :: LExp lang 'Empty ((σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
-  lfmap :: CMerge γ1 γ2 γ 
-        => LExp lang γ1 (σ ⊸ τ) -> LExp lang γ2 (f @@ σ) -> LExp lang γ (f @@ τ)
-class LFunctor lang f => LApplicative lang f where
-  lpure :: LExp lang 'Empty (τ ⊸ f @@ τ)
-  llift :: LExp lang 'Empty (f @@ (σ ⊸ τ) ⊸ f @@ σ ⊸ f @@ τ)
-class LApplicative lang m => LMonad lang m where
-  lbind :: LExp lang 'Empty (m @@ σ ⊸ (σ ⊸ m @@ τ) ⊸ m @@ τ)
-
-
--- Linearity monad transformer
-data LinT lang (m :: LType sig ~> LType sig) :: * -> * where
-  LinT :: Lift lang (m @@ Lower a) -> LinT lang m a
-
-forceT :: LinT lang m a -> LExp lang 'Empty (m @@ Lower a)
-forceT (LinT e) = force e
-suspendT :: LExp lang 'Empty (m @@ Lower a) -> LinT lang m a
-suspendT = LinT . Suspend
-
-lowerT :: (Domain LolliDom lang, Domain LowerDom lang)
-       => LExp lang 'Empty (Lower (a -> b) ⊸ Lower a ⊸ Lower b)
-lowerT = λ $ \g -> λ $ \ x -> 
-          g >! \f ->
-          x >! \a -> put $ f a
-
-lowerT2 :: (Domain LolliDom lang, Domain LowerDom lang)
-        => LExp lang 'Empty (Lower (a -> b -> c) ⊸ Lower a ⊸ Lower b ⊸ Lower c)
-lowerT2 = λ $ \f -> λ $ \x -> λ $ \y ->
-    f >! \g -> x >! \a -> y >! \b -> put $ g a b
-
-instance (Domain LowerDom lang, Domain LolliDom lang, LFunctor lang f) 
-      => Functor (LinT lang f) where
-  fmap (g :: a -> b) (x :: LinT lang f a) = 
-    suspendT $ lfmap @lang @f (lowerT `app` put g) (forceT x)
-instance (Domain LowerDom lang, Domain LolliDom lang, LApplicative lang f) 
-      => Applicative (LinT lang f) where
-  pure a = suspendT $ lpure @lang @f `app` put a
-
-  (<*>) :: forall a b. LinT lang f (a -> b) -> LinT lang f a -> LinT lang f b
-  g <*> a = suspendT $ foo `app` forceT a
-    where
-      g' :: LExp lang 'Empty (f @@ (Lower a ⊸ Lower b))
---      g' = lfmap @lang @f @(Lower (a -> b)) @(Lower a ⊸ Lower b) 
---            `app` lowerT `app` forceT g
-      g' = lfmap @lang @f (lowerT @lang @a @b) (forceT g)
-      foo :: LExp lang 'Empty (f @@ (Lower a) ⊸ f @@ (Lower b))
-      foo = llift @lang @f @(Lower a) @(Lower b) `app` g'
-
-instance (Domain LowerDom lang, Domain LolliDom lang, LMonad lang m)
-      => Monad (LinT lang m) where
-  (>>=) :: forall a b. LinT lang m a -> (a -> LinT lang m b) -> LinT lang m b
-  x >>= f = suspendT mb
-    where
-      f' :: LExp lang 'Empty (Lower a ⊸ m @@ (Lower b))
-      f' = λ $ \ x -> x >! (forceT . f)
-      mb :: LExp lang 'Empty (m @@ Lower b)
-      mb = lbind @lang @m @(Lower a) @(Lower b) `app` forceT x `app` f'   
->>>>>>> master
-
-instance HasLower exp => Matchable exp (Lower a) where
-  pat (Put a) = put a
-  λcase f = λ $ \x -> x >! \a -> f (Put a)
-
-instance (HasTensor exp, Matchable exp σ1, Matchable exp σ2) 
-      => Matchable exp (σ1 ⊗ σ2) where
-  pat (Pair p1 p2) = pat p1 ⊗ pat p2
---  λcase f = λ $ \x -> x `letPair` \(x1,x2) -> 
---    x1 `match` \(p1 :: Pat γin1 γout1 γ1 σ1) -> 
---    x2 `match` \(p2 :: Pat γin1 γout1 γ2 σ2) -> f (Pair p1 p2)
-
-
-instance (HasPlus exp, Matchable exp σ1, Matchable exp σ2) 
-      => Matchable exp (σ1 ⊕ σ2) where
-  pat (Inl p1) = inl $ pat p1
-  pat (Inr p2) = inr $ pat p2
---  λcase f = λ $ \x -> caseof x (\y -> y `match` \p -> f (Inl p))
---                               (\y -> y `match` \p -> f (Inr p))
-
-
---swap :: (HasTensor exp, Matchable exp σ1, Matchable exp σ2) 
---     => Lift exp (σ1 ⊗ σ2 ⊸ σ2 ⊗ σ1)
---swap = suspend . λcase $ \(Pair p1 p2) -> pat p2 ⊗ pat p1
-
---instance Matchable exp One where
---  λcase (Match f) = λ $ \x -> x `letUnit` f U
-
---instance (Matchable exp σ1, Matchable exp σ2) => Matchable exp (σ1 ⊗ σ2) where
---  λcase (Match f) = λ $ \x -> x `letPair` \(y,z) -> f (Pair (X y) (X z))
-
---foo = λcase . Match $ \ Pair p1 p2 -> pat p2 ⊗ pat p1
-
-
-<<<<<<< HEAD
--- data PatMatch exp γ (σs :: [LType]) τ where
---   X   :: (CAddTypes σs γ γ', x ~ Fresh γ)
---       => (Tuple γ σs -> exp γ' τ) -> PatMatch exp γ σs τ
---   Put :: (a -> exp γ τ) -> PatMatch exp γ (Lower a) τ
---   Pair :: (CAddCtx x σ1 γ γ', x ~ Fresh γ)
---        => PatMatch2 exp γ σ1 σ2 τ -> PatMatch exp γ (σ1 ⊗ σ2) τ
-  
-=======
-instance HasLStateDom lang => LFunctor lang (LState' σ) where
-  lfmap :: forall γ1 γ2 γ τ1 τ2. CMerge γ1 γ2 γ 
-        => LExp lang γ1 (τ1 ⊸ τ2) -> LExp lang γ2 (LState σ τ1) -> LExp lang γ (LState σ τ2)
-  lfmap f fs = force lfmap' `app` f `app` fs
-    where
-      lfmap' :: Lift lang ((τ1 ⊸ τ2) ⊸ LState σ τ1 ⊸ LState σ τ2)
-      lfmap' = Suspend . λ $ \f -> λ $ \fs -> λ $ \r ->
-        fs `app` r `letPair` \(r,s) ->
-        r ⊗ (f `app` s)
->>>>>>> master
-
--- λcase :: HasLolli exp => PatMatch exp γ σ τ -> exp γ (σ ⊸ τ)
--- λcase (X f)   = λ f
--- λcase (Put f) = λ $ \x -> x >! f
--- λcase (Pair 
-
--- foo :: (Matchable exp (σ1 ⊗ σ2), HasTensor exp, HasLolli exp)
---     => exp Empty (σ1 ⊗ σ2 ⊸ σ2 ⊗ σ1)
--- foo = λcase . Pair . V $ \x1 -> λ $ \x2 -> x2 ⊗ x1
-
-
-
-
-type family AddFresh γ (σ :: LType) :: Ctx where
-  AddFresh γ (MkLType ('TensorSig σ τ)) = 
-    Merge12 (AddFresh γ σ) (Merge12 γ (AddFresh γ σ))
-  AddFresh γ (MkLType ('LowerSig a))    = 'Empty
-  AddFresh γ σ                          = Singleton (Fresh γ) σ
-
-class CAddFresh γ σ γ' | γ σ -> γ', γ' σ -> γ
-
---class Matchable exp σ where
---  pat :: CAddFresh γ σ γ' => Pat σ -> exp γ' σ
---  λcase :: (CAddFresh γ σ γ', CMerge γ γ' γ'')
---        => (Pat σ -> exp γ'' τ) -> exp γ (σ ⊸ τ)
-
---foo :: forall (exp :: Exp) σ τ. 
---       (HasTensor exp, Matchable exp σ, Matchable exp τ, Matchable exp (σ ⊗ τ))
---    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
---foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x
-
-
-{-
-data Bang a = Bang a
-type family Pat (σ :: LType) where
-    Pat ('LType _ ('TensorSig σ τ)) = (Pat σ, Pat τ)
-    Pat ('LType _ ('PlusSig σ τ))   = Either (Pat σ) (Pat τ)
-    Pat ('LType _ ('LowerSig a))    = Bang a
---  Pat _                           = 
-
--- FreshCtx γ σ is a context γ extended with fresh variables for every pattern variable in σ
-class FreshCtx (γ :: Ctx) (σ :: LType) (γ' :: Ctx)
-instance (pf ~ IsInSig TensorSig, FreshCtx γ σ1 γ0, FreshCtx γ0 σ2 γ')
-      => FreshCtx (γ :: Ctx) ('LType pf ('TensorSig σ1 σ2)) γ'
--}
-
-
---type family   FreshCtx (γ :: Ctx) (σ :: LType) :: Ctx where
---    FreshCtx γ ('LType _ ('TensorSig σ τ)) = FreshCtx (FreshCtx γ σ) τ
---    FreshCtx γ ('LType _ ('PlusSig σ τ))   = FreshCtx (FreshCtx γ σ) τ
---    FreshCtx γ σ                           = AddFresh γ σ
-
---class (Matchable' exp (Div γout γin) σ (Pat σ), CMerge γin (Div γout γin) γout) 
---    => Matchable exp γin γout σ 
---type Matchable (exp :: Exp) σ = 
---    (WFCtx (FreshCtx 'Empty σ), Matchable' exp (FreshCtx 'Empty σ) σ (Pat σ))
-
-{-
-type Matchable exp σ = Matchable' exp σ (Pat σ)
--- essentially saying that pat ≅ exp (FreshCtx Empty σ) σ
-class Matchable' (exp :: Exp) σ pat where
-  pat   :: FreshCtx 'Empty σ γ => pat -> exp γ σ
-  λcase :: (FreshCtx γ σ γ')
-        => (pat -> exp γ' τ) -> exp γ (σ ⊸ τ)
--}
-
--- γ0 is a context of variables not to use
--- class HasLolli exp 
---    => Matchable' (exp :: Exp) (γ :: Ctx)
---                  (σ :: LType) (pat :: Type) where
---   pat   :: pat -> exp γ σ
---   λcase :: forall γ0 γ' τ. 
---            CMerge γ γ0 γ' => (pat -> exp γ' τ) -> exp γ0 (σ ⊸ τ)
-
---  match :: (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
---        => exp γ1 σ -> (pat -> exp γ2' τ) -> exp γ' τ
---  match e f = λcase f ^ e
-
---instance ( CMerge γ1 γ2 γ, HasTensor exp
---         , Matchable' exp γ1 σ1 pat1, Matchable' exp γ2 σ2 pat2
---         , τ ~ (σ1 ⊗ σ2) )
---      => Matchable' (exp :: Exp) γ τ (pat1,pat2) where
-
---   pat (p1,p2) = (pat @_ @_ @γ1 @σ1 p1) ⊗ (pat @_ @_ @γ2 @σ2 p2)
-
---   λcase :: forall γ0 γ' ρ.
---            CMerge γ0 γ γ' => ((pat1,pat2) -> exp γ' ρ) -> exp γ0 (σ1 ⊗ σ2 ⊸ ρ)
---   λcase f = uncurry f'
- --    uncurry @exp $ λcase (\p1 -> λcase @_ @exp (\p2 -> f (p1,p2)))
---     where
----       f' :: exp γ0 (σ1 ⊸ σ2 ⊸ ρ)
---       f' = undefined -- λcase @_ @exp @γ1 @σ1 @pat1 $ \p1 -> _
-    
-
---  match :: forall γ1 γ2 γ' γ2' τ. (CMerge γ1 γ2 γ', CMerge γ γ2 γ2')
---        => exp γ1 (σ1 ⊗ σ2) -> ((pat1,pat2) -> exp γ2' τ) -> exp γ' τ
---  match = undefined
---  match e f   = letPair @_ @_ @_ @_ @_ @_ @_ @γ1 e $ \(x1,x2) ->
---                match @_ @exp x1 $ \p1 ->
---                match @_ @exp x2 $ \p2 ->
---                f (p1,p2)
-
-
---instance (HasPlus exp, Matchable' exp γ σ1 pat1, Matchable' exp γ σ2 pat2, τ ~ (σ1 ⊕ σ2))
---      => Matchable' exp γ τ (Either pat1 pat2) where
---  pat (Left  p) = inl $ pat p
---  pat (Right p) = inr $ pat p
-
--- Example programs
-
---foo :: forall (exp :: Exp) σ τ. 
---       (HasTensor exp, Matchable exp σ, Matchable exp τ)
---    => Lift exp (σ ⊗ τ ⊸ τ ⊗ σ)
---foo = Suspend . λcase $ \(x,y) -> pat y ⊗ pat x
-
--}

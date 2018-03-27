@@ -14,8 +14,10 @@ module Quantum where
 --import Control.Applicative
 --import Data.Typeable
 import Prelude hiding ((^))
-import Data.Singletons
+--import Data.Singletons
 --import Numeric.LinearAlgebra hiding (toInt) -- hmatrix library
+import GHC.TypeLits
+
 
 import Prelim hiding (One)
 import Types
@@ -30,7 +32,7 @@ type Qubit = MkLType MkQubit
 
 
 class HasMILL sig => HasQuantum sig where
-  new :: Bool -> LExp sig Empty Qubit
+  new :: Bool -> LExp sig '[] Qubit
   meas :: LExp sig γ Qubit -> LExp sig γ (Lower Bool)
   unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> LExp sig γ σ
 
@@ -54,7 +56,7 @@ data instance LVal Deep Qubit = QId Int
 
   
 data QuantumExp :: Sig -> Exp where
-  New     :: Bool -> QuantumExp sig 'Empty Qubit
+  New     :: Bool -> QuantumExp sig '[] Qubit
   Meas    :: LExp sig γ Qubit -> QuantumExp sig γ (Lower Bool)
   Unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> QuantumExp sig γ σ
 
@@ -158,9 +160,9 @@ interpU (Alt (u0 :: Unitary σ') u1) =
 interpU (Transpose u) = transpose $ interpU u
 
 type family   NumQubits (τ :: LType) :: Nat 
-type instance NumQubits One            = 'Z
-type instance NumQubits Qubit          = 'S 'Z
-type instance NumQubits (τ1 ⊗ τ2) = NumQubits τ1 `Plus` NumQubits τ2
+type instance NumQubits One            = 0
+type instance NumQubits Qubit          = 1
+type instance NumQubits (τ1 ⊗ τ2) = NumQubits τ1 + NumQubits τ2
 
 {-
 instance HasQuantumDom lang => Domain QuantumDom (lang :: Lang sig) where
@@ -200,7 +202,7 @@ type instance NumQubits ('LType _ ('TensorSig τ1 τ2)) = NumQubits τ1 `Plus` N
 -}
 
 --type instance NumQubits ('LType _ ('PlusSig τ1 τ2))   = NumQubits τ1 `Plus` NumQubits τ2
-type instance NumQubits (Lower _)      = 'Z
+type instance NumQubits (Lower _)      = 0
   
 -- EXAMPLES
 
@@ -259,11 +261,17 @@ main = print $ run main'
 
 -- Dependent fourier transform
 
-type family (σ :: LType) ⊗⊗ (n :: Nat) where
-  σ ⊗⊗ Z = One
-  σ ⊗⊗ S Z = σ
-  σ ⊗⊗ (S (S n)) = σ ⊗ (σ ⊗⊗ S n)
+type family (σ :: LType) ⊗⊗ (n :: Nat) :: LType where
+    σ ⊗⊗ n = CompareOrd (CmpNat n 1)
+                        One                -- n = 0
+                        σ                  -- n = 1
+                        (σ ⊗ (σ ⊗⊗ (n-1))) -- n >= 2
+--  σ ⊗⊗ Z = One
+--  σ ⊗⊗ S Z = σ
+--  σ ⊗⊗ (S (S n)) = σ ⊗ (σ ⊗⊗ S n)
 
+
+{- TODO: fix
 rotations :: forall (m :: Nat) (n :: Nat) sig. (HasQuantum sig)
           => Sing m -> Sing n -> Lift sig (Qubit ⊗⊗ S n ⊸ Qubit ⊗⊗ S n)
 rotations _ SZ      = idL
@@ -280,3 +288,4 @@ fourier (SS SZ) = suspend . λ $ unitary Hadamard
 fourier (SS n'@(SS _)) = Suspend . λpair $ \(q,w) ->
         force (fourier n') ^ w `letin` \w -> 
         force (rotations (SS n') n') ^ (q ⊗ w)
+-}
