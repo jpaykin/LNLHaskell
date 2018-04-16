@@ -2,7 +2,7 @@
 
 Linear types for Haskell in the style of Linear/Non-Linear logic.
 
-This iteration of the code is accompanied by a paper in submission to ICFP 2017:
+This iteration of the code accompanies a paper presented at the Haskell Symposium 2017:
 "The Linearity Monad"
 
 ------------------
