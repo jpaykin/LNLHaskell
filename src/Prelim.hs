@@ -27,8 +27,9 @@ eqSNat :: (KnownNat m, KnownNat n)
        => proxy m -> proxy n
        -> Either (Dict (m ~ n, (m == n) ~ 'True, (n == m) ~ 'True))
                  (Dict ((m == n) ~ 'False, (n == m) ~ 'False))
-eqSNat x y = if natVal x == natVal y then Left (unsafeCoerce (Dict :: Dict ()))
-                                     else Right (unsafeCoerce (Dict :: Dict ()))
+eqSNat x y = if natVal x == natVal y 
+             then Left  $ unsafeCoerce (Dict :: Dict ((),(),()))
+             else Right $ unsafeCoerce (Dict :: Dict ((),()))
 
 {-
 type family EqNat (m :: Nat) (n :: Nat) :: Bool where
@@ -273,7 +274,7 @@ type x < y = CmpNat x y ~ LT
 
 
 ltS :: forall x. KnownNat x => Dict (x < S x)
-ltS = undefined
+ltS = unsafeCoerce (Dict :: Dict ())
 --ltS = case sameNat (Proxy :: Proxy x) (Proxy :: Proxy 0) of
 --        Just Refl -> Dict
 --        Nothing   -> case ltS @(x-1) of Dict -> Dict

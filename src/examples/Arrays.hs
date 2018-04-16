@@ -59,6 +59,7 @@ class HasMILL sig => HasArray sig where
           -> LExp sig γ (Array token a ⊗ Lower a)
   write   :: Int -> LExp sig γ (Array token a) -> a -> LExp sig γ (Array token a)
   size    :: LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower Int)
+  ranges  :: LExp sig γ (Array token α) -> LExp sig γ (Array token α ⊗ Lower [Range])
 
 type instance Effect Shallow = IO
 
@@ -66,7 +67,7 @@ type instance Effect Shallow = IO
 type Range = (Int,Int)
 
 validRange :: Range -> Bool
-validRange (min,max) = min <= max
+validRange (min,max) = 0 <= min && min <= max
 
 validRanges :: [Range] -> Bool
 validRanges []                         = True
@@ -99,7 +100,7 @@ inRanges i [] = False
 inRanges i (r:rs) = inRange i r || inRanges i rs
 
 sizeRange :: Range -> Int
-sizeRange (min,max) = min-max+1
+sizeRange (min,max) = max-min+1
 
 sizeRanges :: [Range] -> Int
 sizeRanges [] = 0
@@ -112,14 +113,16 @@ offsetRange i r = i + fst r
 
 offsetRanges :: Int -> [Range] -> Int
 offsetRanges i []     = 0
-offsetRanges i (r:rs) | inRange i r = offsetRange i r
-                      | otherwise   = offsetRanges i rs
+offsetRanges i (r:rs) | i < sizeRange r = offsetRange i r
+                      | otherwise       = offsetRanges (i + sizeRange r) rs
 
 offsetRangeInProp :: Int -> Range -> Bool
-offsetRangeInProp i r = (0 <= i && validRange r && i < sizeRange r) <= inRange i r
+offsetRangeInProp i r = 
+    (0 <= i && validRange r && i < sizeRange r) <= inRange (offsetRange i r) r
 
 offsetRangesInProp :: Int -> [Range] -> Bool
-offsetRangesInProp i rs = (0 <= i && validRanges rs && i < sizeRanges rs) <= inRanges i rs
+offsetRangesInProp i rs = (0 <= i && validRanges rs && i < sizeRanges rs) 
+                        <= inRanges (offsetRanges i rs) rs
 
 insertRangeProp :: Range -> [Range] -> Bool
 insertRangeProp r rs = 
@@ -136,13 +139,6 @@ mergeRangesProp2 :: Int -> [Range] -> [Range] -> Bool
 mergeRangesProp2 i rs1 rs2 = 
     (inRanges i rs1 || inRanges i rs2) == inRanges i (mergeRanges rs1 rs2)
 
-{-
-splitRange :: Int -> Range -> (Range, Range)
-splitRange i (min,max) | i < min   = ((i,i),(min,max))
-                       | i == min  = undefined
-                       | i > max   = ((min,max), (i,i))
-                       | otherwise = ((min,i-1),(i,max))
--}
 
 splitRanges :: Int -> [Range] -> ([Range],[Range])
 splitRanges i []                         = ([],[])
@@ -204,9 +200,12 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
                                 runSExp (k $ var x) (add x arr γ)
   dealloc e = SExp $ \γ -> runSExp e γ >> return VUnit
 
-  slice i e = SExp $ \γ -> do VArray rs arr <- runSExp e γ 
-                              let (rs1,rs2) = splitRanges i rs
-                              return $ VPair (VArray rs1 arr) (VArray rs2 arr)
+  slice i e = SExp $ \γ -> do 
+    VArray rs arr <- runSExp e γ 
+    if i < sizeRanges rs then let x = offsetRanges i rs
+                                  (rs1,rs2) = splitRanges x rs
+                              in return $ VPair (VArray rs1 arr) (VArray rs2 arr)
+    else error $ "Slice " ++ show i ++ " out of bounds of " ++ show rs
 
 
   join e1 e2 = SExp $ \γ -> do  let (γ1,γ2) = split γ
@@ -234,13 +233,16 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
   write i e a = SExp $ \γ -> do
         VArray rs arr <- runSExp e γ
         if i < sizeRanges rs then do let x = offsetRanges i rs
-                                     IO.writeArray arr i a
+                                     IO.writeArray arr x a
                                      return $ VArray rs arr
         else error $ "Write " ++ show i ++ " out of bounds " ++ show rs
 
   size e = SExp $ \γ -> do VArray rs arr <- runSExp e γ
                            let n = sizeRanges rs
                            return $ VPair (VArray rs arr) (VPut n)
+
+  ranges e = SExp $ \γ -> do VArray rs arr <- runSExp e γ
+                             return $ VPair (VArray rs arr) (VPut rs)
 
 
 
@@ -254,6 +256,8 @@ writeT i a = suspend . λ $ \arr -> write i arr a ⊗ put ()
 sizeT :: HasArray sig => LStateT sig (Array token α) Int
 sizeT = suspend . λ $ \arr -> size arr
 
+rangesT :: HasArray sig => LStateT sig (Array token α) [Range]
+rangesT = suspend . λ $ \arr -> ranges arr
 
 
 
@@ -276,6 +280,74 @@ sliceT i st1 st2 = -- trace ("slicing at index " ++ show i) $
                      force st1 ^ arr1 `letPair` \(arr1,res) -> res >! \_ ->
                      force st2 ^ arr2 `letPair` \(arr2,res) -> res >! \_ ->
                      join arr1 arr2 ⊗ put ()
+
+
+
+foldArrayT :: HasArray sig
+            => (a -> b -> b)
+            -> b -> LinT sig (LState' (Array token a)) b
+foldArrayT f b = do n <- sizeT
+                    foldArrayT' n f b
+  where
+    foldArrayT' n f b | n <= 0    = return b
+                      | otherwise = do b' <- foldArrayT' (n-1) f b
+                                       a  <- readT (n-1)
+                                       return $ f a b'
+
+
+toListT :: HasArray sig => LinT sig (LState' (Array token a)) [a]
+toListT = foldArrayT (\a ls -> (ls ++ [a])) []
+--  where
+--    snoc a ls = ls ++ [a]
+
+fromListT :: HasArray sig => [α] -> LStateT sig (Array token α) ()
+fromListT ls = fromListT' 0 ls
+  where
+    fromListT' i []     = return ()
+    fromListT' i (a:ls) = writeT i a >> fromListT' (i+1) ls
+                             
+
+allocT :: HasArray sig 
+        => Int -> α -> (forall token. LStateT sig (Array token α) β)
+        -> Lin sig β
+allocT n a op = suspend $ alloc n a $ \arr ->
+                          force op ^ arr `letPair` \(arr,b) ->
+                          dealloc arr `letUnit` b
+runArrayList  :: HasArray sig
+              => (forall token. LStateT sig (Array token α) β) 
+              -> [α] -> Lin sig ([α], β)
+runArrayList op ls = allocT (length ls) (head ls) $ do fromListT ls
+                                                       b <- op
+                                                       ls' <- toListT
+                                                       return (ls',b)
+
+evalArrayList :: HasArray sig
+              => (forall token. LStateT sig (Array token α) β) 
+              -> [α] -> Lin sig [α]
+evalArrayList op ls = do (ls,_) <- runArrayList op ls
+                         return ls
+
+{-
+test' :: Lin Shallow [Int]
+test' = evalArrayList quicksort [] --3,1,4,1,5,9,2,6,5,3]
+
+test :: [Int] -> Lin Shallow [Int]
+test ls = evalArrayList quicksort ls
+-}
+
+testPrint :: (HasArray sig, Show α) => LStateT sig (Array token α) ()
+testPrint = do ls <- toListT
+               rs <- rangesT
+               trace ("list is " ++ show ls ++ " on ranges " ++ show rs) $ return ()
+
+op :: LStateT Shallow (Array token Int) ()
+op = do testPrint
+        sliceT 1 testPrint testPrint
+        testPrint
+
+test :: Lin Shallow [Int]
+test = evalArrayList op [1,2,3]
+
 
 
 {-

@@ -83,8 +83,8 @@ class (MergeF γ1 γ2 ~ γ)
 instance (MergeF γ1 γ2 ~ γ)
    => CMergeForward (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx)
   where
-    lookupMerge1 _ = unsafeCoerce (Dict :: Dict ())
-    lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
+    lookupMerge1 _ _ = unsafeCoerce (Dict :: Dict ())
+    lookupMerge2 _ _ = unsafeCoerce (Dict :: Dict ())
 
 
 class (γ ~ MergeF γ1 γ2, γ ~ MergeF γ2 γ1, Div γ γ2 ~ γ1, Div γ γ1 ~ γ2
