@@ -34,10 +34,25 @@ library
 --  required-extentions:
 
 executable LNLHask-exe
-  hs-source-dirs:      app
+  hs-source-dirs:      app, src/examples
   main-is:             Main.hs
+  other-modules:       Arrays, Quicksort
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  build-depends:       base
+  build-depends:       base >= 4.7 && < 5
+                     , template-haskell == 2.11.*
+                     , constraints >= 0.8
+                     , singletons >= 2.2
+                     , timeit >= 1.0.0.0
+                     , linear >= 1.20.5
+                     , array >= 0.5.1.1
+                     , hmatrix >= 0.18.0.0
+                     , mtl >= 2.2.1
+                     , ghc-prim >= 0.5.0.0
+                     , transformers >= 0.5.2
+                     , word8 >= 0.1.2
+                     , random >= 1.1
+                     , QuickCheck >= 2.9.2
+                     , base
                      , LNLHask
   default-language:    Haskell2010
 
@@ -53,3 +68,27 @@ test-suite LNLHask-test
 source-repository head
   type:     git
   location: https://github.com/githubuser/LNLHask
+
+benchmark LNLHask-bench
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      app, src/examples
+  main-is:             Main.hs
+  other-modules:       Arrays, Quicksort
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base >= 4.7 && < 5
+                     , template-haskell == 2.11.*
+                     , constraints >= 0.8
+                     , singletons >= 2.2
+                     , timeit >= 1.0.0.0
+                     , linear >= 1.20.5
+                     , array >= 0.5.1.1
+                     , hmatrix >= 0.18.0.0
+                     , mtl >= 2.2.1
+                     , ghc-prim >= 0.5.0.0
+                     , transformers >= 0.5.2
+                     , word8 >= 0.1.2
+                     , random >= 1.1
+                     , QuickCheck >= 2.9.2
+                     , base
+                     , LNLHask
+  default-language:    Haskell2010

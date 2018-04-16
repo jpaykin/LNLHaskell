@@ -59,7 +59,7 @@ class HasMILL sig => HasArray sig where
           -> LExp sig γ (Array token a ⊗ Lower a)
   write   :: Int -> LExp sig γ (Array token a) -> a -> LExp sig γ (Array token a)
   size    :: LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower Int)
-  ranges  :: LExp sig γ (Array token α) -> LExp sig γ (Array token α ⊗ Lower [Range])
+--ranges  :: LExp sig γ (Array token α) -> LExp sig γ (Array token α ⊗ Lower [Range])
 
 type instance Effect Shallow = IO
 
@@ -241,8 +241,8 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
                            let n = sizeRanges rs
                            return $ VPair (VArray rs arr) (VPut n)
 
-  ranges e = SExp $ \γ -> do VArray rs arr <- runSExp e γ
-                             return $ VPair (VArray rs arr) (VPut rs)
+--  ranges e = SExp $ \γ -> do VArray rs arr <- runSExp e γ
+--                             return $ VPair (VArray rs arr) (VPut rs)
 
 
 
@@ -256,8 +256,8 @@ writeT i a = suspend . λ $ \arr -> write i arr a ⊗ put ()
 sizeT :: HasArray sig => LStateT sig (Array token α) Int
 sizeT = suspend . λ $ \arr -> size arr
 
-rangesT :: HasArray sig => LStateT sig (Array token α) [Range]
-rangesT = suspend . λ $ \arr -> ranges arr
+--rangesT :: HasArray sig => LStateT sig (Array token α) [Range]
+--rangesT = suspend . λ $ \arr -> ranges arr
 
 
 
@@ -283,22 +283,31 @@ sliceT i st1 st2 = -- trace ("slicing at index " ++ show i) $
 
 
 
-foldArrayT :: HasArray sig
+foldArrayLeft :: HasArray sig
             => (a -> b -> b)
             -> b -> LinT sig (LState' (Array token a)) b
-foldArrayT f b = do n <- sizeT
-                    foldArrayT' n f b
+foldArrayLeft f b = do n <- sizeT
+                       foldArrayT' n f b
   where
     foldArrayT' n f b | n <= 0    = return b
                       | otherwise = do b' <- foldArrayT' (n-1) f b
                                        a  <- readT (n-1)
                                        return $ f a b'
 
+foldArrayRight :: HasArray sig
+               => (a -> b -> b)
+               -> b -> LinT sig (LState' (Array token a)) b
+foldArrayRight f b = do n <- sizeT
+                        foldArrayT' n f b
+  where
+    foldArrayT' n f b | n <= 0    = return b
+                      | otherwise = do a <- readT (n-1)
+                                       let b' = f a b
+                                       foldArrayT' (n-1) f b'
+
 
 toListT :: HasArray sig => LinT sig (LState' (Array token a)) [a]
-toListT = foldArrayT (\a ls -> (ls ++ [a])) []
---  where
---    snoc a ls = ls ++ [a]
+toListT = foldArrayRight (:) []
 
 fromListT :: HasArray sig => [α] -> LStateT sig (Array token α) ()
 fromListT ls = fromListT' 0 ls
@@ -335,18 +344,22 @@ test :: [Int] -> Lin Shallow [Int]
 test ls = evalArrayList quicksort ls
 -}
 
-testPrint :: (HasArray sig, Show α) => LStateT sig (Array token α) ()
+{-testPrint :: (HasArray sig, Show α) => LStateT sig (Array token α) ()
 testPrint = do ls <- toListT
                rs <- rangesT
                trace ("list is " ++ show ls ++ " on ranges " ++ show rs) $ return ()
+-}
 
+{-
 op :: LStateT Shallow (Array token Int) ()
 op = do testPrint
         sliceT 1 testPrint testPrint
         testPrint
+-}
 
 test :: Lin Shallow [Int]
-test = evalArrayList op [1,2,3]
+test = evalArrayList (return ()) [1,2,3]
+
 
 
 

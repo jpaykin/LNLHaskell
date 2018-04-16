@@ -9,4 +9,4 @@ import Quicksort
 --import Sessions
 
 main :: IO ()
-main = return () --compareUpTo 50
+main = compareUpTo 12

@@ -23,7 +23,7 @@ import Interface
 -- Shallow Embedding
 data Shallow
 
-data instance LExp Shallow γ τ = 
+newtype instance LExp Shallow γ τ = 
   SExp {runSExp :: ECtx Shallow γ -> Effect Shallow (LVal Shallow τ)}
 --  SExp :: forall (γ :: Ctx) (τ :: LType).
 --          (SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)) 
@@ -39,7 +39,7 @@ instance Monad (Effect Shallow) => HasVar (LExp Shallow) where
 -----------------------------------------------------------
 -----------------------------------------------------------
 
-data instance LVal Shallow (MkLType ('LolliSig σ τ)) =
+newtype instance LVal Shallow (MkLType ('LolliSig σ τ)) =
     VAbs (LVal Shallow σ -> Effect Shallow (LVal Shallow τ))
 
 instance Monad (Effect Shallow) => HasLolli (LExp Shallow) where
@@ -121,7 +121,7 @@ instance Monad (Effect Shallow) => HasWith (LExp Shallow) where
     VWith _ v2 <- runSExp e g
     return v2
 
-data instance LVal Shallow (MkLType ('LowerSig a)) = VPut a
+newtype instance LVal Shallow (MkLType ('LowerSig a)) = VPut a
 instance Monad (Effect Shallow) => HasLower (LExp Shallow) where
   put a = SExp $ \_ -> return $ VPut a
   (e :: LExp Shallow γ1 (Lower a)) >! (f :: a -> LExp Shallow γ2 τ) = SExp $ \ g -> do
