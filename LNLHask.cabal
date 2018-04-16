@@ -29,6 +29,7 @@ library
                      , transformers >= 0.5.2
                      , word8 >= 0.1.2
                      , random >= 1.1
+                     , QuickCheck >= 2.11.3
   default-language:    Haskell2010
 --  required-extentions:
 

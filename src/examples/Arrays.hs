@@ -24,50 +24,195 @@ import Control.Monad.State.Lazy (State(..), runState)
 import Control.Concurrent.MVar
 import Control.Concurrent
 import System.Random (randomRIO)
-
-
+import GHC.TypeLits
+import Test.QuickCheck
 
 import Types
 import Interface
 import Classes
 import ShallowEmbedding
 
-data ExistsArray f α where 
-  ExistsArray :: f (Array token α) -> ExistsArray f α
+--data ExistsArray f α where 
+--  ExistsArray :: f (Array token α) -> ExistsArray f α
 
 -- Signature
 data ArraySig sig = ArraySig Type Type
 type Array token a = MkLType ('ArraySig token a)
 
 class HasMILL sig => HasArray sig where
-  alloc   :: Int -> α -> ExistsArray (LExp sig '[]) α
-  drop    :: LExp sig γ (Array token a) -> LExp sig γ One
-  slice   :: (Int -> Bool) 
+  alloc   :: ( CAddCtx x (Array token α) γ γ'
+             , CSingletonCtx x (Array token α) γ''
+             , x ~ Fresh γ)
+          => Int -> α 
+          -> (LExp sig γ'' (Array token α) -> LExp sig γ' σ)
+          -> LExp sig γ σ
+-- ExistsArray (LExp sig '[]) α
+  dealloc :: LExp sig γ (Array token a) -> LExp sig γ One
+  slice   :: Int 
           -> LExp sig γ (Array token a) 
           -> LExp sig γ (Array token a ⊗ Array token a)
   join    :: CMerge γ1 γ2 γ 
           => LExp sig γ1 (Array token α) 
           -> LExp sig γ2 (Array token α) 
           -> LExp sig γ (Array token α)
-  read    :: Int -> LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower a)
+  read    :: Int -> LExp sig γ (Array token a) 
+          -> LExp sig γ (Array token a ⊗ Lower a)
   write   :: Int -> LExp sig γ (Array token a) -> a -> LExp sig γ (Array token a)
-  scope   :: LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower [Int])
+  size    :: LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower Int)
 
 type instance Effect Shallow = IO
--- a VArray has a list of variables in scope as well as a primitive array
-data instance LVal Shallow (Array token a) = VArray [Int] (IO.IOArray Int a)
+
+-- a range (min,max) equates to the list [min..max], INCLUSIVE
+type Range = (Int,Int)
+
+validRange :: Range -> Bool
+validRange (min,max) = min <= max
+
+validRanges :: [Range] -> Bool
+validRanges []                         = True
+validRanges [(min,max)]                = validRange (min,max)
+validRanges ((min,max):(min',max'):rs) = 
+            validRange (min,max) && min' > max+1 && validRanges ((min',max'):rs)
+
+
+-- requirement: if validRange r and validRanges rs then validRange (insertRange r rs)
+insertRange :: Range -> [Range] -> [Range]
+insertRange (min0,max0) [] = [(min0,max0)]
+insertRange (min0,max0) ((min1,max1) : rs) 
+    -- (min0,max0) comes before everything in (min1,max1)
+    | max0+1 < min1  = (min0,max0) : (min1,max1) : rs
+    -- (min0,max0) overlaps with (min1,max1)
+    -- TODO: check these bounds
+    | max0+1 >= min1 && min0 <= max1+1 = insertRange (min min0 min1, max max0 max1) rs
+    -- (min0,max0) comes after everything in (min1,max1)
+    | min0 > max1+1 = (min1,max1) : insertRange (min0,max0) rs
+
+mergeRanges :: [Range] -> [Range] -> [Range]
+mergeRanges [] r = r
+mergeRanges ((min,max) : r1) r2 = insertRange (min,max) (mergeRanges r1 r2)
+
+inRange :: Int -> Range -> Bool
+inRange i (min,max) = min <= i && i <= max
+
+inRanges :: Int -> [Range] -> Bool
+inRanges i [] = False
+inRanges i (r:rs) = inRange i r || inRanges i rs
+
+sizeRange :: Range -> Int
+sizeRange (min,max) = min-max+1
+
+sizeRanges :: [Range] -> Int
+sizeRanges [] = 0
+sizeRanges (r:rs) = sizeRange r + sizeRanges rs
+
+-- given an index i with i < sizeRange r, 
+-- offsetRange i r gives the ith element in r 
+offsetRange :: Int -> Range -> Int
+offsetRange i r = i + fst r
+
+offsetRanges :: Int -> [Range] -> Int
+offsetRanges i []     = 0
+offsetRanges i (r:rs) | inRange i r = offsetRange i r
+                      | otherwise   = offsetRanges i rs
+
+offsetRangeInProp :: Int -> Range -> Bool
+offsetRangeInProp i r = (0 <= i && validRange r && i < sizeRange r) <= inRange i r
+
+offsetRangesInProp :: Int -> [Range] -> Bool
+offsetRangesInProp i rs = (0 <= i && validRanges rs && i < sizeRanges rs) <= inRanges i rs
+
+insertRangeProp :: Range -> [Range] -> Bool
+insertRangeProp r rs = 
+  (validRange r && validRanges rs) <= validRanges (insertRange r rs)
+
+insertRangeProp2 :: Int -> Range -> [Range] -> Bool
+insertRangeProp2 i r rs = (inRange i r || inRanges i rs) == inRanges i (insertRange r rs)
+
+mergeRangesProp :: [Range] -> [Range] -> Bool
+mergeRangesProp rs1 rs2 = 
+    (validRanges rs1 && validRanges rs2) <= validRanges (mergeRanges rs1 rs2)
+
+mergeRangesProp2 :: Int -> [Range] -> [Range] -> Bool
+mergeRangesProp2 i rs1 rs2 = 
+    (inRanges i rs1 || inRanges i rs2) == inRanges i (mergeRanges rs1 rs2)
+
+{-
+splitRange :: Int -> Range -> (Range, Range)
+splitRange i (min,max) | i < min   = ((i,i),(min,max))
+                       | i == min  = undefined
+                       | i > max   = ((min,max), (i,i))
+                       | otherwise = ((min,i-1),(i,max))
+-}
+
+splitRanges :: Int -> [Range] -> ([Range],[Range])
+splitRanges i []                         = ([],[])
+splitRanges i ((min,max):rs) | i <= min  = ([],(min,max):rs)
+                             | i <= max  = ([(min,i-1)], (i,max):rs)
+                             | otherwise = let (rs1,rs2) = splitRanges i rs 
+                                           in ((min,max):rs1,rs2)
+
+splitRangesValid :: Int -> [Range] -> Bool
+splitRangesValid i rs = validRanges rs <= (  validRanges (fst (splitRanges i rs))
+                                          && validRanges (snd (splitRanges i rs)) )
+
+splitRangesProp1 :: Int -> Int -> [Range] -> Bool
+splitRangesProp1 i j rs = 
+    validRanges rs <= 
+    ((inRanges i rs && i < j) == inRanges i (fst (splitRanges j rs)))
+
+splitRangesProp2 :: Int -> Int -> [Range] -> Bool
+splitRangesProp2 i j rs = 
+    validRanges rs <= 
+    ((inRanges i rs && i >= j) == inRanges i (snd (splitRanges j rs)))
+
+
+rangesTests = do print $ "Testing insertRangeProp"
+                 quickCheck insertRangeProp
+                 print $ "Testing insertRangeProp2"
+                 quickCheck insertRangeProp2
+                 print $ "Testing mergeRangesProp"
+                 quickCheck mergeRangesProp
+                 print $ "Testing mergeRangesProp2"
+                 quickCheck mergeRangesProp2
+                 print $ "Testing splitRangesValid"
+                 quickCheck splitRangesValid
+                 print $ "Testing splitRangesProp1"
+                 quickCheck splitRangesProp1
+                 print $ "Testing splitRangesProp2"
+                 quickCheck splitRangesProp2
+                 print $ "Testing offsetRangeInProp"
+                 quickCheck offsetRangeInProp
+                 print $ "Testing offsetRangesInProp"
+                 quickCheck offsetRangesInProp
+
+                 
+
+-- a VArray has a list of ranges in scope as well as a primitive array
+data instance LVal Shallow (Array token a) = VArray [Range] (IO.IOArray Int a)
+
 
 instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
-  alloc n a = ExistsArray $ SExp $ \_ -> VArray [0..n-1] <$> IO.newArray (0,n-1) a
-  drop e = SExp $ \γ -> runSExp e γ >> return VUnit
-  slice cond e = SExp $ \γ -> do 
-        VArray bounds arr <- runSExp e γ
-        return $ VPair ( VArray (filter cond bounds) arr )
-                       ( VArray (filter (not . cond) bounds) arr )
+  alloc   :: forall x token γ γ' γ'' α σ.
+             ( CAddCtx x (Array token α) γ γ'
+             , CSingletonCtx x (Array token α) γ''
+             , x ~ Fresh γ)
+          => Int -> α 
+          -> (LExp Shallow γ'' (Array token α) -> LExp Shallow γ' σ)
+          -> LExp Shallow γ σ
+  alloc n a k = SExp $ \γ -> do arr <- VArray [(0,n-1)] <$> IO.newArray (0,n-1) a
+                                let x = (Proxy :: Proxy (Fresh γ)) 
+                                runSExp (k $ var x) (add x arr γ)
+  dealloc e = SExp $ \γ -> runSExp e γ >> return VUnit
+
+  slice i e = SExp $ \γ -> do VArray rs arr <- runSExp e γ 
+                              let (rs1,rs2) = splitRanges i rs
+                              return $ VPair (VArray rs1 arr) (VArray rs2 arr)
+
+
   join e1 e2 = SExp $ \γ -> do  let (γ1,γ2) = split γ
-                                VArray bounds1 arr <- runSExp e1 γ1
-                                VArray bounds2 _   <- runSExp e2 γ2 
-                                return $ VArray (mergeList bounds1 bounds2) arr
+                                VArray rs1 arr <- runSExp e1 γ1
+                                VArray rs2 _   <- runSExp e2 γ2 
+                                return $ VArray (mergeRanges rs1 rs2) arr
 --   join e1 e2 = SExp $ \γ -> do  let (γ1,γ2) = split γ
 --                                 v1 <- newEmptyMVar
 --                                 v2 <- newEmptyMVar
@@ -78,31 +223,26 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
 -- --                              return $ VArray (bounds1 ++ bounds2) arr
 --                                 return $ VArray (mergeList bounds1 bounds2) arr
 
-  read i e = SExp $ \γ -> do
-        VArray bounds arr <- runSExp e γ
-        if i `elem` bounds then do
-            a <- IO.readArray arr i
-            return $ VPair (VArray bounds arr) (VPut a)
-        else error $ "Read " ++ show i ++ " out of bounds " ++ show bounds
-  write i e a = SExp $ \γ -> do
-        VArray bounds arr <- runSExp e γ
-        if i `elem` bounds then do
-            IO.writeArray arr i a
-            return $ VArray bounds arr
-        else error $ "Write " ++ show i ++ " out of bounds " ++ show bounds
-  scope e = SExp $ \γ -> do -- Always return a sorted list of bounds
-                            -- alternative to keeping the bounds sorted
-                            -- via mergeList in join
-        VArray bounds arr <- runSExp e γ
-        return $ VPair (VArray bounds arr) (VPut $ bounds)
 
--- mergeList takes in two sorted lists, and produces a sorted list
-mergeList :: [Int] -> [Int] -> [Int]
-mergeList = foldr insert
---mergeList [] ls = ls
---mergeList ls [] = ls
---mergeList (a1:ls1) (a2:ls2) = if a1 <= a2 then a1 : mergeList ls1 (a2:ls2)
---                              else a2 : mergeList (a1:ls1) ls2
+  read i e = SExp $ \γ -> do
+        VArray rs arr <- runSExp e γ
+        if i < sizeRanges rs then do let x = offsetRanges i rs
+                                     a <- IO.readArray arr x
+                                     return $ VPair (VArray rs arr) (VPut a)
+        else error $ "Read " ++ show i ++ " out of bounds of " ++ show rs
+
+  write i e a = SExp $ \γ -> do
+        VArray rs arr <- runSExp e γ
+        if i < sizeRanges rs then do let x = offsetRanges i rs
+                                     IO.writeArray arr i a
+                                     return $ VArray rs arr
+        else error $ "Write " ++ show i ++ " out of bounds " ++ show rs
+
+  size e = SExp $ \γ -> do VArray rs arr <- runSExp e γ
+                           let n = sizeRanges rs
+                           return $ VPair (VArray rs arr) (VPut n)
+
+
 
 readT :: HasArray sig => Int -> LinT sig (LState' (Array token a)) a
 readT i = suspend . λ $ read i
@@ -110,8 +250,13 @@ readT i = suspend . λ $ read i
 writeT :: HasArray sig => Int -> a -> LinT sig (LState' (Array token a)) ()
 writeT i a = suspend . λ $ \arr -> write i arr a ⊗ put ()
 
-scopeT :: HasArray sig => LinT sig (LState' (Array token a)) [Int]
-scopeT = suspend . λ $ scope
+
+sizeT :: HasArray sig => LStateT sig (Array token α) Int
+sizeT = suspend . λ $ \arr -> size arr
+
+
+
+
 
 {-
   sliceT takes as input:
@@ -121,18 +266,19 @@ scopeT = suspend . λ $ scope
   and will apply state2 on 'filter (\x -> not (cond x)) bound'
 -}    
 sliceT :: HasArray sig
-       => (Int -> Bool)
+       => Int
        -> LStateT sig (Array token α) ()
        -> LStateT sig (Array token α) ()
        -> LStateT sig (Array token α) ()
-sliceT cond st1 st2 = -- trace ("slicing at index " ++ show i) $ 
+sliceT i st1 st2 = -- trace ("slicing at index " ++ show i) $ 
                    suspend . λ $ \arr ->
-                   slice cond arr `letPair` \(arr1,arr2) -> 
-                   force st1 ^ arr1 `letPair` \(arr1,res) -> res >! \_ ->
-                   force st2 ^ arr2 `letPair` \(arr2,res) -> res >! \_ ->
-                   join arr1 arr2 ⊗ put ()
+                     slice i arr `letPair` \(arr1,arr2) -> 
+                     force st1 ^ arr1 `letPair` \(arr1,res) -> res >! \_ ->
+                     force st2 ^ arr2 `letPair` \(arr2,res) -> res >! \_ ->
+                     join arr1 arr2 ⊗ put ()
 
 
+{-
 quicksort :: (HasArray sig,Ord α) 
           => LStateT sig (Array token α) ()
 quicksort = partition >>= \case Nothing -> return ()
@@ -220,7 +366,7 @@ fromList ls = case alloc (length ls) (head ls) of
 evalArrayState :: HasArray sig
                => (forall token. LinT sig (LState' (Array token a)) b) 
                -> ExistsArray (Lift sig) a -> Lin sig b
-evalArrayState st (ExistsArray arr) = evalLStateT st arr (suspend . λ $ drop)
+evalArrayState st (ExistsArray arr) = evalLStateT st arr (suspend . λ $ deallo)
 
 evalArrayList :: HasArray sig
               => (forall token. LStateT sig (Array token α) β) 
@@ -424,3 +570,4 @@ compareUpTo n = forM_ ls compareQuicksort
     ls = ((Prelude.^) 2) <$> [0..n]
 --    ls = [1..n]
 
+-}
