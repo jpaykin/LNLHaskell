@@ -19,11 +19,11 @@ import Data.Constraint
 data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
 
-type Sig = Type
-type Exp = Ctx -> LType -> Type
+type Sig = Ctx -> LType -> Type
+--type Exp = Ctx -> LType -> Type
 type Val = LType -> Type
 
-data family LExp (sig :: Sig) :: Exp
+--data family LExp (sig :: Sig) :: Exp
 data family LVal (sig :: Sig) :: Val
 type family Effect (sig :: Sig) :: Type -> Type
 
@@ -46,12 +46,14 @@ type Ctx = [(Nat,LType)]
 -- instance SingI Nothing  where sing = SSNothing
 -- instance SingI (Just a) where sing = SSJust
 
+{-
 data SCtx sig (γ :: Ctx) where
   SEmpty :: SCtx sig '[]
   SCons  :: SMaybe sig u -> SCtx sig γ -> SCtx sig (u':γ)
 data SMaybe sig (u :: Maybe (Nat,LType)) where
   SNothing :: SMaybe sig Nothing
   SJust    :: KnownNat x => LVal sig σ -> SMaybe sig (Just '(x,σ))
+-}
 
 -- Define an evaluation context that may have extra entries, which makes
 -- splitting a context a no-op, increasing performance.

@@ -27,22 +27,22 @@ import DeepEmbedding
 import LinTrans2 hiding (cnot)
 
 -- Signature
-data QuantumSig sig = MkQubit
+data QuantumSig exp = MkQubit
 type Qubit = MkLType MkQubit
 
 
-class HasMILL sig => HasQuantum sig where
-  new :: Bool -> LExp sig '[] Qubit
-  meas :: LExp sig γ Qubit -> LExp sig γ (Lower Bool)
-  unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> LExp sig γ σ
+class HasMILL exp => HasQuantum exp where
+  new :: Bool -> exp '[] Qubit
+  meas :: exp γ Qubit -> exp γ (Lower Bool)
+  unitary :: KnownType σ => Unitary σ -> exp γ σ -> exp γ σ
 
-controlBy :: (HasQuantum sig,KnownType σ) 
-          => Unitary σ -> LExp sig γ (Qubit ⊗ σ) -> LExp sig γ (Qubit ⊗ σ)
+controlBy :: (HasQuantum exp,KnownType σ) 
+          => Unitary σ -> exp γ (Qubit ⊗ σ) -> exp γ (Qubit ⊗ σ)
 controlBy u e = unitary (control u) e
 
 -- -- first element is the control
-cnot :: HasQuantum sig
-     => LExp sig γ (Qubit ⊗ Qubit) -> LExp sig γ (Qubit ⊗ Qubit)
+cnot :: HasQuantum exp
+     => exp γ (Qubit ⊗ Qubit) -> exp γ (Qubit ⊗ Qubit)
 cnot = controlBy PauliX
 
 
@@ -55,10 +55,10 @@ type instance Effect Deep = DensityMonad
 data instance LVal Deep Qubit = QId Int
 
   
-data QuantumExp :: Sig -> Exp where
-  New     :: Bool -> QuantumExp sig '[] Qubit
-  Meas    :: LExp sig γ Qubit -> QuantumExp sig γ (Lower Bool)
-  Unitary :: KnownType σ => Unitary σ -> LExp sig γ σ -> QuantumExp sig γ σ
+data QuantumExp :: Sig -> Sig where
+  New     :: Bool -> QuantumExp exp '[] Qubit
+  Meas    :: exp γ Qubit -> QuantumExp exp γ (Lower Bool)
+  Unitary :: KnownType σ => Unitary σ -> exp γ σ -> QuantumExp exp γ σ
 
 instance HasQuantum Deep where
   new = Dom . New
@@ -217,29 +217,29 @@ qflip = suspend $ meas (unitary Hadamard (new False))
 -- -- Teleportation -----------------------------------
 -- ----------------------------------------------------
 
-plus_minus :: HasQuantum sig => Bool -> Lift sig Qubit
+plus_minus :: HasQuantum exp => Bool -> Lift exp Qubit
 plus_minus b = suspend $ unitary Hadamard $ new b
 
-share :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit ⊗ Qubit)
+share :: HasQuantum exp => Lift exp (Qubit ⊸ Qubit ⊗ Qubit)
 share = suspend . λ $ \q -> cnot (q ⊗ new False)
 
-bell00 :: HasQuantum sig => Lift sig (Qubit ⊗ Qubit)
+bell00 :: HasQuantum exp => Lift exp (Qubit ⊗ Qubit)
 bell00 = suspend $ force (plus_minus False) `letin` \a ->
                    force share ^ a
 
-alice :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit ⊸ Lower (Bool,Bool))
+alice :: HasQuantum exp => Lift exp (Qubit ⊸ Qubit ⊸ Lower (Bool,Bool))
 alice = suspend . λ $ \q -> λ $ \a ->
             cnot (q ⊗ a) `letPair` \(q,a) ->
             meas (unitary Hadamard q) >! \x ->
             meas a >! \y ->
             put (x,y)
     
-bob :: HasQuantum sig => Bool -> Bool -> Lift sig (Qubit ⊸ Qubit)
+bob :: HasQuantum exp => Bool -> Bool -> Lift exp (Qubit ⊸ Qubit)
 bob x y = suspend . λ $ \b ->
     if y then unitary PauliX b else b `letin` \b ->
     if x then unitary PauliZ b else b
 
-teleport :: HasQuantum sig => Lift sig (Qubit ⊸ Qubit)
+teleport :: HasQuantum exp => Lift exp (Qubit ⊸ Qubit)
 teleport = suspend . λ $ \q ->
     force bell00 `letPair` \(a,b) ->
     force alice ^ q ^ a >! \(x,y) ->
@@ -272,8 +272,8 @@ type family (σ :: LType) ⊗⊗ (n :: Nat) :: LType where
 
 
 {- TODO: fix
-rotations :: forall (m :: Nat) (n :: Nat) sig. (HasQuantum sig)
-          => Sing m -> Sing n -> Lift sig (Qubit ⊗⊗ S n ⊸ Qubit ⊗⊗ S n)
+rotations :: forall (m :: Nat) (n :: Nat) exp. (HasQuantum exp)
+          => Sing m -> Sing n -> Lift exp (Qubit ⊗⊗ S n ⊸ Qubit ⊗⊗ S n)
 rotations _ SZ      = idL
 rotations _ (SS SZ) = idL
 rotations m (SS n'@(SS _)) = suspend . λpair $ \(c,qs) -> qs `letPair` \(q,qs') ->
@@ -281,8 +281,8 @@ rotations m (SS n'@(SS _)) = suspend . λpair $ \(c,qs) -> qs `letPair` \(q,qs')
     controlBy (R $ 2 + toInt m - toInt n') (c ⊗ q) `letPair` \(c,q) ->
     c ⊗ (q ⊗ qs')
 
-fourier :: forall n sig. (HasQuantum sig)
-        => Sing n -> Lift sig (Qubit ⊗⊗ n ⊸ Qubit ⊗⊗ n)
+fourier :: forall n exp. (HasQuantum exp)
+        => Sing n -> Lift exp (Qubit ⊗⊗ n ⊸ Qubit ⊗⊗ n)
 fourier SZ = idL
 fourier (SS SZ) = suspend . λ $ unitary Hadamard
 fourier (SS n'@(SS _)) = Suspend . λpair $ \(q,w) ->

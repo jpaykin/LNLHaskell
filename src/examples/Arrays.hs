@@ -36,30 +36,30 @@ import ShallowEmbedding
 --  ExistsArray :: f (Array token α) -> ExistsArray f α
 
 -- Signature
-data ArraySig sig = ArraySig Type Type
+data ArraySig exp = ArraySig Type Type
 type Array token a = MkLType ('ArraySig token a)
 
-class HasMILL sig => HasArray sig where
+class HasMILL exp => HasArray exp where
   alloc   :: ( CAddCtx x (Array token α) γ γ'
              , CSingletonCtx x (Array token α) γ''
              , x ~ Fresh γ)
           => Int -> α 
-          -> (LExp sig γ'' (Array token α) -> LExp sig γ' σ)
-          -> LExp sig γ σ
--- ExistsArray (LExp sig '[]) α
-  dealloc :: LExp sig γ (Array token a) -> LExp sig γ One
+          -> (exp γ'' (Array token α) -> exp γ' σ)
+          -> exp γ σ
+-- ExistsArray (exp '[]) α
+  dealloc :: exp γ (Array token a) -> exp γ One
   slice   :: Int 
-          -> LExp sig γ (Array token a) 
-          -> LExp sig γ (Array token a ⊗ Array token a)
+          -> exp γ (Array token a) 
+          -> exp γ (Array token a ⊗ Array token a)
   join    :: CMerge γ1 γ2 γ 
-          => LExp sig γ1 (Array token α) 
-          -> LExp sig γ2 (Array token α) 
-          -> LExp sig γ (Array token α)
-  read    :: Int -> LExp sig γ (Array token a) 
-          -> LExp sig γ (Array token a ⊗ Lower a)
-  write   :: Int -> LExp sig γ (Array token a) -> a -> LExp sig γ (Array token a)
-  size    :: LExp sig γ (Array token a) -> LExp sig γ (Array token a ⊗ Lower Int)
---ranges  :: LExp sig γ (Array token α) -> LExp sig γ (Array token α ⊗ Lower [Range])
+          => exp γ1 (Array token α) 
+          -> exp γ2 (Array token α) 
+          -> exp γ (Array token α)
+  read    :: Int -> exp γ (Array token a) 
+          -> exp γ (Array token a ⊗ Lower a)
+  write   :: Int -> exp γ (Array token a) -> a -> exp γ (Array token a)
+  size    :: exp γ (Array token a) -> exp γ (Array token a ⊗ Lower Int)
+--ranges  :: exp γ (Array token α) -> exp γ (Array token α ⊗ Lower [Range])
 
 type instance Effect Shallow = IO
 
@@ -193,8 +193,8 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
              , CSingletonCtx x (Array token α) γ''
              , x ~ Fresh γ)
           => Int -> α 
-          -> (LExp Shallow γ'' (Array token α) -> LExp Shallow γ' σ)
-          -> LExp Shallow γ σ
+          -> (Shallow γ'' (Array token α) -> Shallow γ' σ)
+          -> Shallow γ σ
   alloc n a k = SExp $ \γ -> do arr <- VArray [(0,n-1)] <$> IO.newArray (0,n-1) a
                                 let x = (Proxy :: Proxy (Fresh γ)) 
                                 runSExp (k $ var x) (add x arr γ)
@@ -246,17 +246,17 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
 
 
 
-readT :: HasArray sig => Int -> LinT sig (LState' (Array token a)) a
+readT :: HasArray exp => Int -> LinT exp (LState' (Array token a)) a
 readT i = suspend . λ $ read i
 
-writeT :: HasArray sig => Int -> a -> LinT sig (LState' (Array token a)) ()
+writeT :: HasArray exp => Int -> a -> LinT exp (LState' (Array token a)) ()
 writeT i a = suspend . λ $ \arr -> write i arr a ⊗ put ()
 
 
-sizeT :: HasArray sig => LStateT sig (Array token α) Int
+sizeT :: HasArray exp => LStateT exp (Array token α) Int
 sizeT = suspend . λ $ \arr -> size arr
 
---rangesT :: HasArray sig => LStateT sig (Array token α) [Range]
+--rangesT :: HasArray exp => LStateT exp (Array token α) [Range]
 --rangesT = suspend . λ $ \arr -> ranges arr
 
 
@@ -265,15 +265,15 @@ sizeT = suspend . λ $ \arr -> size arr
 {-
   sliceT takes as input:
     cond :: Int -> Bool 
-    state1, state2 ::  LStateT sig (Array token α) ()
+    state1, state2 ::  LStateT exp (Array token α) ()
   and will apply state1 on 'filter cond bound'
   and will apply state2 on 'filter (\x -> not (cond x)) bound'
 -}    
-sliceT :: HasArray sig
+sliceT :: HasArray exp
        => Int
-       -> LStateT sig (Array token α) ()
-       -> LStateT sig (Array token α) ()
-       -> LStateT sig (Array token α) ()
+       -> LStateT exp (Array token α) ()
+       -> LStateT exp (Array token α) ()
+       -> LStateT exp (Array token α) ()
 sliceT i st1 st2 = -- trace ("slicing at index " ++ show i) $ 
                    suspend . λ $ \arr ->
                      slice i arr `letPair` \(arr1,arr2) -> 
@@ -283,9 +283,9 @@ sliceT i st1 st2 = -- trace ("slicing at index " ++ show i) $
 
 
 
-foldArrayLeft :: HasArray sig
+foldArrayLeft :: HasArray exp
             => (a -> b -> b)
-            -> b -> LinT sig (LState' (Array token a)) b
+            -> b -> LinT exp (LState' (Array token a)) b
 foldArrayLeft f b = do n <- sizeT
                        foldArrayT' n f b
   where
@@ -294,9 +294,9 @@ foldArrayLeft f b = do n <- sizeT
                                        a  <- readT (n-1)
                                        return $ f a b'
 
-foldArrayRight :: HasArray sig
+foldArrayRight :: HasArray exp
                => (a -> b -> b)
-               -> b -> LinT sig (LState' (Array token a)) b
+               -> b -> LinT exp (LState' (Array token a)) b
 foldArrayRight f b = do n <- sizeT
                         foldArrayT' n f b
   where
@@ -306,33 +306,33 @@ foldArrayRight f b = do n <- sizeT
                                        foldArrayT' (n-1) f b'
 
 
-toListT :: HasArray sig => LinT sig (LState' (Array token a)) [a]
+toListT :: HasArray exp => LinT exp (LState' (Array token a)) [a]
 toListT = foldArrayRight (:) []
 
-fromListT :: HasArray sig => [α] -> LStateT sig (Array token α) ()
+fromListT :: HasArray exp => [α] -> LStateT exp (Array token α) ()
 fromListT ls = fromListT' 0 ls
   where
     fromListT' i []     = return ()
     fromListT' i (a:ls) = writeT i a >> fromListT' (i+1) ls
                              
 
-allocT :: HasArray sig 
-        => Int -> α -> (forall token. LStateT sig (Array token α) β)
-        -> Lin sig β
+allocT :: HasArray exp 
+        => Int -> α -> (forall token. LStateT exp (Array token α) β)
+        -> Lin exp β
 allocT n a op = suspend $ alloc n a $ \arr ->
                           force op ^ arr `letPair` \(arr,b) ->
                           dealloc arr `letUnit` b
-runArrayList  :: HasArray sig
-              => (forall token. LStateT sig (Array token α) β) 
-              -> [α] -> Lin sig ([α], β)
+runArrayList  :: HasArray exp
+              => (forall token. LStateT exp (Array token α) β) 
+              -> [α] -> Lin exp ([α], β)
 runArrayList op ls = allocT (length ls) (head ls) $ do fromListT ls
                                                        b <- op
                                                        ls' <- toListT
                                                        return (ls',b)
 
-evalArrayList :: HasArray sig
-              => (forall token. LStateT sig (Array token α) β) 
-              -> [α] -> Lin sig [α]
+evalArrayList :: HasArray exp
+              => (forall token. LStateT exp (Array token α) β) 
+              -> [α] -> Lin exp [α]
 evalArrayList op ls = do (ls,_) <- runArrayList op ls
                          return ls
 
@@ -344,7 +344,7 @@ test :: [Int] -> Lin Shallow [Int]
 test ls = evalArrayList quicksort ls
 -}
 
-{-testPrint :: (HasArray sig, Show α) => LStateT sig (Array token α) ()
+{-testPrint :: (HasArray exp, Show α) => LStateT exp (Array token α) ()
 testPrint = do ls <- toListT
                rs <- rangesT
                trace ("list is " ++ show ls ++ " on ranges " ++ show rs) $ return ()
@@ -364,16 +364,16 @@ test = evalArrayList (return ()) [1,2,3]
 
 
 {-
-quicksort :: (HasArray sig,Ord α) 
-          => LStateT sig (Array token α) ()
+quicksort :: (HasArray exp,Ord α) 
+          => LStateT exp (Array token α) ()
 quicksort = partition >>= \case Nothing -> return ()
                                 Just p  -> sliceT (<p) quicksort $
                                            sliceT (>p) quicksort $ 
                                            return ()
     
 -- for documentation, see partitionIO
-partition :: forall sig α token. (HasArray sig,Ord α) 
-          => LStateT sig (Array token α) (Maybe Int)
+partition :: forall exp α token. (HasArray exp,Ord α) 
+          => LStateT exp (Array token α) (Maybe Int)
 partition = scopeT >>= \case -- if the domain of the array has length <= 1
                 []        -> return Nothing
                 [_]       -> return Nothing
@@ -389,7 +389,7 @@ partition = scopeT >>= \case -- if the domain of the array has length <= 1
                                 swap lo maxLE
                                 return $ Just maxLE
   where
-    pivot1 :: α -> [Int] -> Int -> LStateT sig (Array token α) [Int]
+    pivot1 :: α -> [Int] -> Int -> LStateT exp (Array token α) [Int]
     pivot1 p boundsGT j = do
         b ← readT j
         if b > p
@@ -399,7 +399,7 @@ partition = scopeT >>= \case -- if the domain of the array has length <= 1
                x:boundsGT' -> swap x j >> return boundsGT'
 
 
-swap :: HasArray sig => Int -> Int -> LStateT sig (Array token α) ()
+swap :: HasArray exp => Int -> Int -> LStateT exp (Array token α) ()
 swap i j = do -- trace ("swapping indices " ++ show i ++ " and " ++ show j) $ do 
               a <- readT i
               b <- readT j
@@ -415,14 +415,14 @@ test ls = evalArrayList quicksort ls
 
 -- Fold -----------------------------------
 
-sizeT :: HasArray sig => LStateT sig (Array token α) Int
+sizeT :: HasArray exp => LStateT exp (Array token α) Int
 sizeT = do bounds <- scopeT
            return $ length bounds
 
         
-foldArrayT :: HasArray sig
+foldArrayT :: HasArray exp
             => (a -> b -> (a,b))
-            -> b -> LinT sig (LState' (Array token a)) b
+            -> b -> LinT exp (LState' (Array token a)) b
 foldArrayT f b = do
     bounds <- scopeT
     foldM f' b bounds
@@ -433,29 +433,29 @@ foldArrayT f b = do
         writeT i a'
         return b'
 
-toListT :: HasArray sig => LinT sig (LState' (Array token a)) [a]
+toListT :: HasArray exp => LinT exp (LState' (Array token a)) [a]
 toListT = foldArrayT (\a b -> (a,snoc a b)) []
   where
     snoc a ls = ls ++ [a]
 
-fromList :: forall sig a. HasArray sig => [a] -> ExistsArray (Lift sig) a
+fromList :: forall exp a. HasArray exp => [a] -> ExistsArray (Lift exp) a
 fromList ls = case alloc (length ls) (head ls) of 
     ExistsArray new -> ExistsArray $ 
       foldr (execLStateT . f) (suspend new) $ zip ls [0..]
   where
-    f :: (a,Int) -> LStateT sig (Array token a) ()
+    f :: (a,Int) -> LStateT exp (Array token a) ()
     f (a,i) = writeT i a
 
 
 
-evalArrayState :: HasArray sig
-               => (forall token. LinT sig (LState' (Array token a)) b) 
-               -> ExistsArray (Lift sig) a -> Lin sig b
+evalArrayState :: HasArray exp
+               => (forall token. LinT exp (LState' (Array token a)) b) 
+               -> ExistsArray (Lift exp) a -> Lin exp b
 evalArrayState st (ExistsArray arr) = evalLStateT st arr (suspend . λ $ deallo)
 
-evalArrayList :: HasArray sig
-              => (forall token. LStateT sig (Array token α) β) 
-              -> [α] -> Lin sig [α]
+evalArrayList :: HasArray exp
+              => (forall token. LStateT exp (Array token α) β) 
+              -> [α] -> Lin exp [α]
 evalArrayList st ls = evalArrayState (st >> toListT) (fromList ls)
 
 toFromList :: [a] -> Lin Shallow [a]

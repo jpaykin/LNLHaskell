@@ -73,20 +73,20 @@ type instance PrintProto @@ print = One & (Lower String ⊸ Lower String ⊗ pri
 
 type PrintProto1 = One & (Lower String ⊸ Lower String ⊗ One)
 
-printer :: HasSessions (LExp sig) => Lift sig PrintProto1
+printer :: HasSessions exp => Lift exp PrintProto1
 --printer = suspend . fold $ unit & λbang (\s -> put (process s) ⊗ force printer)
 printer = suspend $ unit & λbang (\s → put (process s) ⊗ unit)
   where
     process :: String -> String
     process s = "Printing: " ++ s
 
-print1 :: HasSessions (LExp sig) => String -> Lin sig String
+print1 :: HasSessions exp => String -> Lin exp String
 print1 s = suspend $ (proj2 $ force printer) ^ put s `letPair` \(receipt,o) ->
            o `letUnit` receipt
 
-printAll :: HasSessions (LExp sig) 
---         => [String] -> Lift sig (Rec PrintProto ⊸ Lower String)
-         => [String] -> Lin sig String
+printAll :: HasSessions exp 
+--         => [String] -> Lift exp (Rec PrintProto ⊸ Lower String)
+         => [String] -> Lin exp String
 printAll []     = suspend $ proj1 (force printer) `letUnit` put "Done"
 printAll (s:ls) = do receipt <- print1 s
                      receipts <- printAll ls
@@ -103,19 +103,19 @@ type ServerProto = Lower String ⊸ Lower Int ⊸ Lower String ⊗ One
 processOrder :: String -> Int -> String
 processOrder item cc = "Processed order for " ++ item ++ "."
 
-serverBody :: HasSessions (LExp sig) => Lift sig ServerProto
+serverBody :: HasSessions exp => Lift exp ServerProto
 serverBody = Suspend . recv $ \x -> x >! \item ->
                        recv $ \y -> y >! \cc   ->
                        send (put $ processOrder item cc) done
 
-clientBody :: HasSessions (LExp sig) => Lift sig (ServerProto ⊸ Lower String)
+clientBody :: HasSessions exp => Lift exp (ServerProto ⊸ Lower String)
 clientBody = Suspend . λ $ \c ->
    sendOn (put "Tea") c $ \c ->
    sendOn (put 1234)  c $ \c ->
    recvOn c $ \(receipt,c) ->
    wait c receipt
 
-connect :: HasLolli (LExp sig) => Lift sig proto -> Lift sig (proto ⊸ Lower α)  -> Lin sig α
+connect :: HasLolli exp => Lift exp proto -> Lift exp (proto ⊸ Lower α)  -> Lin exp α
 connect server client = suspend $ force client ^ force server
 
 transaction :: Lin Sessions String
@@ -162,12 +162,12 @@ recvU (UChan (cin,cout)) = unsafeCoerce# <$> readChan cin
 
 -- if you have a UChan σ, σ is YOUR protocol
 -- so if you have a UChan (σ ⊗ τ), you must send a $σ$ and then continue as $τ$
---sendTensor :: UChan (σ ⊗ τ) -> LVal sig σ -> IO (UChan τ)
-sendTensor :: UChan -> LVal sig σ -> IO UChan
+--sendTensor :: UChan (σ ⊗ τ) -> LVal exp σ -> IO (UChan τ)
+sendTensor :: UChan -> LVal exp σ -> IO UChan
 sendTensor c v = sendU c v >> return c
 
---recvLolli :: UChan (σ ⊸ τ) -> IO (LVal sig σ, UChan τ)
-recvLolli :: UChan -> IO (LVal sig σ, UChan)
+--recvLolli :: UChan (σ ⊸ τ) -> IO (LVal exp σ, UChan τ)
+recvLolli :: UChan -> IO (LVal exp σ, UChan)
 recvLolli c = do v <- recvU c
                  return (v,c)
 
@@ -211,9 +211,9 @@ linkU c1 c2 = do
 
 -- Shallow Embedding ----------------------------------------
 
-data Sessions
+
 -- The UChan is the output channel
-data instance LExp Sessions γ τ = SExp {runSExp :: ECtx Sessions γ -> UChan -> IO ()}
+data Sessions γ τ = SExp {runSExp :: ECtx Sessions γ -> UChan -> IO ()}
 data instance LVal Sessions τ where
     Chan :: UChan -> LVal Sessions τ
 type instance Effect Sessions = IO
@@ -225,16 +225,16 @@ instance Eval Sessions where
         return $ Chan cout
     fromVPut (Chan c) = recvLower c
 
-instance HasVar (LExp Sessions) where
-  var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> LExp Sessions γ σ
+instance HasVar Sessions where
+  var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> Sessions γ σ
   var x = SExp $ \γ (c :: UChan) -> 
             case Classes.lookup x γ of Chan c' -> linkU c c'
 
 
-instance HasLolli (LExp Sessions) where
+instance HasLolli Sessions where
   λ :: forall x σ γ γ' γ'' τ. 
        (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-    => (LExp Sessions γ'' σ -> LExp Sessions γ' τ) -> LExp Sessions γ (σ ⊸ τ)  
+    => (Sessions γ'' σ -> Sessions γ' τ) -> Sessions γ (σ ⊸ τ)  
   λ f = SExp $ \ρ (c :: UChan) -> do
             (v,c) <- recvLolli c
             runSExp (f $ var x) (add x v ρ) c
@@ -242,7 +242,7 @@ instance HasLolli (LExp Sessions) where
       x = (Proxy :: Proxy (Fresh γ))
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
-      => LExp Sessions γ1 (σ ⊸ τ) -> LExp Sessions γ2 σ -> LExp Sessions γ τ
+      => Sessions γ1 (σ ⊸ τ) -> Sessions γ2 σ -> Sessions γ τ
   e1 ^ e2 = SExp $ \ρ (c :: UChan) -> do 
             let (ρ1,ρ2) = split ρ
             (x,x') <- newU @σ -- x :: UChan σ, x' :: UChan σ⊥
@@ -252,7 +252,7 @@ instance HasLolli (LExp Sessions) where
             z      <- sendTensor y' (Chan x') 
             linkU c z
 
-instance HasTensor (LExp Sessions) where
+instance HasTensor Sessions where
     e1 ⊗ e2 = SExp $ \ρ (c :: UChan) -> do
             let (ρ1,ρ2) = split ρ
             (x,x') <- newU -- @σ1
@@ -273,9 +273,9 @@ instance HasTensor (LExp Sessions) where
              , CSingletonCtx x1 σ1 γ21
              , CSingletonCtx x2 σ2 γ22
              , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
-      => LExp Sessions γ1 (σ1 ⊗ σ2)
-      -> ((LExp Sessions γ21 σ1, LExp Sessions γ22 σ2) -> LExp Sessions γ2'' τ)
-      -> LExp Sessions γ τ
+      => Sessions γ1 (σ1 ⊗ σ2)
+      -> ((Sessions γ21 σ1, Sessions γ22 σ2) -> Sessions γ2'' τ)
+      -> Sessions γ τ
     letPair e f = SExp $ \ρ (c :: UChan) -> do
                 let (ρ1,ρ2) = split ρ
                 (x,x') <- newU @(σ1 ⊗ σ2) -- x' :: Chan (σ1 ⊸ Dual σ2)
@@ -295,7 +295,7 @@ instance HasTensor (LExp Sessions) where
     --                      runSExp (e' (var,var)) (add @x2 (Chan x2) (add @x1 (Chan y) 
 --                                                                        ρ2)) c
     
-instance HasOne (LExp Sessions) where
+instance HasOne Sessions where
     unit = SExp $ \_ (c :: UChan) -> sendOne c
 
     letUnit e e' = SExp $ \ρ (c :: UChan) -> do
@@ -317,12 +317,12 @@ instance HasOne (LExp Sessions) where
 --                                    () <- recvU y
 --                                    runSExp e' ρ2 c
 
-instance HasLower (LExp Sessions) where
+instance HasLower Sessions where
     put a = SExp $ \_ (c :: UChan) -> sendLower c a
 
     (>!) :: forall γ1 γ2 γ α τ. CMerge γ1 γ2 γ
-         => LExp Sessions γ1 (Lower α) -> (α -> LExp Sessions γ2 τ) 
-         -> LExp Sessions γ τ
+         => Sessions γ1 (Lower α) -> (α -> Sessions γ2 τ) 
+         -> Sessions γ τ
     e >! f = SExp $ \ρ (c :: UChan) -> do
                 let (ρ1,ρ2) = split ρ
                 (x,x') <- newU @(Lower α)
@@ -339,7 +339,7 @@ instance HasLower (LExp Sessions) where
   --                            Just a <- recvU x
   --                            runSExp (f a) ρ2 c
 
-instance HasWith (LExp Sessions) where
+instance HasWith Sessions where
     e1 & e2 = SExp $ \ρ (c :: UChan) -> recvU c >>= \case
        Left  () -> runSExp e1 ρ c
        Right () -> runSExp e2 ρ c
@@ -349,7 +349,7 @@ instance HasWith (LExp Sessions) where
     proj2 e = SExp $ \ρ c -> do sendU c (Right ())
                                 runSExp e ρ c
 
-instance HasRecSessions (LExp Sessions) where
+instance HasRecSessions Sessions where
   fold e   = SExp $ \ρ c → runSExp e ρ c
   unfold e = SExp $ \ρ c → runSExp e ρ c
 
