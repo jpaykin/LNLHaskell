@@ -35,7 +35,7 @@ type Ctx = [(Nat,LType)]
 
 
 -- data instance Sing (γ :: Ctx) where
---   SSEmpty :: Sing ('[] :: Ctx)
+--   SSEmpty :: Sing ([] :: Ctx)
 --   SSCons  :: Sing u -> Sing (γ :: Ctx) -> Sing (u':γ)
 -- data instance Sing (m :: Maybe α) where
 --   SSNothing :: Sing Nothing
