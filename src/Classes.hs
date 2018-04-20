@@ -45,9 +45,10 @@ instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
 
 add :: forall σ γ γ' x sig. CAddCtx x σ γ γ' 
     => Proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig γ'
-add x v (ECtx f) = ECtx $ \Dict y -> -- Lookup γ y ~ Just τ
+ -- Lookup γ y ~ Just τ
+add x v (ECtx f) = ECtx $ \Dict y ->
     case eqSNat x y of
-      Left  Dict -> v
+      Left  Dict -> v -- x = y
       Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
 
 -- Singleton Contexts ------------------------------------------

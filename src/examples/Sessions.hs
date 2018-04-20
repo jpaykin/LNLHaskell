@@ -14,8 +14,9 @@ import GHC.Prim
 import Control.Monad
 import System.TimeIt
 import Data.Singletons (sing,Sing(..))
+import Data.Singletons.TypeLits
+import Data.Singletons.Prelude.Num
 import Data.Proxy
- 
 
 import Prelude hiding (lookup,(^))
 import qualified Prelude as Prelude
@@ -25,46 +26,9 @@ import Interface
 import DeepEmbedding (Dom, Domain(..), VarName(..), LolliExp(..), OneExp(..))
 
 
-data RecSig ty where
-  RecSig :: (ty ~> ty) -> RecSig ty
-type Rec (f :: LType ~> LType) = MkLType ('RecSig f)
 
 type HasSessions exp = (HasOne exp, HasTensor exp, HasLolli exp, HasWith exp, HasLower exp)
-class HasSessions exp => HasRecSessions exp where
-  fold   :: exp γ (f @@ Rec f) -> exp γ (Rec f)
-  unfold :: exp γ (Rec f) -> exp γ (f @@ Rec f)
 
-send :: (HasTensor exp, CMerge γ1 γ2 γ)
-     => exp γ1 σ1 -> exp γ2 σ2 -> exp γ (σ1 ⊗ σ2)
-send = (⊗)
-
-recv :: (HasLolli exp, CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-     => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
-recv = λ
-
-sendOn :: (HasLolli exp, CMerge γ2 γ1 γ0, CMerge γ3 γ0 γ
-          , CSingletonCtx x τ γ3'', CAddCtx x τ γ3 γ3', x ~ Fresh γ3)
-       => exp γ1 σ -> exp γ2 (σ ⊸ τ) -> (exp γ3'' τ -> exp γ3' ρ) -> exp γ ρ
-sendOn v c cont = (c ^ v) `letin` cont
-
-recvOn :: (HasTensor exp
-          , CMerge γ1 γ2 γ
-          , CAddCtx x1 σ1 γ2 γ2'
-          , CAddCtx x2 σ2 γ2' γ2''
-          , CSingletonCtx x1 σ1 γ21
-          , CSingletonCtx x2 σ2 γ22
-          , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
-      => exp γ1 (σ1 ⊗ σ2)
-      -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
-      -> exp γ τ
-recvOn = letPair
-
-wait :: (HasOne exp, CMerge γ1 γ2 γ)
-     => exp γ1 One -> exp γ2 τ -> exp γ τ
-wait = letUnit
-
-done :: HasOne exp => exp '[] One
-done = unit
 
 
 -- Print Server
@@ -132,17 +96,6 @@ simpl = connect server client where
                        c >! \s ->
                        put $ "Hello " ++ s
 
---main = run simpl >>= print
-
-
--- May need a separate fork
-
-type family Dual (σ :: LType) = (r :: LType) | r -> σ where
-    Dual One = Bottom
-    Dual Bottom = One
-    Dual (σ ⊗ τ)  = σ ⊸ Dual τ
-    Dual (σ ⊸ τ) = σ ⊗ Dual τ
---    Dual (Lower α) = Lower α ⊸ Bot
 
 -- Untyped channels
 data UChan = UChan (Chan Any, Chan Any)
@@ -160,45 +113,7 @@ sendU (UChan (cin,cout)) a = writeChan cout $ unsafeCoerce# a
 recvU :: UChan -> IO a
 recvU (UChan (cin,cout)) = unsafeCoerce# <$> readChan cin
 
--- if you have a UChan σ, σ is YOUR protocol
--- so if you have a UChan (σ ⊗ τ), you must send a $σ$ and then continue as $τ$
---sendTensor :: UChan (σ ⊗ τ) -> LVal exp σ -> IO (UChan τ)
-sendTensor :: UChan -> LVal exp σ -> IO UChan
-sendTensor c v = sendU c v >> return c
 
---recvLolli :: UChan (σ ⊸ τ) -> IO (LVal exp σ, UChan τ)
-recvLolli :: UChan -> IO (LVal exp σ, UChan)
-recvLolli c = do v <- recvU c
-                 return (v,c)
-
---sendLower :: UChan (Lower α) -> α -> IO ()
-sendLower :: UChan -> α -> IO ()
-sendLower c a = sendU c a
-
---recvLower :: UChan (Dual (Lower α)) -> IO α
-recvLower :: UChan -> IO α
-recvLower c = recvU c
-
---sendOne :: UChan One -> IO ()
-sendOne :: UChan -> IO ()
-sendOne c = sendU c ()
-
---recvBot :: UChan Bottom -> IO ()
-recvBot :: UChan -> IO ()
-recvBot c = recvU c
-
-
-
---forwardU :: UChan -> UChan -> IO ()
---forwardU c1 c2 = do
---    forkIO $ recvU c1 >>= sendU c2
---    forkIO $ recvU c2 >>= sendU c1
---    return ()
-
---yank :: UChan σ -> UChan (Dual σ)
---yank (cin,cout) = (cout,cin)
-
---class WFSession τ where
 forward :: UChan -> UChan -> IO ()
 forward c1 c2 = recvU c1 >>= sendU c2 >> forward c1 c2
 
@@ -248,9 +163,9 @@ instance HasLolli Sessions where
             (x,x') <- newU @σ -- x :: UChan σ, x' :: UChan σ⊥
             (y,y') <- newU @(σ ⊸ τ) -- y :: UChan (σ ⊸ τ), y' :: UChan (σ ⊗ Dual τ)
             forkIO $ runSExp e2 ρ2 x -- e2 :: σ
+            sendU y' (Chan x')
             forkIO $ runSExp e1 ρ1 y -- e1 :: σ ⊸ τ'⊥
-            z      <- sendTensor y' (Chan x') 
-            linkU c z
+            linkU c y'
 
 instance HasTensor Sessions where
     e1 ⊗ e2 = SExp $ \ρ (c :: UChan) -> do
@@ -349,9 +264,8 @@ instance HasWith Sessions where
     proj2 e = SExp $ \ρ c -> do sendU c (Right ())
                                 runSExp e ρ c
 
-instance HasRecSessions Sessions where
-  fold e   = SExp $ \ρ c → runSExp e ρ c
-  unfold e = SExp $ \ρ c → runSExp e ρ c
+
+
 
 ----------------
 -- Comparison --
@@ -400,3 +314,98 @@ compareUpTo n = forM_ ls compareIO
   where
 --    ls = [0..n]
     ls = ((Prelude.^) 2) <$> [0..n]
+
+
+-----------------------------------
+-- Unnecessary extra definitions --
+-----------------------------------
+
+send :: (HasTensor exp, CMerge γ1 γ2 γ)
+     => exp γ1 σ1 -> exp γ2 σ2 -> exp γ (σ1 ⊗ σ2)
+send = (⊗)
+
+recv :: (HasLolli exp, CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
+     => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
+recv = λ
+
+sendOn :: (HasLolli exp, CMerge γ2 γ1 γ0, CMerge γ3 γ0 γ
+          , CSingletonCtx x τ γ3'', CAddCtx x τ γ3 γ3', x ~ Fresh γ3)
+       => exp γ1 σ -> exp γ2 (σ ⊸ τ) -> (exp γ3'' τ -> exp γ3' ρ) -> exp γ ρ
+sendOn v c cont = (c ^ v) `letin` cont
+
+recvOn :: (HasTensor exp
+          , CMerge γ1 γ2 γ
+          , CAddCtx x1 σ1 γ2 γ2'
+          , CAddCtx x2 σ2 γ2' γ2''
+          , CSingletonCtx x1 σ1 γ21
+          , CSingletonCtx x2 σ2 γ22
+          , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
+      => exp γ1 (σ1 ⊗ σ2)
+      -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
+      -> exp γ τ
+recvOn = letPair
+
+wait :: (HasOne exp, CMerge γ1 γ2 γ)
+     => exp γ1 One -> exp γ2 τ -> exp γ τ
+wait = letUnit
+
+done :: HasOne exp => exp '[] One
+done = unit
+
+
+-- if you have a UChan σ, σ is YOUR protocol
+-- so if you have a UChan (σ ⊗ τ), you must send a $σ$ and then continue as $τ$
+--sendTensor :: UChan (σ ⊗ τ) -> LVal exp σ -> IO (UChan τ)
+sendTensor :: UChan -> LVal exp σ -> IO UChan
+sendTensor c v = sendU c v >> return c
+
+--recvLolli :: UChan (σ ⊸ τ) -> IO (LVal exp σ, UChan τ)
+recvLolli :: UChan -> IO (LVal exp σ, UChan)
+recvLolli c = do v <- recvU c
+                 return (v,c)
+
+--sendLower :: UChan (Lower α) -> α -> IO ()
+sendLower :: UChan -> α -> IO ()
+sendLower c a = sendU c a
+
+--recvLower :: UChan (Dual (Lower α)) -> IO α
+recvLower :: UChan -> IO α
+recvLower c = recvU c
+
+--sendOne :: UChan One -> IO ()
+sendOne :: UChan -> IO ()
+sendOne c = sendU c ()
+
+--recvBot :: UChan Bottom -> IO ()
+recvBot :: UChan -> IO ()
+recvBot c = recvU c
+
+
+
+-- May need a separate fork
+
+type family Dual (σ :: LType) = (r :: LType) | r -> σ where
+    Dual One = Bottom
+    Dual Bottom = One
+    Dual (σ ⊗ τ)  = σ ⊸ Dual τ
+    Dual (σ ⊸ τ) = σ ⊗ Dual τ
+--    Dual (Lower α) = Lower α ⊸ Bot
+
+data RecSig ty where
+  RecSig :: (ty ~> ty) -> RecSig ty
+type Rec (f :: LType ~> LType) = MkLType ('RecSig f)
+class HasSessions exp => HasRecSessions exp where
+  fold   :: exp γ (f @@ Rec f) -> exp γ (Rec f)
+  unfold :: exp γ (Rec f) -> exp γ (f @@ Rec f)
+instance HasRecSessions Sessions where
+  fold e   = SExp $ \ρ c → runSExp e ρ c
+  unfold e = SExp $ \ρ c → runSExp e ρ c
+
+-- I think this is going to be too hard to work with in Haskell
+instance HasPi Sessions where
+  pλ f = SExp $ \ρ c → do a <- recvU c
+                          runSExp (f a) ρ c
+  pApp e a = SExp $ \ρ c → do (x,x') ← newU
+                              sendU x' a
+                              forkIO $ runSExp e ρ x
+                              linkU c x'

@@ -15,6 +15,7 @@ import GHC.TypeLits
 import Data.Proxy
 import Data.Singletons
 import Data.Constraint
+import Prelude hiding (lookup)
 
 data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
@@ -58,7 +59,7 @@ data SMaybe sig (u :: Maybe (Nat,LType)) where
 -- Define an evaluation context that may have extra entries, which makes
 -- splitting a context a no-op, increasing performance.
 
-data ECtx sig γ where
+data ECtx sig (γ :: Ctx) where
   ECtx :: (forall x σ. KnownNat x => 
                        Dict (Lookup γ x ~ Just σ) -> Proxy x -> LVal sig σ) 
        -> ECtx sig γ
@@ -66,7 +67,23 @@ data ECtx sig γ where
 eEmpty :: ECtx sig '[]
 eEmpty = ECtx (\d x -> case d of)
 
+data ECtx' sig γ where
+  ENil  :: ECtx' sig '[]
+  ECons :: Sing x -> LVal sig σ → ECtx' sig γ → ECtx' sig ('(x,σ) ': γ)
 
+{-
+
+data EVal sig where
+  EVal :: !(LVal sig σ) -> EVal sig
+
+type ECtx'' sig γ = IntMap (EVal sig)
+
+lookup :: KnownNat z => Dict (Lookup γ x ~ 'Just σ) -> ECtx' sig γ -> Sing z -> LVal sig σ
+lookup d ENil _ = case d of
+lookup d (ECons x v γ') z = case eqSNat x z of
+    Left Dict -> v
+    Right Dict -> case addLookupNEq x z of Dict -> lookup Dict γ' z
+-}
 
 -- Fresh variables ------------------------------------------
 

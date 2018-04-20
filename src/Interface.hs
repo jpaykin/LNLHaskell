@@ -17,6 +17,8 @@ import Classes
 import Data.Kind
 import qualified Data.Singletons as Sing
 import Data.Singletons (Proxy)
+import Data.Singletons.TypeLits
+import Data.Singletons.Prelude.Num
 import Data.Constraint (Dict(..))
 
 type (~>) a b = Sing.TyFun a b -> Type
@@ -178,18 +180,32 @@ class HasLower exp where
 
 -- Lift --------------------------------------------------
 
-class HasLift exp τ lift | lift -> exp τ where
+class Suspendable exp τ lift | lift -> exp τ where
   suspend :: exp '[] τ -> lift
   force   :: lift -> exp '[] τ
 
-data Lift (exp :: Sig) (τ :: LType) = Suspend (exp '[] τ)
+newtype Lift (exp :: Sig) (τ :: LType) = Suspend (exp '[] τ)
 
-instance HasLift exp τ (Lift exp τ) where
+instance Suspendable exp τ (Lift exp τ) where
   suspend = Suspend
   force (Suspend e) = e
 
 
---instance HasLift exp Lin (Lower α) where
+-- Dependent functions ---------------------------------
+-- I think this is going to be too hard to work with in haskell
+type family (n :: Nat) ⨂ (σ :: LType) where
+  0 ⨂ σ = One
+  n ⨂ σ = σ ⊗ ((Subtract n 1) ⨂ σ)
+
+data PiSig ty where
+  PiSig :: forall α ty. (α → ty) -> PiSig ty
+type Pi f = (MkLType ('PiSig f) :: LType)
+
+class HasPi exp where
+  pλ :: (forall a. Sing a → exp γ (f a)) → exp γ (Pi f)
+  pApp :: exp γ (Pi f) -> Sing a -> exp γ (f a)
+
+--instance Suspendable exp Lin (Lower α) where
 
 -- Families of linear languages --------------------------
 
@@ -256,7 +272,7 @@ duplicate = suspend . λbang $ put . suspend . put
 
 newtype Lin exp a = Lin (Lift exp (Lower a))
 
-instance HasLift exp (Lower α) (Lin exp α) where
+instance Suspendable exp (Lower α) (Lin exp α) where
     suspend = Lin . suspend
     force (Lin e) = force e
 
@@ -287,7 +303,7 @@ run e = eval (force e) eEmpty >>= fromVPut
 
 newtype LinT exp (f :: LType ~> LType) a = LinT (Lift exp (f @@ (Lower a)))
 
-instance τ ~ (f @@ (Lower α)) => HasLift exp τ (LinT exp f α) where
+instance τ ~ (f @@ (Lower α)) => Suspendable exp τ (LinT exp f α) where
     suspend = LinT . suspend
     force (LinT x) = force x
 

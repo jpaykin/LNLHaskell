@@ -92,7 +92,7 @@ instance HasLolli Deep where
 instance Domain Deep LolliExp where
   evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: Deep γ1 (σ ⊸ τ)) (e2 :: Deep γ2 σ)) ρ = do
-    VAbs ρ' (x :: Proxy x) e1' <- eval e1 ρ1
+    VAbs ρ' x e1' <- eval e1 ρ1
     v2 <- eval e2 ρ2
     eval e1' (add x v2 ρ')
     where

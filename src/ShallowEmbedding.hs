@@ -21,14 +21,8 @@ import Interface
 
 
 -- Shallow Embedding
-data Shallow γ τ = 
+newtype Shallow γ τ = 
   SExp {runSExp :: ECtx Shallow γ -> Effect Shallow (LVal Shallow τ)}
-
---newtype instance LExp Shallow γ τ = 
---  SExp {runSExp :: ECtx Shallow γ -> Effect Shallow (LVal Shallow τ)}
---  SExp :: forall (γ :: Ctx) (τ :: LType).
---          (SCtx Shallow γ -> Effect Shallow (LVal Shallow τ)) 
---       -> LExp Shallow γ τ
 
 instance Monad (Effect Shallow) => Eval Shallow where
   eval f γ = runSExp f γ
@@ -55,20 +49,24 @@ instance Monad (Effect Shallow) => HasLolli Shallow where
                           s'      <- runSExp s g2
                           f' s'
 
-data instance LVal Shallow (MkLType 'OneSig) = VUnit
+newtype instance LVal Shallow (MkLType 'OneSig) = VUnit ()
+
 instance Monad (Effect Shallow) => HasOne Shallow where
-  unit = SExp $ \_ -> return $ VUnit
+  unit = SExp $ \_ -> return $ VUnit ()
   letUnit (e1 :: Shallow γ1 One) (e2 :: Shallow γ2 τ) = SExp $ \g -> do
     let (g1,g2) = split g
-    VUnit   <- runSExp e1 g1
+    VUnit _ <- runSExp e1 g1
     runSExp e2 g2
 
-data instance LVal Shallow (MkLType ('TensorSig σ1 σ2)) = VPair (LVal Shallow σ1) (LVal Shallow σ2)
+newtype instance LVal Shallow (MkLType ('TensorSig σ1 σ2)) = 
+    VPair (LVal Shallow σ1, LVal Shallow σ2)
 
 instance Monad (Effect Shallow) => HasTensor Shallow where
   (e1 :: Shallow γ1 σ1) ⊗ (e2 :: Shallow γ2 σ2) = SExp $ \g ->
-    let (g1,g2) = split g
-    in liftM2 VPair (runSExp e1 g1) (runSExp e2 g2)
+    do let (g1,g2) = split g
+       v1 <- runSExp e1 g1
+       v2 <- runSExp e2 g2
+       return $ VPair (v1,v2)
 
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
@@ -83,7 +81,7 @@ instance Monad (Effect Shallow) => HasTensor Shallow where
       -> ((Shallow γ21 σ1, Shallow γ22 σ2) -> Shallow γ2'' τ)
       -> Shallow γ τ
   letPair e f = SExp $ \ρ -> do let (ρ1,ρ2) = split ρ
-                                VPair v1 v2 <- runSExp e ρ1
+                                VPair (v1,v2) <- runSExp e ρ1
                                 runSExp (f (var x1,var x2)) (add x2 v2 (add x1 v1 ρ2))
     where
       x1 = (Proxy :: Proxy x1)
@@ -92,10 +90,11 @@ instance Monad (Effect Shallow) => HasTensor Shallow where
 
 data instance LVal Shallow (MkLType 'BottomSig)
 
-data instance LVal Shallow (MkLType ('PlusSig σ τ)) = VLeft (LVal Shallow σ) | VRight (LVal Shallow τ)
+newtype instance LVal Shallow (MkLType ('PlusSig σ τ)) = 
+    VPlus (Either (LVal Shallow σ) (LVal Shallow τ))
 instance Monad (Effect Shallow) => HasPlus Shallow where
-  inl e = SExp $ \g -> VLeft <$> runSExp e g
-  inr e = SExp $ \g -> VRight <$> runSExp e g
+  inl e = SExp $ \g -> VPlus . Left <$> runSExp e g
+  inr e = SExp $ \g -> VPlus . Right <$> runSExp e g
   caseof :: forall x σ1 σ2 τ γ γ1 γ2 γ21 γ21' γ22 γ22'.
             ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
@@ -107,19 +106,20 @@ instance Monad (Effect Shallow) => HasPlus Shallow where
   caseof e f1 f2 = SExp $ \g ->
       let (g1,g2) = split g
       in runSExp e g1 >>= \case
-        VLeft  s1 -> runSExp (f1 $ var x) $ add @σ1 x s1 g2
-        VRight s2 -> runSExp (f2 $ var x) $ add @σ2 x s2 g2
+        VPlus (Left s1)  -> runSExp (f1 $ var x) $ add @σ1 x s1 g2
+        VPlus (Right s2) -> runSExp (f2 $ var x) $ add @σ2 x s2 g2
     where
       x = (Proxy :: Proxy x)
 
-data instance LVal Shallow (MkLType ('WithSig σ τ)) = VWith (LVal Shallow σ) (LVal Shallow τ)
+newtype instance LVal Shallow (MkLType ('WithSig σ τ)) = VWith (LVal Shallow σ, LVal Shallow τ)
 instance Monad (Effect Shallow) => HasWith Shallow where
-  e1 & e2 = SExp $ \g -> liftM2 VWith (runSExp e1 g) (runSExp e2 g)
+  e1 & e2 = SExp $ \g -> 
+    VWith <$> (liftM2 (,) (runSExp e1 g) (runSExp e2 g))
   proj1 e = SExp $ \g -> do
-    VWith v1 _ <- runSExp e g
+    VWith (v1,_) <- runSExp e g
     return v1
   proj2 e = SExp $ \g -> do
-    VWith _ v2 <- runSExp e g
+    VWith (_,v2) <- runSExp e g
     return v2
 
 newtype instance LVal Shallow (MkLType ('LowerSig a)) = VPut a

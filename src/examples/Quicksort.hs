@@ -32,6 +32,7 @@ import Interface
 import Classes
 import ShallowEmbedding
 import Arrays
+import Range
 
 slice3 :: (HasArray sig, Show α)
        => Int
@@ -55,10 +56,6 @@ quicksort :: (HasArray sig,Ord α, Show α)
           => LStateT sig (Array token α) ()
 quicksort = do len <- sizeT
                if len <= 1 then return () 
-               -- else if len == 2 then do a <- readT 0
-               --                          b <- readT 1
-               --                          if a <= b then return ()
-               --                          else swap 0 1
                else do p <- readT 0 -- get pivot element
                        idx <- partition p (1,len-1)
                        swap 0 idx
@@ -92,6 +89,9 @@ swap i j = do --trace ("swapping indices " ++ show i ++ " and " ++ show j) $ do
 quicksortTest :: [Int] -> IO [Int]
 quicksortTest ls = run @Shallow $ evalArrayList quicksort ls 
 
+outputTest :: [Int] -> IO [Int]
+outputTest ls = run @Shallow $ evalArrayList (return ()) ls
+
 testOp :: HasArray sig => LStateT sig (Array token Int) ()
 testOp = do quicksort
             a <- readT 1
@@ -120,7 +120,7 @@ quicksortQuickcheck ls = QCM.monadicIO $ QCM.run $ quicksortProperty ls
 -------------------------------
 
 data MyIOArray a = MyIOArray { getArray  :: IO.IOArray Int a
-                             , getRanges :: [Range] }
+                             , getRSet :: RSet }
 
 myAlloc :: Int -> α -> IO (MyIOArray α)
 myAlloc n a = do arr <- IO.newArray_ (0,n-1)
@@ -128,9 +128,9 @@ myAlloc n a = do arr <- IO.newArray_ (0,n-1)
 
 mySlice :: Int -> MyIOArray α -> (MyIOArray α, MyIOArray α)
 mySlice i (MyIOArray arr rs) = 
-  if i < sizeRanges rs then let x = offsetRanges i rs
-                                (rs1,rs2) = splitRanges x rs
-                             in (MyIOArray arr rs1, MyIOArray arr rs2)
+  if i < sizeRSet rs then let x = offsetRSet i rs
+                              (rs1,rs2) = splitRSet x rs
+                           in (MyIOArray arr rs1, MyIOArray arr rs2)
   else error $ "Slice " ++ show i ++ " out of bounds of " ++ show rs
 
 mySliceT :: Int -> (MyIOArray α -> IO ()) ->
@@ -150,20 +150,20 @@ mySlice3 i op arr = let len = mySize arr
                   | otherwise  = mySliceT i op (mySliceT 1 (\_ -> return ()) op) arr
 
 myRead :: Int -> MyIOArray α -> IO α
-myRead i arr = if i < mySize arr then do let x = offsetRanges i rs
+myRead i arr = if i < mySize arr then do let x = offsetRSet i rs
                                          IO.readArray (getArray arr) x
                else error $ "Read " ++ show i ++ " out of bounds of " ++ show rs
-  where rs = getRanges arr
+  where rs = getRSet arr
 
 
 myWrite :: Int -> MyIOArray α -> α -> IO ()
-myWrite i arr a = if i < mySize arr then do let x = offsetRanges i rs
+myWrite i arr a = if i < mySize arr then do let x = offsetRSet i rs
                                             IO.writeArray (getArray arr) x a
                   else error $ "Write " ++ show i ++ " out of bounds " ++ show rs
-  where rs = getRanges arr
+  where rs = getRSet arr
 
 mySize :: MyIOArray α -> Int
-mySize arr = sizeRanges (getRanges arr)
+mySize arr = sizeRSet (getRSet arr)
 
 
 foldArrayIO :: (a -> b -> b) -> b -> MyIOArray a -> IO b
@@ -233,6 +233,9 @@ quicksortIOQuickcheck ls = QCM.monadicIO $ QCM.run $ quicksortIOProperty ls
 quicksortIOTest :: [Int] -> IO [Int]
 quicksortIOTest ls = evalArrayIOList quicksortIO ls 
 
+outputIOTest :: [Int] -> IO [Int]
+outputIOTest ls = evalArrayIOList (\_ -> return ()) ls
+
 -- Comparison --
 
 compareQuicksort :: Int -> IO ()
@@ -240,10 +243,10 @@ compareQuicksort n = do
     print $ "Calling quicksort on a list of size " ++ show n
     ls <- randomList n
     seq ls $ return ()
-    putStr "Linear:\t"
-    timeIt . void $ quicksortTest ls
     putStr "Direct:\t"
     timeIt . void $ quicksortIOTest ls
+    putStr "Linear:\t"
+    timeIt . void $ quicksortTest ls
 
 
 randomList :: Int -> IO([Int])
@@ -253,8 +256,19 @@ randomList n = do
   rs <- randomList (n-1)
   return (r:rs) 
 
+compareOutputList :: Int -> IO ()
+compareOutputList n = do
+    print $ "Outputting a list of size " ++ show n
+    ls <- randomList n
+    seq ls $ return ()
+    putStr "Linear:\t"
+    timeIt . void $ outputTest ls
+    putStr "Direct:\t"
+    timeIt . void $ outputIOTest ls
+
+
 compareUpTo :: Int -> IO ()
-compareUpTo n = forM_ ls compareQuicksort
+compareUpTo n = forM_ ls compareQuicksort -- compareOutputList
   where
     ls = ((Prelude.^) 2) <$> [0..n]
 --    ls = [1..n]
