@@ -75,10 +75,11 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
           => Int -> α 
           -> (Shallow γ'' (Array token α) -> Shallow γ' σ)
           -> Shallow γ σ
-  alloc n a k = SExp $ \γ -> do arr <- IO.newArray (0,n-1) a
-                                let v = VArray ([(0,n-1)],arr)
-                                let x = (Proxy :: Proxy (Fresh γ)) 
-                                runSExp (k $ var x) (add x v γ)
+  alloc n a k = SExp $ \γ -> do 
+        arr <- IO.newArray (0,n-1) a
+        let v = (VArray ([(0,n-1)],arr) :: LVal Shallow (Array token α))
+            x = (Proxy :: Proxy x) 
+        runSExp (k $ var x) (addECtx x v γ)
   dealloc e = SExp $ \γ -> runSExp e γ >> return (VUnit ())
 
   slice i e = SExp $ \γ -> do 
@@ -89,7 +90,7 @@ instance HasArray Shallow where -- NOTE: bounds of newArray are inclusive!
     else error $ "Slice " ++ show i ++ " out of bounds of " ++ show rs
 
 
-  join e1 e2 = SExp $ \γ -> do  let (γ1,γ2) = split γ
+  join e1 e2 = SExp $ \γ -> do  let (γ1,γ2) = splitECtx γ
                                 VArray (rs1,arr) <- runSExp e1 γ1
                                 VArray (rs2,_)   <- runSExp e2 γ2 
                                 return $ VArray (mergeRSet rs1 rs2, arr)

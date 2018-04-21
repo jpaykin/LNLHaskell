@@ -143,7 +143,7 @@ instance Eval Sessions where
 instance HasVar Sessions where
   var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> Sessions γ σ
   var x = SExp $ \γ (c :: UChan) -> 
-            case Classes.lookup x γ of Chan c' -> linkU c c'
+            case lookupSingleton @x γ of Chan c' -> linkU c c'
 
 
 instance HasLolli Sessions where
@@ -152,14 +152,14 @@ instance HasLolli Sessions where
     => (Sessions γ'' σ -> Sessions γ' τ) -> Sessions γ (σ ⊸ τ)  
   λ f = SExp $ \ρ (c :: UChan) -> do
             (v,c) <- recvLolli c
-            runSExp (f $ var x) (add x v ρ) c
+            runSExp (f $ var x) (addECtx @σ x v ρ) c
     where
       x = (Proxy :: Proxy (Fresh γ))
 
   (^) :: forall γ1 γ2 γ σ τ. CMerge γ1 γ2 γ
       => Sessions γ1 (σ ⊸ τ) -> Sessions γ2 σ -> Sessions γ τ
   e1 ^ e2 = SExp $ \ρ (c :: UChan) -> do 
-            let (ρ1,ρ2) = split ρ
+            let (ρ1,ρ2) = splitECtx ρ
             (x,x') <- newU @σ -- x :: UChan σ, x' :: UChan σ⊥
             (y,y') <- newU @(σ ⊸ τ) -- y :: UChan (σ ⊸ τ), y' :: UChan (σ ⊗ Dual τ)
             forkIO $ runSExp e2 ρ2 x -- e2 :: σ
@@ -169,13 +169,13 @@ instance HasLolli Sessions where
 
 instance HasTensor Sessions where
     e1 ⊗ e2 = SExp $ \ρ (c :: UChan) -> do
-            let (ρ1,ρ2) = split ρ
+            let (ρ1,ρ2) = splitECtx ρ
             (x,x') <- newU -- @σ1
             forkIO $ runSExp e1 ρ1 x
             c' <- sendTensor c (Chan x')
             runSExp e2 ρ2 c'
 
-    -- e1 ⊗ e2 = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+    -- e1 ⊗ e2 = SExp $ \ρ c -> do let (ρ1,ρ2) = splitECtx ρ
     --                             (x1,x2) <- newU
     --                             forkIO $ runSExp e1 ρ1 x1
     --                             sendU c (Chan x2)
@@ -192,40 +192,40 @@ instance HasTensor Sessions where
       -> ((Sessions γ21 σ1, Sessions γ22 σ2) -> Sessions γ2'' τ)
       -> Sessions γ τ
     letPair e f = SExp $ \ρ (c :: UChan) -> do
-                let (ρ1,ρ2) = split ρ
+                let (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
                 (x,x') <- newU @(σ1 ⊗ σ2) -- x' :: Chan (σ1 ⊸ Dual σ2)
                 forkIO $ runSExp e ρ1 x
                 (v,y) <- recvLolli x' -- v :: LVal σ1, y :: UChan (Dual σ2)
-                let ρ2' = add x2 (Chan y) (add x1 v ρ2)
+                let ρ2' = addECtx @σ2 x2 (Chan y) (addECtx @σ1 x1 v ρ2)
                 runSExp (f (var x1,var x2)) ρ2' c
       where 
         x1 = (Proxy :: Proxy x1)
         x2 = (Proxy :: Proxy x2)
 
     -- letPair e e' = SExp $ \ρ c ->  do 
-    --                      let (ρ1,ρ2) = split ρ
+    --                      let (ρ1,ρ2) = splitECtx ρ
     --                      (x1,x2) <- newU
     --                      forkIO $ runSExp e ρ1 x1
     --                      Chan y <- recvU x2
-    --                      runSExp (e' (var,var)) (add @x2 (Chan x2) (add @x1 (Chan y) 
+    --                      runSExp (e' (var,var)) (addECtx @x2 (Chan x2) (addECtx @x1 (Chan y) 
 --                                                                        ρ2)) c
     
 instance HasOne Sessions where
     unit = SExp $ \_ (c :: UChan) -> sendOne c
 
     letUnit e e' = SExp $ \ρ (c :: UChan) -> do
-                let (ρ1,ρ2) = split ρ
+                let (ρ1,ρ2) = splitECtx ρ
                 (x,x') <- newU @One
                 forkIO $ runSExp e ρ1 x
                 recvBot x' -- important, wait for result before continuing
                 runSExp e' ρ2 c
 
 --   -- unit = SExp $ \_ _ -> return ()
---   -- letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+--   -- letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = splitECtx ρ
 --   --                                  forkIO $ runSExp e ρ1 undefined
 --   --                                  runSExp e' ρ2 c
 --   unit = SExp $ \_ c -> sendU c ()
---   letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+--   letUnit e e' = SExp $ \ρ c -> do let (ρ1,ρ2) = splitECtx ρ
 --                                    (x1,x2) <- newU
 --                                    forkIO $ runSExp e ρ1 x1
 --                                    Chan y <- recvU x2
@@ -239,7 +239,7 @@ instance HasLower Sessions where
          => Sessions γ1 (Lower α) -> (α -> Sessions γ2 τ) 
          -> Sessions γ τ
     e >! f = SExp $ \ρ (c :: UChan) -> do
-                let (ρ1,ρ2) = split ρ
+                let (ρ1,ρ2) = splitECtx ρ
                 (x,x') <- newU @(Lower α)
                 forkIO $ runSExp e ρ1 x
                 a <- recvLower x'
@@ -247,7 +247,7 @@ instance HasLower Sessions where
 
   -- put a  = SExp $ \_ c -> sendU c (Just a)
 
-  -- e >! f = SExp $ \ρ c -> do let (ρ1,ρ2) = split ρ
+  -- e >! f = SExp $ \ρ c -> do let (ρ1,ρ2) = splitECtx ρ
   --                            (c1,c2) <- newU
   --                            forkIO $ runSExp e ρ1 c1
   --                            Chan x <- recvU c2

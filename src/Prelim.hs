@@ -24,12 +24,41 @@ import Unsafe.Coerce
 
 
 eqSNat :: (KnownNat m, KnownNat n)
-       => proxy m -> proxy n
-       -> Either (Dict (m ~ n, (m == n) ~ 'True, (n == m) ~ 'True))
+       => proxy m -> proxy' n
+       -> Either (Dict (m ~ n
+                       , (m == n) ~ 'True, (n == m) ~ 'True
+                       , CmpNat m n ~ 'EQ, CmpNat n m ~ 'EQ))
                  (Dict ((m == n) ~ 'False, (n == m) ~ 'False))
 eqSNat x y = if natVal x == natVal y 
-             then Left  $ unsafeCoerce (Dict :: Dict ((),(),()))
+             then Left  $ unsafeCoerce (Dict :: Dict ((),(),(),(),()))
              else Right $ unsafeCoerce (Dict :: Dict ((),()))
+
+data COrdering m n where
+  CLT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False, CmpNat m n ~ 'LT, CmpNat n m ~ 'GT)
+      -> COrdering m n
+  CEQ :: Dict ( m ~ n, (m == n) ~ 'True, (n == m) ~ 'True
+         , CmpNat m n ~ 'EQ, CmpNat n m ~ 'EQ)
+      -> COrdering m n
+  CGT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False, CmpNat m n ~ 'GT, CmpNat n m ~ 'LT)
+      -> COrdering m n
+
+unsafeCLT :: COrdering m n
+unsafeCLT = CLT $ unsafeCoerce (Dict :: Dict ((),(),(),()))
+
+unsafeCEQ :: COrdering m n
+unsafeCEQ = CEQ $ unsafeCoerce (Dict :: Dict ((),(),(),(),()))
+
+unsafeCGT :: COrdering m n
+unsafeCGT = CGT $ unsafeCoerce (Dict :: Dict ((),(),(),()))
+
+
+cmpNat :: (KnownNat m, KnownNat n)
+       => proxy m -> proxy' n
+       -> COrdering m n
+cmpNat x y = case compare (natVal x) (natVal y) of
+               LT -> unsafeCLT
+               EQ -> unsafeCEQ    
+               GT -> unsafeCGT
 
 {-
 type family EqNat (m :: Nat) (n :: Nat) :: Bool where
@@ -254,9 +283,9 @@ type family InListCons (pf :: InList (x :: a) ls) :: InList x (y ': ls) where
 -}
 
 type family CompareOrd (ord :: Ordering) (lt :: α) (eq :: α) (gt :: α) :: α where
-  CompareOrd LT lt eq gt = lt
-  CompareOrd EQ lt eq gt = eq
-  CompareOrd GT lt eq gt = gt
+  CompareOrd 'LT lt eq gt = lt
+  CompareOrd 'EQ lt eq gt = eq
+  CompareOrd 'GT lt eq gt = gt
 
 type family (x :: Nat) ==? (y :: Nat) :: Bool where
   x ==? y = CompareOrd (CmpNat x y) 'False 'True 'False
@@ -267,13 +296,13 @@ type family Max (x :: Nat) (y :: Nat) :: Nat where
 --type family (x :: Nat) <==? (y :: Nat) :: Bool where
 --  x <==? y = CompareOrd (CmpNat x y) 'True 'True 'False
 
-type x < y = CmpNat x y ~ LT
+type x < y = CmpNat x y ~ 'LT
 
 --test2 :: Dict (CmpNat 1 2 ~ 'LT)
 --test2 = Dict
 
 
-ltS :: forall x. KnownNat x => Dict (x < S x)
+ltS :: forall x. Dict (x < S x)
 ltS = unsafeCoerce (Dict :: Dict ())
 --ltS = case sameNat (Proxy :: Proxy x) (Proxy :: Proxy 0) of
 --        Just Refl -> Dict

@@ -17,7 +17,7 @@ import Data.Constraint
 import Data.Type.Equality
 import Unsafe.Coerce
 
-import Prelim
+--import Prelim
 import Types
 
 -- In Context ---------------------------------------------
@@ -43,13 +43,6 @@ instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
   where
     addLookupNEq _ _ = unsafeCoerce (Dict :: Dict ())
 
-add :: forall σ γ γ' x sig. CAddCtx x σ γ γ' 
-    => Proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig γ'
- -- Lookup γ y ~ Just τ
-add x v (ECtx f) = ECtx $ \Dict y ->
-    case eqSNat x y of
-      Left  Dict -> v -- x = y
-      Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
 
 -- Singleton Contexts ------------------------------------------
 
@@ -65,8 +58,8 @@ instance (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, Known
   where
     singletonLookupNEq _ = unsafeCoerce (Dict :: Dict ())
 
-lookup :: CSingletonCtx x σ γ => Proxy x -> ECtx sig γ -> LVal sig σ
-lookup x (ECtx f) = f Dict x
+--lookup :: CSingletonCtx x σ γ => Proxy x -> ECtx sig γ -> LVal sig σ
+--lookup x (ECtx f) = f Dict x
 
 -- Merging ---------------------------------------
 
@@ -108,17 +101,20 @@ instance (γ ~ MergeF γ1 γ2, γ ~ MergeF γ2 γ1, Div γ γ2 ~ γ1, Div γ γ1
     lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
 
 
+{-
 split :: forall γ1 γ2 γ sig. CMerge γ1 γ2 γ 
        => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
 split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ x) x
                  ,ECtx $ \Dict x -> f (lookupMerge2 @γ1 @γ2 @γ x) x)
+-}
 
 
 
 -- Well-formed contexts --------------------------------
 
 type WFCtx γ = (Div γ '[] ~ γ, Div  γ γ ~ '[]
-               , MergeF '[] γ ~ γ, MergeF γ '[] ~ γ ) 
+               , MergeF '[] γ ~ γ, MergeF γ '[] ~ γ
+               , KnownDomain γ ) 
 
 
 -- Helper stuff -----------------------------------

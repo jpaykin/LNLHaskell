@@ -27,35 +27,35 @@ import ShallowEmbedding as S
 --  Lolli :: LType -> LType -> LType
 --  Lower :: Type -> LType
 
-data FHSig sig = FHSig
+data FHSig exp = FHSig
 type Handle = MkLType 'FHSig
 
-class HasMILL sig => HasFH sig where
-  open :: String -> LExp sig '[] Handle
-  read :: LExp sig γ Handle -> LExp sig γ (Handle ⊗ Lower Char)
-  write :: LExp sig γ Handle -> Char -> LExp sig γ Handle
-  close :: LExp sig γ Handle -> LExp sig γ One
+class HasMILL exp => HasFH exp where
+  open :: String -> exp '[] Handle
+  read :: exp γ Handle -> exp γ (Handle ⊗ Lower Char)
+  write :: exp γ Handle -> Char -> exp γ Handle
+  close :: exp γ Handle -> exp γ One
 
 type instance Effect _ = IO
 data instance LVal _ Handle = VHandle (IO.Handle)
 
 instance HasFH Shallow where
-  open s  = SExp $ \ρ -> VHandle <$> IO.openFile s IO.ReadWriteMode
+  open s  = SExp $ \_ -> VHandle <$> IO.openFile s IO.ReadWriteMode
   read e  = SExp $ \ρ -> do VHandle h <- runSExp e ρ
                             c <- IO.hGetChar h
-                            return $ S.VPair (VHandle h) (S.VPut c)
+                            return $ S.VPair (VHandle h, S.VPut c)
   write e c = SExp $ \ρ → do VHandle h <- runSExp e ρ
                              IO.hPutChar h c
                              return $ VHandle h
   close e = SExp $ \ρ -> do VHandle h <- runSExp e ρ 
                             IO.hClose h
-                            return S.VUnit
+                            return $ S.VUnit ()
                              
-data FHExp :: Sig -> Exp where
-  Open :: String -> FHExp sig '[] Handle
-  Read :: LExp sig γ Handle -> FHExp sig γ (Handle ⊗ Lower Char)
-  Write :: LExp sig γ Handle -> Char -> FHExp sig γ Handle
-  Close :: LExp sig γ Handle -> FHExp sig γ One
+data FHExp :: Sig -> Sig where
+  Open :: String -> FHExp exp '[] Handle
+  Read :: exp γ Handle -> FHExp exp γ (Handle ⊗ Lower Char)
+  Write :: exp γ Handle -> Char -> FHExp exp γ Handle
+  Close :: exp γ Handle -> FHExp exp γ One
 
 instance Domain Deep FHExp where
   evalDomain (Open s)    _ = VHandle <$> IO.openFile s IO.ReadWriteMode
@@ -73,49 +73,49 @@ instance Domain Deep FHExp where
 -- Examples ----------------------------------
 
 
-writeString :: HasFH sig => String -> LExp sig γ Handle -> LExp sig γ Handle
+writeString :: HasFH exp => String -> exp γ Handle -> exp γ Handle
 writeString s e = foldl write e s
 
-readWriteTwice :: HasFH sig => LExp sig '[] (Handle ⊸ Handle)
+readWriteTwice :: HasFH exp => exp '[] (Handle ⊸ Handle)
 readWriteTwice = λ $ \h -> read h `letPair` \(h,x) ->
                            x >! \c ->
                            writeString [c,c] h
 
-withFile :: HasFH sig => String -> Lift sig (Handle ⊸ Handle ⊗ Lower a) -> Lin sig a
+withFile :: HasFH exp => String -> Lift exp (Handle ⊸ Handle ⊗ Lower a) -> Lin exp a
 withFile name f = suspend $ (force f ^ open name) `letPair` \(h,a) -> 
                             close h `letUnit` a
 
-readM :: HasFH sig => LExp sig '[] (LState Handle (Lower Char))
+readM :: HasFH exp => exp '[] (LState Handle (Lower Char))
 readM = λ read
 
-writeM :: HasFH sig => Char -> LExp sig '[] (LState Handle One)
+writeM :: HasFH exp => Char -> exp '[] (LState Handle One)
 writeM c = λ $ \h -> write h c ⊗ unit
 
-readWriteTwiceM :: HasFH sig => Lift sig (LState Handle One)
+readWriteTwiceM :: HasFH exp => Lift exp (LState Handle One)
 readWriteTwiceM = suspend $ readM    =>>= (λbang $ \c ->
                             writeM c =>>= (λunit $ \() -> writeM c))
 
-readT :: HasFH sig => LStateT sig Handle Char
+readT :: HasFH exp => LStateT exp Handle Char
 readT = suspend readM
 
-writeT :: HasFH sig => Char -> LStateT sig Handle ()
+writeT :: HasFH exp => Char -> LStateT exp Handle ()
 writeT c = suspend $ writeM c =>>= (λunit $ \() -> lpure $ put ())
 
-readWriteTwiceT :: HasFH sig => LStateT sig Handle ()
+readWriteTwiceT :: HasFH exp => LStateT exp Handle ()
 readWriteTwiceT = do c <- readT
                      writeT c
                      writeT c
 
-take :: HasFH sig => Int -> LStateT sig Handle String
+take :: HasFH exp => Int -> LStateT exp Handle String
 take n | n <= 0    = return ""
 take n | otherwise = do c <- readT
                         s <- take (n-1)
                         return $ c:s
 
-writeStringT :: HasFH sig => String -> LStateT sig Handle ()
+writeStringT :: HasFH exp => String -> LStateT exp Handle ()
 writeStringT s = forM_ s writeT
 
-withFileT :: HasFH sig => String -> LStateT sig Handle a -> Lin sig a
+withFileT :: HasFH exp => String -> LStateT exp Handle a -> Lin exp a
 withFileT name st = evalLStateT st (suspend $ open name) (suspend $ λ close)
 
 test :: Lin Shallow String

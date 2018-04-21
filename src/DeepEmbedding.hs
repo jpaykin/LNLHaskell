@@ -48,7 +48,7 @@ class Domain exp (dom :: Dom) where
 instance Eval Deep where
   eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
           Deep γ τ -> ECtx Deep γ -> Effect Deep (LVal Deep τ)
-  eval (Var x) γ = return $ lookup x γ
+  eval (Var (x :: Proxy x)) γ = return $ lookupSingleton @x γ
   eval (Dom e) γ = evalDomain e γ
 
   fromVPut (VPut a) = return a
@@ -94,9 +94,9 @@ instance Domain Deep LolliExp where
   evalDomain (App (e1 :: Deep γ1 (σ ⊸ τ)) (e2 :: Deep γ2 σ)) ρ = do
     VAbs ρ' x e1' <- eval e1 ρ1
     v2 <- eval e2 ρ2
-    eval e1' (add x v2 ρ')
+    eval e1' (addECtx x v2 ρ')
     where
-      (ρ1,ρ2) = split @γ1 @γ2 ρ
+      (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
 
 
 
@@ -117,7 +117,7 @@ instance Domain Deep OneExp where
       VUnit <- eval e1 ρ1
       eval e2 ρ2
     where
-      (ρ1,ρ2) = split @γ1 @γ2 ρ
+      (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
 
 
 -- Tensor -------------------------------------------------
@@ -161,14 +161,14 @@ instance  Domain Deep TensorExp where
   evalDomain (Pair (e1 :: Deep γ1 τ1) (e2 :: Deep γ2 τ2)) ρ =
       liftM2 VPair (eval e1 ρ1) (eval e2 ρ2)
     where
-      (ρ1,ρ2) = split ρ
+      (ρ1,ρ2) = splitECtx ρ
   evalDomain (LetPair x1 x2
                       (e  :: Deep γ1 (σ1 ⊗ σ2))
                       e' :: TensorExp Deep γ τ) ρ = do
       VPair v1 v2 <- eval e ρ1
-      eval e' (add x2 v2 (add x1 v1 ρ2))
+      eval e' (addECtx x2 v2 (addECtx x1 v1 ρ2))
     where
-      (ρ1,ρ2) = split @γ1 @(Div γ γ1) ρ
+      (ρ1,ρ2) = splitECtx @γ1 @(Div γ γ1) ρ
 
 
 
@@ -208,10 +208,10 @@ instance  Domain Deep PlusExp where
   evalDomain (Case x1 x2
                    (e :: Deep γ1 (σ1 ⊕ σ2)) e1 e2 :: PlusExp Deep γ τ) ρ = 
       eval e ρ1 >>= \case 
-        VInl v1 -> eval e1 (add x1 v1 ρ2)
-        VInr v2 -> eval e2 (add x2 v2 ρ2)
+        VInl v1 -> eval e1 (addECtx x1 v1 ρ2)
+        VInr v2 -> eval e2 (addECtx x2 v2 ρ2)
     where
-      (ρ1,ρ2) = split @γ1 @(Div γ γ1) ρ
+      (ρ1,ρ2) = splitECtx @γ1 @(Div γ γ1) ρ
 
 
 -- With -------------------------------------------------
@@ -256,7 +256,7 @@ instance  Domain Deep LowerExp where
       VPut a <- eval e1 ρ1
       eval (e2 a) ρ2
     where
-      (ρ1,ρ2) = split @γ1 @γ2 ρ
+      (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
 
 ------------------------------------------------------------------------
 
