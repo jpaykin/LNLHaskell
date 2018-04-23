@@ -91,8 +91,8 @@ split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ x) x
 -- Well-formed contexts --------------------------------
 
 type WFCtx γ = (Div γ '[] ~ γ, Div  γ γ ~ '[]
-               , MergeF '[] γ ~ γ, MergeF γ '[] ~ γ
-               , KnownDomain γ ) 
+               , MergeF '[] γ ~ γ, MergeF γ '[] ~ γ)
+--               , KnownDomain γ ) 
 
 
 -- Helper stuff -----------------------------------

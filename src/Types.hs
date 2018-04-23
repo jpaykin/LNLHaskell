@@ -9,8 +9,8 @@ import Data.Proxy
 --import Data.Constraint
 import Unsafe.Coerce
 import Prelude hiding (lookup)
-import qualified Data.IntMap as M
-import qualified Data.IntSet as S
+import qualified Data.IntMap.Strict as M
+--import qualified Data.IntSet as S
 
 data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
@@ -35,9 +35,6 @@ unsafeEValCoerce :: forall σ sig. EVal sig -> LVal sig σ
 unsafeEValCoerce (EVal v) = unsafeCoerce v
 
 newtype ECtx sig γ = ECtx (M.IntMap (EVal sig))
-
-eRemove :: Int -> ECtx sig γ -> ECtx sig γ'
-eRemove x (ECtx γ) = ECtx $ M.delete x γ
 
 eEmpty :: ECtx sig '[]
 eEmpty = ECtx M.empty
@@ -68,6 +65,11 @@ addECtx :: forall σ x γ sig proxy. KnownNat x
         => proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig (AddF x σ γ)
 addECtx _ v (ECtx γ) = ECtx $ M.insert (knownInt @x) (EVal v) γ
 
+{-
+eRemove :: Int -> ECtx sig γ -> ECtx sig γ'
+eRemove x (ECtx γ) = ECtx $ M.delete x γ
+
+
 removeECtx :: forall x σ γ sig. 
               KnownNat x 
            => ECtx sig (AddF x σ γ) -> (LVal sig σ, ECtx sig γ)
@@ -82,12 +84,14 @@ instance KnownDomain '[] where
 instance (KnownNat x, KnownDomain γ) => KnownDomain ('(x,σ) ': γ) where
   domain = S.insert x $ domain @γ
     where x = knownInt @x
+-}
 
-splitECtx :: forall γ1 γ2 γ sig. (KnownDomain γ1, γ ~ MergeF γ1 γ2)
+splitECtx :: forall γ1 γ2 γ sig. (γ ~ MergeF γ1 γ2)
           => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
-splitECtx (ECtx γ) = let (γ1',γ2') = M.partitionWithKey (\x _ -> S.member x γ1) γ
-                     in (ECtx γ1', ECtx γ2')
-  where γ1 = domain @γ1
+splitECtx (ECtx γ) = (ECtx γ, ECtx γ)
+--splitECtx (ECtx γ) = let (γ1',γ2') = M.partitionWithKey (\x _ -> S.member x γ1) γ
+--                     in (ECtx γ1', ECtx γ2')
+--  where γ1 = domain @γ1
 
 
 -- Fresh variables ------------------------------------------
