@@ -1,3 +1,4 @@
+
 module FileHandles where
 
 import qualified System.IO as IO
@@ -29,7 +30,7 @@ class HasMILL exp => HasFH exp where
   close :: exp γ Handle -> exp γ One
 
 type instance Effect _ = IO
-data instance LVal _ Handle = VHandle (IO.Handle)
+newtype instance LVal _ Handle = VHandle (IO.Handle)
 
 instance HasFH Shallow where
   open s  = SExp $ \_ -> VHandle <$> IO.openFile s IO.ReadWriteMode

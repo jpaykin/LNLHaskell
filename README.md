@@ -43,12 +43,13 @@ build` to compile the project or `stack ghci` to load the project in `ghci`.
 TODO for efficiency
 
 X change representation of ECtx
-- LANGUAGE StrictData -- make data structures strict, as long as I don't construct any infinite data strucures
-- more radical: turn on Strict extension
+X LANGUAGE StrictData -- make data structures strict, as long as I don't construct any infinite data strucures
+X more radical: turn on Strict extension
 - change VPlus back to VLeft and VRight as strict
 - small speedup: replace proxy by type application
-- idea: implement Ctx as IntMap (exists σ. LVal sig σ)
+X idea: implement Ctx as IntMap (exists σ. LVal sig σ)
 - dynamically switch between concurrent and single-threaded join implementation
 - check out different array implementations---Repa, Vector
-- make Range strict - or look for "interval trie" data structures
+X make Range strict - or look for "interval trie" data structures
 - quickcheck automatically using template haskell prop_
+- unboxed types--not in IO monad or anything
