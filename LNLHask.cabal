@@ -15,9 +15,22 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src, src/examples
-  exposed-modules:     Lib, Prelim, Types, Classes, Interface, ShallowEmbedding, DeepEmbedding, Sessions, ByteString
+  exposed-modules:     Prelim, Types, Classes, Interface
+                     , ShallowEmbedding, DeepEmbedding
+                     , Arrays, Quicksort, ByteString, FileHandles 
+  other-modules:       Range
+--, Quantum, Sessions
+
+  default-extensions: UnicodeSyntax, DataKinds, TypeOperators,
+             KindSignatures, TypeInType, GADTs, MultiParamTypeClasses,
+             FunctionalDependencies, TypeFamilies, AllowAmbiguousTypes,
+             FlexibleInstances, UndecidableInstances, InstanceSigs,
+             TypeApplications, ScopedTypeVariables, EmptyCase, FlexibleContexts,
+             TypeFamilyDependencies, RankNTypes, StrictData, ConstraintKinds,
+             LambdaCase, PartialTypeSignatures
+
   build-depends:       base >= 4.7 && < 5
-                     , template-haskell == 2.11.*
+                     , template-haskell >= 2.11.0
                      , constraints >= 0.8
                      , singletons >= 2.2
                      , timeit >= 1.0.0.0
@@ -32,16 +45,16 @@ library
                      , QuickCheck >= 2.9.2
                      , containers >= 0.5.7.0
   default-language:    Haskell2010
-  ghc-options:       -O2 -W
+  ghc-options:       -W -fno-warn-unticked-promoted-constructors
 --  required-extentions:
 
 executable LNLHask-exe
   hs-source-dirs:      app, src/examples
   main-is:             Main.hs
-  other-modules:       Range, Arrays, Quicksort
+  other-modules:       Range, Arrays, Range, Quicksort
   ghc-options:         -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base >= 4.7 && < 5
-                     , template-haskell == 2.11.*
+                     , template-haskell >= 2.11.0
                      , constraints >= 0.8
                      , singletons >= 2.2
                      , timeit >= 1.0.0.0
@@ -54,8 +67,16 @@ executable LNLHask-exe
                      , word8 >= 0.1.2
                      , random >= 1.1
                      , QuickCheck >= 2.9.2
-                     , base
                      , LNLHask
+
+  default-extensions: UnicodeSyntax, DataKinds, TypeOperators,
+             KindSignatures, TypeInType, GADTs, MultiParamTypeClasses,
+             FunctionalDependencies, TypeFamilies, AllowAmbiguousTypes,
+             FlexibleInstances, UndecidableInstances, InstanceSigs,
+             TypeApplications, ScopedTypeVariables, EmptyCase, FlexibleContexts,
+             TypeFamilyDependencies, RankNTypes, StrictData, ConstraintKinds,
+             LambdaCase, PartialTypeSignatures
+
   default-language:    Haskell2010
 
 test-suite LNLHask-test
@@ -78,7 +99,7 @@ benchmark LNLHask-bench
   other-modules:       Range, Arrays, Quicksort
   ghc-options:         -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base >= 4.7 && < 5
-                     , template-haskell == 2.11.*
+                     , template-haskell >= 2.11.0
                      , constraints >= 0.8
                      , singletons >= 2.2
                      , timeit >= 1.0.0.0
@@ -93,4 +114,13 @@ benchmark LNLHask-bench
                      , QuickCheck >= 2.9.2
                      , base
                      , LNLHask
+
+  default-extensions: UnicodeSyntax, DataKinds, TypeOperators,
+             KindSignatures, TypeInType, GADTs, MultiParamTypeClasses,
+             FunctionalDependencies, TypeFamilies, AllowAmbiguousTypes,
+             FlexibleInstances, UndecidableInstances, InstanceSigs,
+             TypeApplications, ScopedTypeVariables, EmptyCase, FlexibleContexts,
+             TypeFamilyDependencies, RankNTypes, StrictData, ConstraintKinds,
+             LambdaCase, PartialTypeSignatures
+
   default-language:    Haskell2010

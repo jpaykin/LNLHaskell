@@ -1,18 +1,10 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             InstanceSigs, TypeApplications, ScopedTypeVariables, RankNTypes,
-             EmptyCase, FlexibleContexts, UndecidableInstances,
-             ConstraintKinds, PartialTypeSignatures
-#-}
-{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
-                               -fno-warn-redundant-constraints #-}
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 
 module Classes where
 
 import Prelude hiding (div)
 import Data.Singletons
-import GHC.TypeLits
+import GHC.TypeLits hiding (Div)
 import Data.Constraint
 import Data.Type.Equality
 import Unsafe.Coerce
@@ -46,40 +38,26 @@ instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
 
 -- Singleton Contexts ------------------------------------------
 
-class (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, KnownNat x)
+class (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, KnownNat x
+      ,γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)
       | x σ -> γ, γ -> x σ 
   where
     singletonLookupNEq :: forall y.  (x == y) ~ False 
                        => Proxy y -> Dict (Lookup γ y ~ Nothing)
 
-instance (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, KnownNat x)
+instance (γ ~ SingletonF x σ
+         , Remove x γ ~ '[]
+         , Lookup γ x ~ 'Just σ
+         , KnownNat x
+         , γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)
   where
     singletonLookupNEq _ = unsafeCoerce (Dict :: Dict ())
 
---lookup :: CSingletonCtx x σ γ => Proxy x -> ECtx sig γ -> LVal sig σ
---lookup x (ECtx f) = f Dict x
 
 -- Merging ---------------------------------------
 
-{-
-class (MergeF γ1 γ2 ~ γ)
-   => CMergeForward (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) | γ1 γ2 -> γ 
-  where
-    lookupMerge1 :: forall x σ. Dict (Lookup γ1 x ~ Just σ)
-                 -> Proxy x 
-                 -> Dict (Lookup γ x ~ Just σ)
-    lookupMerge2 :: Dict (Lookup γ2 x ~ Just σ)
-                 -> Proxy x 
-                 -> Dict (Lookup γ x ~ Just σ)
-
-instance (MergeF γ1 γ2 ~ γ)
-   => CMergeForward (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx)
-  where
-    lookupMerge1 _ _ = unsafeCoerce (Dict :: Dict ())
-    lookupMerge2 _ _ = unsafeCoerce (Dict :: Dict ())
--}
 
 
 class (γ ~ MergeF γ1 γ2, γ ~ MergeF γ2 γ1, Div γ γ2 ~ γ1, Div γ γ1 ~ γ2

@@ -30,6 +30,7 @@ insertRange (min0,max0) ((min1,max1) : rs)
     | max0+1 >= min1 && min0 <= max1+1 = insertRange (min min0 min1, max max0 max1) rs
     -- (min0,max0) comes after everything in (min1,max1)
     | min0 > max1+1 = (min1,max1) : insertRange (min0,max0) rs
+    | otherwise     = error "ill defined range"
 
 mergeRSet :: RSet -> RSet -> RSet
 mergeRSet [] r = r
@@ -39,7 +40,7 @@ inRange :: Int -> Range -> Bool
 inRange i (min,max) = min <= i && i <= max
 
 inRSet :: Int -> RSet -> Bool
-inRSet i [] = False
+inRSet _ [] = False
 inRSet i (r:rs) = inRange i r || inRSet i rs
 
 sizeRange :: Range -> Int
@@ -55,7 +56,7 @@ offsetRange :: Int -> Range -> Int
 offsetRange i r = i + fst r
 
 offsetRSet :: Int -> RSet -> Int
-offsetRSet i []     = 0
+offsetRSet _ []     = 0
 offsetRSet i (r:rs) | i < sizeRange r = offsetRange i r
                       | otherwise       = offsetRSet (i + sizeRange r) rs
 
@@ -84,7 +85,7 @@ mergeRSetProp2 i rs1 rs2 =
 
 
 splitRSet :: Int -> RSet -> (RSet,RSet)
-splitRSet i []                         = ([],[])
+splitRSet _ []                         = ([],[])
 splitRSet i ((min,max):rs) | i <= min  = ([],(min,max):rs)
                              | i <= max  = ([(min,i-1)], (i,max):rs)
                              | otherwise = let (rs1,rs2) = splitRSet i rs 

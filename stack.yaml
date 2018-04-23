@@ -8,13 +8,14 @@
 # to be used for project dependencies. For example:
 # 
 # resolver: lts-3.5
-resolver: nightly-2016-12-17
+# resolver: nightly-2016-12-17
 # resolver: ghc-7.10.2
 # resolver: ghcjs-0.1.0_ghc-7.10.2
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
 # resolver: ghc-8.0.1
+resolver: ghc-8.4.1
 
 
 # User packages to be built.
@@ -41,21 +42,72 @@ packages:
 # (e.g., acme-missiles-0.3)
 extra-deps: 
 - random-1.1
-# - QuickCheck-2.9.2
-# - text-1.2.2.1
-# - hashable-1.2.4.0
-# - mtl-2.2.1
-# - transformers-compat-0.5.1.4
-# - constraints-0.8
-# - random-1.1
-# - MonadRandom-0.4.2.3
-# - binary-0.8.4.1
-# - bytestring-0.10.8.1
-# - singletons-2.2
-# - timeit-1.0.0.0
-# - linear-1.20.5
-# - array-0.5.1.1
-# - hmatrix-0.18.0.0
+- HTTP-4000.3.11
+- async-2.2.1
+- base16-bytestring-0.1.1.6
+- base64-bytestring-1.0.0.1
+- cryptohash-sha256-0.11.101.0
+- echo-0.1.3
+- ed25519-0.0.5.0
+- edit-distance-0.2.2.1
+- hackage-security-0.5.3.0
+- hashable-1.2.7.0
+- network-2.6.3.4
+- network-uri-2.6.1.0
+- resolv-0.1.1.1
+- tar-0.5.1.0
+- zlib-0.6.2
+- QuickCheck-2.11.3
+- constraints-0.10
+- hmatrix-0.19.0.0
+- linear-1.20.7
+- singletons-2.4.1
+- timeit-2.0
+- word8-0.1.3
+- adjunctions-4.4
+- base-orphans-0.7
+- bytes-0.15.4
+- cabal-doctest-1.0.6
+- cereal-0.5.5.0
+- distributive-0.5.3
+- lens-4.16.1
+- reflection-2.1.3
+- semigroupoids-5.2.2
+- semigroups-0.18.4
+- split-0.2.3.3
+- storable-complex-0.2.2
+- syb-0.7
+- tagged-0.8.5
+- tf-random-0.5
+- th-desugar-1.8
+- transformers-compat-0.6.1.6
+- unordered-containers-0.2.9.0
+- vector-0.12.0.1
+- void-0.7.2
+- bifunctors-5.5.2
+- call-stack-0.1.0
+- comonad-5.0.3
+- contravariant-1.4.1
+- exceptions-0.10.0
+- free-5.0.1
+- kan-extensions-5.1
+- parallel-3.2.1.1
+- primitive-0.6.3.0
+- profunctors-5.2.2
+- scientific-0.3.5.3
+- th-abstraction-0.2.6.0
+- th-expand-syns-0.4.4.0
+- th-lift-0.7.8
+- th-orphans-0.13.5
+- StateVar-1.1.1.0
+- fail-4.9.0.0
+- integer-logarithms-1.0.2.1
+- th-lift-instances-0.1.11
+- th-reify-many-0.1.8
+- transformers-base-0.4.5.2
+- safe-0.3.17
+- ghc-paths-0.1.0.9
+
 
 # Override default flag values for local packages and extra-deps
 flags: {}

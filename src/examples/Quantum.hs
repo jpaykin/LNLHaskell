@@ -1,13 +1,3 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds, LambdaCase,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
-#-}
-{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
-                               -fno-warn-name-shadowing #-}
-
 module Quantum where
 
 --import Data.Kind

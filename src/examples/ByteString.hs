@@ -1,11 +1,3 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds, LambdaCase,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
-#-}
-
 module ByteString where
 
 import Prelude hiding (read,(^),drop,head,uncurry)
@@ -13,9 +5,9 @@ import Prelude hiding (read,(^),drop,head,uncurry)
 import Types
 import Interface
 import Classes
-import ShallowEmbedding
+-- import ShallowEmbedding
 
-import Foreign.ForeignPtr
+-- import Foreign.ForeignPtr
 import Data.Word8
 import Control.Monad
 import Data.Maybe

@@ -1,20 +1,12 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
-#-}
-
 module FileHandles where
 
 import qualified System.IO as IO
-import Data.Proxy
+--import Data.Proxy
 import Prelude hiding (read, (^), take)
 import Control.Monad (forM_)
 
 import Types
-import Classes
+--import Classes
 import Interface
 import DeepEmbedding as D
 import ShallowEmbedding as S

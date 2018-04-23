@@ -1,16 +1,7 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, UndecidableInstances,
-             EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds,
-             TypeFamilyDependencies, LambdaCase
-#-}
-
 module Interface where
  
 import Prelude hiding ((^), uncurry)
-import Prelim hiding (One)
+-- import Prelim hiding (One)
 import Types
 import Classes
 
@@ -19,7 +10,7 @@ import qualified Data.Singletons as Sing
 import Data.Singletons (Proxy)
 import Data.Singletons.TypeLits
 import Data.Singletons.Prelude.Num
-import Data.Constraint (Dict(..))
+-- import Data.Constraint (Dict(..))
 
 type (~>) a b = Sing.TyFun a b -> Type
 

@@ -1,11 +1,6 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds, PartialTypeSignatures,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies,
-             MagicHash, RecursiveDo, LambdaCase
-#-}
+{-# LANGUAGE MagicHash #-}
+{-# OPTIONS_GHC -fno-warn-unused-foralls #-}
+
 
 module Sessions where
 
@@ -13,17 +8,18 @@ import Control.Concurrent
 import GHC.Prim
 import Control.Monad
 import System.TimeIt
-import Data.Singletons (sing,Sing(..))
-import Data.Singletons.TypeLits
-import Data.Singletons.Prelude.Num
+--import Data.Singletons (sing,Sing(..))
+--import Data.Singletons.TypeLits
+--import Data.Singletons.Prelude.Num
 import Data.Proxy
+import GHC.Exts
 
 import Prelude hiding (lookup,(^))
 import qualified Prelude as Prelude
 import Types
 import Classes
 import Interface
-import DeepEmbedding (Dom, Domain(..), VarName(..), LolliExp(..), OneExp(..))
+--import DeepEmbedding (Dom, Domain(..), VarName(..), LolliExp(..), OneExp(..))
 
 
 
@@ -65,7 +61,7 @@ type ServerProto = Lower String ⊸ Lower Int ⊸ Lower String ⊗ One
 
 
 processOrder :: String -> Int -> String
-processOrder item cc = "Processed order for " ++ item ++ "."
+processOrder item _ = "Processed order for " ++ item ++ "."
 
 serverBody :: HasSessions exp => Lift exp ServerProto
 serverBody = Suspend . recv $ \x -> x >! \item ->
@@ -108,10 +104,10 @@ newU = do
     return $ (UChan (c1,c2), UChan (c2,c1))
 
 sendU :: UChan -> a -> IO ()
-sendU (UChan (cin,cout)) a = writeChan cout $ unsafeCoerce# a
+sendU (UChan (_,cout)) a = writeChan cout $ unsafeCoerce# a
 
 recvU :: UChan -> IO a
-recvU (UChan (cin,cout)) = unsafeCoerce# <$> readChan cin
+recvU (UChan (cin,_)) = (unsafeCoerce#) <$> readChan cin
 
 
 forward :: UChan -> UChan -> IO ()
@@ -142,7 +138,7 @@ instance Eval Sessions where
 
 instance HasVar Sessions where
   var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> Sessions γ σ
-  var x = SExp $ \γ (c :: UChan) -> 
+  var _ = SExp $ \γ (c :: UChan) -> 
             case lookupSingleton @x γ of Chan c' -> linkU c c'
 
 

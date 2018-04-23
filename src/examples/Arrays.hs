@@ -1,31 +1,20 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds, LambdaCase,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
-#-}
---             IncoherentInstances
-
-
 module Arrays where
  
 import Data.Kind
 import qualified Data.Array.IO as IO
 import Prelude hiding (read, (^), drop)
-import qualified Prelude as Prelude
+-- import qualified Prelude as Prelude
 import Data.Proxy
-import Data.List (insert, sort)
-import Data.Constraint
-import System.TimeIt
-import Control.Monad (void, foldM, forM_, replicateM_)
-import Debug.Trace
-import Control.Monad.State.Lazy (State(..), runState)
-import Control.Concurrent.MVar
-import Control.Concurrent
-import System.Random (randomRIO)
-import GHC.TypeLits
-import Test.QuickCheck
+-- import Data.List (insert, sort)
+-- import Data.Constraint
+-- import Control.Monad (void, foldM, forM_, replicateM_)
+-- import Debug.Trace
+-- import Control.Monad.State.Lazy (State(..), runState)
+-- import Control.Concurrent.MVar
+-- import Control.Concurrent
+-- import System.Random (randomRIO)
+-- import GHC.TypeLits
+-- import Test.QuickCheck
 
 import Types
 import Interface
@@ -194,7 +183,7 @@ toListT = foldArrayRight (:) []
 fromListT :: HasArray exp => [α] -> LStateT exp (Array token α) ()
 fromListT ls = fromListT' 0 ls
   where
-    fromListT' i []     = return ()
+    fromListT' _ []     = return ()
     fromListT' i (a:ls) = writeT i a >> fromListT' (i+1) ls
                              
 
@@ -218,26 +207,6 @@ evalArrayList :: HasArray exp
 evalArrayList op ls = do (ls,_) <- runArrayList op ls
                          return ls
 
-{-
-test' :: Lin Shallow [Int]
-test' = evalArrayList quicksort [] --3,1,4,1,5,9,2,6,5,3]
-
-test :: [Int] -> Lin Shallow [Int]
-test ls = evalArrayList quicksort ls
--}
-
-{-testPrint :: (HasArray exp, Show α) => LStateT exp (Array token α) ()
-testPrint = do ls <- toListT
-               rs <- rangesT
-               trace ("list is " ++ show ls ++ " on ranges " ++ show rs) $ return ()
--}
-
-{-
-op :: LStateT Shallow (Array token Int) ()
-op = do testPrint
-        sliceT 1 testPrint testPrint
-        testPrint
--}
 
 test :: Lin Shallow [Int]
 test = evalArrayList (return ()) [1,2,3]

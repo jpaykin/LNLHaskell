@@ -1,17 +1,9 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, EmptyCase, FlexibleContexts, TypeFamilyDependencies
-           , RankNTypes
-#-}
-
 module Types where
 
 import Prelim
 
 import Data.Kind
-import GHC.TypeLits
+import GHC.TypeLits hiding (Div)
 import Data.Proxy
 --import Data.Singletons
 --import Data.Constraint
@@ -24,44 +16,17 @@ data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
 
 type Sig = Ctx -> LType -> Type
---type Exp = Ctx -> LType -> Type
 type Val = LType -> Type
 
---data family LExp (sig :: Sig) :: Exp
 data family LVal (sig :: Sig) :: Val
 type family Effect (sig :: Sig) :: Type -> Type
 
 type Ctx = [(Nat,LType)]
 
 
---data Ctx  = Empty | N (NCtx)
---data NCtx = End (Nat,LType) | Cons (Maybe (Nat,LType)) (NCtx)
-
-
--- data instance Sing (γ :: Ctx) where
---   SSEmpty :: Sing ([] :: Ctx)
---   SSCons  :: Sing u -> Sing (γ :: Ctx) -> Sing (u':γ)
--- data instance Sing (m :: Maybe α) where
---   SSNothing :: Sing Nothing
---   SSJust    :: Sing (Just a) -- cuts off
--- instance SingI ('[] :: Ctx) where sing = SSEmpty
--- instance (SingI u, SingI (γ :: Ctx)) => SingI (u ': γ) 
---     where sing = SSCons (sing :: Sing u) sing
--- instance SingI Nothing  where sing = SSNothing
--- instance SingI (Just a) where sing = SSJust
-
-{-
-data SCtx sig (γ :: Ctx) where
-  SEmpty :: SCtx sig '[]
-  SCons  :: SMaybe sig u -> SCtx sig γ -> SCtx sig (u':γ)
-data SMaybe sig (u :: Maybe (Nat,LType)) where
-  SNothing :: SMaybe sig Nothing
-  SJust    :: KnownNat x => LVal sig σ -> SMaybe sig (Just '(x,σ))
--}
-
--- Define an evaluation context that may have extra entries, which makes
--- splitting a context a no-op, increasing performance.
-
+-------------------------
+-- Evaluation contexts --
+-------------------------
 
 data EVal sig where
   EVal :: !(LVal sig σ) -> EVal sig
@@ -70,7 +35,6 @@ unsafeEValCoerce :: forall σ sig. EVal sig -> LVal sig σ
 unsafeEValCoerce (EVal v) = unsafeCoerce v
 
 newtype ECtx sig γ = ECtx (M.IntMap (EVal sig))
-
 
 eRemove :: Int -> ECtx sig γ -> ECtx sig γ'
 eRemove x (ECtx γ) = ECtx $ M.delete x γ
@@ -125,137 +89,6 @@ splitECtx (ECtx γ) = let (γ1',γ2') = M.partitionWithKey (\x _ -> S.member x �
                      in (ECtx γ1', ECtx γ2')
   where γ1 = domain @γ1
 
-{-
-class γ ~ MergeF γ1 γ2 => CMergeF γ1 γ2 γ where
-  splitECtx :: ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
-
-instance CMergeF '[] γ2 γ2 where
-  splitECtx γ2 = (eEmpty,γ2)
-
-instance (CMergeF γ1 γ2 γ0, γ ~ AddF x σ γ0, KnownNat x) 
-       => CMergeF ('(x,σ) ': γ1) γ2 γ where
-  splitECtx γ = let (v,γ')  = removeECtx @x @σ γ
-                    (γ1,γ2) = splitECtx @γ1 @γ2 γ' 
-                in (eCons @x v γ1, γ2)
--}
-
-
-{-
-data ECtx sig γ where
-  EEmpty :: ECtx sig '[]
-  ECons :: KnownNat x 
-        => proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig ('(x,σ) ': γ)
-
-lookupHead :: CmpNat x y ~ 'EQ
-           => proxy x -> proxy' y -> Dict (Lookup ('(y,σ) ': γ) x ~ 'Just σ)
-lookupHead _ _ = unsafeCoerce (Dict :: Dict ())
-
-lookupTail :: (x ==? y) ~ 'False
-           => proxy x -> proxy' y -> Dict (Lookup ('(y,σ) ': γ) x ~ Lookup γ x)
-lookupTail _ _ = unsafeCoerce (Dict :: Dict ())
-
-lookupECtx :: KnownNat x
-       => Dict (Lookup γ x ~ 'Just σ) -> proxy x -> ECtx sig γ -> LVal sig σ
-lookupECtx d _ EEmpty        = case d of
-lookupECtx  Dict x (ECons y (v :: LVal sig τ) γ) = case cmpNat x y of
-    CLT Dict -> case lookupTail x y of Dict -> lookupECtx Dict x γ
-    CEQ Dict -> v
-    CGT Dict -> case lookupTail x y of Dict -> lookupECtx Dict x γ
--}
-
-{-
-unsafeLookupECtx :: KnownNat x
-       => proxy x -> ECtx sig γ -> LVal sig σ
-unsafeLookupECtx = lookupECtx (unsafeCoerce (Dict :: Dict ()))
--}
-
-{-
-mergeEmpty :: '[] ~ MergeF γ1 γ2 => Dict (γ1 ~ '[], γ2 ~ '[])
-mergeEmpty = unsafeCoerce (Dict :: Dict ((),()))
--}
-
-
-
---splitECtx (ECons x v γ) = (_,_)
-
-
-{-
-
-unsafeLookupECtx :: forall x σ sig γ proxy. 
-              (KnownNat x) --, Lookup γ x ~ 'Just σ) 
-           => proxy x → ECtx sig γ → LVal sig σ
-unsafeLookupECtx x γ = unsafeEvalCoerce $ γ ! knownInt x
-
---inDomain :: (KnownDomain γ) => Int -> Bool
---inDomain = undefined
-
-add :: forall σ γ x sig proxy. KnownNat x
-    => proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig (AddF x σ γ)
-add x v γ = insert (knownInt x) (EVal v) γ
-
-split :: forall γ1 γ2 γ sig. (γ ~ MergeF γ1 γ2)
-      => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
-split γ = foldrWithKey _ (eEmpty,eEmpty) γ
--}
-
-{-
-class γ' ~ AddF x σ γ  => CAddF x σ γ γ' where
-  removeECtx :: proxy x -> ECtx sig γ' -> ECtx sig γ
-instance CAddF x σ '[] '[ '(x,σ) ] where
-  removeECtx _ _ = eEmpty
-instance CmpNat x y ~ 'LT => CAddF x σ ('(y,τ) ': γ) ('(x,σ) ': '(y,τ) ': γ) where
-  removeECtx x γ' = 
-
-
-class (γ ~ MergeF γ1 γ2) => CMergeF γ1 γ2 γ where
-  split :: ECtx sig γ → (ECtx sig γ1, ECtx sig γ2)
-
-instance CMergeF '[] γ2 γ2 where
-  split γ = (eEmpty, γ)
---instance CMergeF γ1 (AddF x σ γ2) γ => CMergeF ('(x,σ) ': γ1) γ2 γ where
---  split γ = splitAdd γ
-
---split :: forall γ1 γ2 γ sig. (γ ~ MergeF γ1 γ2, KnownDomain γ1)
---       => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
---split γ = partitionWithKey (\ x _ -> inDomain @γ1 x) γ
--}
-
-{-
-split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ x) x
-                 ,ECtx $ \Dict x -> f (lookupMerge2 @γ1 @γ2 @γ x) x)
--}
-
-{-
-add x v (ECtx f) = ECtx $ \Dict y ->
-    case eqSNat x y of
-      Left  Dict -> v -- x = y
-      Right Dict -> case addLookupNEq @x @σ @γ @γ' x y of Dict -> f Dict y
--}
-
-{-
-data ECtx sig (γ :: Ctx) where
-  ECtx :: (forall x σ. KnownNat x => 
-                       Dict (Lookup γ x ~ Just σ) -> Proxy x -> LVal sig σ) 
-       -> ECtx sig γ
-
-eEmpty :: ECtx sig '[]
-eEmpty = ECtx (\d x -> case d of)
-
-
-data ECtx' sig γ where
-  ENil  :: ECtx' sig '[]
-  ECons :: Sing x -> LVal sig σ → ECtx' sig γ → ECtx' sig ('(x,σ) ': γ)
-
-
-
-
-
-lookup :: KnownNat z => Dict (Lookup γ x ~ 'Just σ) -> ECtx' sig γ -> Sing z -> LVal sig σ
-lookup d ENil _ = case d of
-lookup d (ECons x v γ') z = case eqSNat x z of
-    Left Dict -> v
-    Right Dict -> case addLookupNEq x z of Dict -> lookup Dict γ' z
--}
 
 -- Fresh variables ------------------------------------------
 

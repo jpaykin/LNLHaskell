@@ -1,14 +1,3 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables,
-             EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds,
-             LambdaCase
-#-}
-{-# OPTIONS_GHC -Wall -Wcompat -fno-warn-unticked-promoted-constructors 
-                               -fno-warn-redundant-constraints #-}
-
 module ShallowEmbedding where
 
 import Control.Monad (liftM2)

@@ -1,6 +1,6 @@
 module Main where
 
-import Arrays
+--import Arrays
 import Quicksort
 
 --main :: IO ()

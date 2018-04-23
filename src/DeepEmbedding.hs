@@ -1,33 +1,23 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, AllowAmbiguousTypes, LambdaCase,
-             EmptyCase, RankNTypes, FlexibleContexts, ConstraintKinds
-#-}
---{-# OPTIONS -fconstraint-solver-iterations=5 #-}
-
 module DeepEmbedding where
 
 import Prelude hiding (lookup)
-import Data.Kind
-import Data.Constraint
+--import Data.Kind
+--import Data.Constraint
 import Data.Proxy
-import Data.Maybe
-import Debug.Trace
-import GHC.TypeLits (Symbol(..))
+--import Data.Maybe
+--import Debug.Trace
+--import GHC.TypeLits (Symbol(..))
 import Control.Monad (liftM2)
-import Data.Singletons
+--import Data.Singletons
 
-import Prelim hiding (One)
+-- import Prelim hiding (One)
 import Types
 import Classes
---import Proofs
-import Interface hiding (Pair, Inl, Inr, Put)
+import Interface 
 
 data Deep γ τ where
   Var :: CSingletonCtx x τ γ => Proxy x -> Deep γ τ
-  Dom :: forall (dom :: Dom) m (γ :: Ctx) (τ :: LType).
+  Dom :: forall (dom :: Dom) (γ :: Ctx) (τ :: LType).
          Domain Deep dom 
       => dom Deep γ τ
       -> Deep γ τ
@@ -48,7 +38,7 @@ class Domain exp (dom :: Dom) where
 instance Eval Deep where
   eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
           Deep γ τ -> ECtx Deep γ -> Effect Deep (LVal Deep τ)
-  eval (Var (x :: Proxy x)) γ = return $ lookupSingleton @x γ
+  eval (Var (_ :: Proxy x)) γ = return $ lookupSingleton @x γ
   eval (Dom e) γ = evalDomain e γ
 
   fromVPut (VPut a) = return a
@@ -258,39 +248,6 @@ instance  Domain Deep LowerExp where
     where
       (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
 
-------------------------------------------------------------------------
-
---type family FromLang (lang :: Lang) :: [Dom] where
---   FromLang ('Lang lang) = lang
---type CInLang dom lang = CInList dom (FromLang lang)
-
-
-
-{-
-toDomain' :: forall dom lang σ.
-             WFDomain dom lang
-           => LVal lang σ -> Maybe (ValDom dom lang σ)
-toDomain' (VDom (proxy :: Proxy dom') v) = -- cast @_ @(ValDom dom lang σ) v
-  case compareInList (pfInList @_ @dom) (pfInList @_ @dom' @(FromLang lang)) of
---  case eqT @dom @dom' of
-    Just Dict -> Just v
-    Nothing   -> Nothing
-
-toDomain :: forall dom lang σ.
-          WFDomain dom lang
-       => LVal lang σ -> ValDom dom lang σ
-toDomain = fromJust . (toDomain' @dom)
--}
--- this function is partial if the value is not
--- in the specified domain
--- evalToValDom :: forall dom (lang :: Lang) g σ.
---                 (WFDomain dom lang, Monad (SigEffect), Typeable σ)
---              => Proxy dom -> ECtx lang g
---              -> Deep g σ ->Effect (ValDom dom lang σ)
--- evalToValDom proxy ρ e = fromLVal proxy <$> eval' ρ e
-
-
----------
 
 
 -- Show instance

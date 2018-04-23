@@ -42,7 +42,7 @@ build` to compile the project or `stack ghci` to load the project in `ghci`.
 
 TODO for efficiency
 
-- change representation of ECtx
+X change representation of ECtx
 - LANGUAGE StrictData -- make data structures strict, as long as I don't construct any infinite data strucures
 - more radical: turn on Strict extension
 - change VPlus back to VLeft and VRight as strict

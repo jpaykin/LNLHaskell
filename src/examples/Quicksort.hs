@@ -1,35 +1,27 @@
-{-# LANGUAGE UnicodeSyntax, DataKinds, TypeOperators, KindSignatures,
-             TypeInType, GADTs, MultiParamTypeClasses, FunctionalDependencies,
-             TypeFamilies, AllowAmbiguousTypes, FlexibleInstances,
-             UndecidableInstances, InstanceSigs, TypeApplications, 
-             ScopedTypeVariables, ConstraintKinds, LambdaCase,
-             EmptyCase, RankNTypes, FlexibleContexts, TypeFamilyDependencies
-#-}
-
 module Quicksort where
 
-import Data.Kind
+-- import Data.Kind
 import qualified Data.Array.IO as IO
 import Prelude hiding (read, (^), drop)
 import qualified Prelude as Prelude
-import Data.Proxy
-import Data.List (insert, sort)
-import Data.Constraint
+-- import Data.Proxy
+-- import Data.List (insert, sort)
+-- import Data.Constraint
 import System.TimeIt
-import Control.Monad (void, foldM, forM_, replicateM_)
+import Control.Monad (void, forM_)
 import Debug.Trace
-import Control.Monad.State.Lazy (State(..), runState)
-import Control.Concurrent.MVar
-import Control.Concurrent
+-- import Control.Monad.State.Lazy (State(..), runState)
+-- import Control.Concurrent.MVar
+-- import Control.Concurrent
 import System.Random (randomRIO)
 
 import Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QCM
 
 
-import Types
+-- import Types
 import Interface
-import Classes
+-- import Classes
 import ShallowEmbedding
 import Arrays
 import Range
@@ -105,7 +97,7 @@ testOp = do quicksort
 
 isSorted :: Ord α => [α] -> Bool
 isSorted [] = True
-isSorted [a] = True
+isSorted [_] = True
 isSorted (a:b:as) = a <= b && isSorted (b:as)
 
 quicksortProperty :: [Int] -> IO Bool
@@ -123,7 +115,7 @@ data MyIOArray a = MyIOArray { getArray  :: IO.IOArray Int a
                              , getRSet :: RSet }
 
 myAlloc :: Int -> α -> IO (MyIOArray α)
-myAlloc n a = do arr <- IO.newArray_ (0,n-1)
+myAlloc n a = do arr <- IO.newArray (0,n-1) a
                  return $ MyIOArray arr [(0,n-1)]
 
 mySlice :: Int -> MyIOArray α -> (MyIOArray α, MyIOArray α)
@@ -184,7 +176,7 @@ fromListIO ls = do arr <- myAlloc (length ls) (head ls)
                    return arr
   where
     fromListIO' :: Int -> [a] -> MyIOArray a -> IO ()
-    fromListIO' i []     arr = return ()
+    fromListIO' _ []     _   = return ()
     fromListIO' i (a:ls) arr = myWrite i arr a >> fromListIO' (i+1) ls arr
 
 runArrayIOList :: (MyIOArray α -> IO β) -> [α] -> IO ([α],β)
@@ -226,7 +218,7 @@ quicksortIO arr = do let len = mySize arr
 
 quicksortIOProperty :: [Int] -> IO Bool
 quicksortIOProperty ls = do ls' <- evalArrayIOList quicksortIO ls
-                            return $ isSorted ls
+                            return $ isSorted ls'
 quicksortIOQuickcheck :: [Int] -> Property
 quicksortIOQuickcheck ls = QCM.monadicIO $ QCM.run $ quicksortIOProperty ls
 
