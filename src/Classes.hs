@@ -25,15 +25,17 @@ class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
       , KnownNat x)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
     | x σ γ -> γ', x γ' -> σ γ
-  where
-    addLookupNEq :: (x == y) ~ False
-                 => Proxy x -> Proxy y -> Dict (Lookup γ' y ~ Lookup γ y)
+  -- where
+  --   addLookupNEq :: (x == y) ~ False
+  --                => Proxy x -> Proxy y -> Dict (Lookup γ' y ~ Lookup γ y)
 
 instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
          , KnownNat x)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
-  where
-    addLookupNEq _ _ = unsafeCoerce (Dict :: Dict ())
+
+addLookupNEq :: (γ' ~ AddF x σ γ, (x == y) ~ False)
+             => Proxy x -> Proxy y -> Dict (Lookup γ' y ~ Lookup γ y)
+addLookupNEq _ _ = unsafeCoerce (Dict :: Dict ())
 
 
 -- Singleton Contexts ------------------------------------------
@@ -42,9 +44,6 @@ class (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, KnownNat
       ,γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)
       | x σ -> γ, γ -> x σ 
-  where
-    singletonLookupNEq :: forall y.  (x == y) ~ False 
-                       => Proxy y -> Dict (Lookup γ y ~ Nothing)
 
 instance (γ ~ SingletonF x σ
          , Remove x γ ~ '[]
@@ -52,8 +51,10 @@ instance (γ ~ SingletonF x σ
          , KnownNat x
          , γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)
-  where
-    singletonLookupNEq _ = unsafeCoerce (Dict :: Dict ())
+
+singletonLookupNEq :: forall x y σ. (x == y) ~ False 
+                   => Proxy y -> Dict (Lookup '[ '(x,σ) ] y ~ Nothing)
+singletonLookupNEq _ = unsafeCoerce (Dict :: Dict ())
 
 
 -- Merging ---------------------------------------
@@ -63,20 +64,23 @@ instance (γ ~ SingletonF x σ
 class (γ ~ MergeF γ1 γ2, γ ~ MergeF γ2 γ1, Div γ γ2 ~ γ1, Div γ γ1 ~ γ2
       , WFCtx γ1, WFCtx γ2, WFCtx γ)
     => CMerge γ1 γ2 γ | γ1 γ2 -> γ, γ1 γ -> γ2, γ2 γ -> γ1
-  where
-    lookupMerge1 :: Lookup γ1 x ~ Just σ
-                 => Proxy x 
-                 -> Dict (Lookup γ x ~ Just σ)
-    lookupMerge2 :: Lookup γ2 x ~ Just σ
-                 => Proxy x 
-                 -> Dict (Lookup γ x ~ Just σ)
 
 instance (γ ~ MergeF γ1 γ2, γ ~ MergeF γ2 γ1, Div γ γ2 ~ γ1, Div γ γ1 ~ γ2
       , WFCtx γ1, WFCtx γ2, WFCtx γ)
     => CMerge γ1 γ2 γ 
-  where
-    lookupMerge1 _ = unsafeCoerce (Dict :: Dict ())
-    lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
+
+lookupMerge1 :: forall γ1 γ2 γ x σ.
+                (γ ~ MergeF γ1 γ2, Lookup γ1 x ~ Just σ)
+             => Proxy x 
+             -> Dict (Lookup γ x ~ Just σ)
+lookupMerge1 _ = unsafeCoerce (Dict :: Dict ())
+
+lookupMerge2 :: forall γ1 γ2 γ x σ.
+                (γ ~ MergeF γ1 γ2, Lookup γ2 x ~ Just σ)
+             => Proxy x 
+             -> Dict (Lookup γ x ~ Just σ)
+
+lookupMerge2 _ = unsafeCoerce (Dict :: Dict ())
 
 
 {-
