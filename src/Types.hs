@@ -11,7 +11,7 @@ import Unsafe.Coerce
 import Prelude hiding (lookup)
 import qualified Data.IntMap.Strict as M
 --import qualified Data.IntSet as S
-import Debug.Trace
+--import Debug.Trace
 
 data LType where MkLType :: ty LType -> LType
   -- ty :: * -> *
@@ -56,6 +56,7 @@ unsafeLookupECtx (ECtx γ) = unsafeEValCoerce $ γ M.! knownInt @x
 lookupECtx :: forall x σ γ sig. (KnownNat x, Lookup γ x ~ 'Just σ)
            => ECtx sig γ -> LVal sig σ
 lookupECtx = unsafeLookupECtx @x
+lookupECtx (ECtx γ) = unsafeCoerce $ γ ! knownInt @x
 
 lookupSingleton :: forall x σ sig. KnownNat x
                 => ECtx sig '[ '(x,σ) ] -> LVal sig σ
@@ -89,7 +90,7 @@ instance (KnownNat x, KnownDomain γ) => KnownDomain ('(x,σ) ': γ) where
 
 splitECtx :: forall γ1 γ2 γ sig. (γ ~ MergeF γ1 γ2)
           => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
-splitECtx (ECtx γ) = trace ("Size of ECtx is " ++ show (M.size γ)) (ECtx γ, ECtx γ)
+splitECtx (ECtx γ) = (ECtx γ, ECtx γ)
 --splitECtx (ECtx γ) = let (γ1',γ2') = M.partitionWithKey (\x _ -> S.member x γ1) γ
 --                     in (ECtx γ1', ECtx γ2')
 --  where γ1 = domain @γ1
