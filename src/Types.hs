@@ -56,7 +56,7 @@ unsafeLookupECtx (ECtx γ) = unsafeEValCoerce $ γ M.! knownInt @x
 lookupECtx :: forall x σ γ sig. (KnownNat x, Lookup γ x ~ 'Just σ)
            => ECtx sig γ -> LVal sig σ
 lookupECtx = unsafeLookupECtx @x
-lookupECtx (ECtx γ) = unsafeCoerce $ γ ! knownInt @x
+--lookupECtx (ECtx γ) = unsafeCoerce $ γ ! knownInt @x
 
 lookupSingleton :: forall x σ sig. KnownNat x
                 => ECtx sig '[ '(x,σ) ] -> LVal sig σ
