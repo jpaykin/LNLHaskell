@@ -1,3 +1,5 @@
+{-# LANGUAGE IncoherentInstances #-}
+
 module Interface where
  
 import Prelude hiding ((^), uncurry)
@@ -7,10 +9,11 @@ import Classes
 
 import Data.Kind
 import qualified Data.Singletons as Sing
-import Data.Singletons (Proxy)
+import Data.Singletons (Proxy(..))
 import Data.Singletons.TypeLits
 import Data.Singletons.Prelude.Num
--- import Data.Constraint (Dict(..))
+import Data.Constraint (Dict(..))
+import Debug.Trace
 
 type (~>) a b = Sing.TyFun a b -> Type
 
@@ -34,7 +37,8 @@ infixr 0 ⊸
 -- Exp = Ctx -> LType -> Type
 class HasLolli (exp :: Sig) where
   λ :: forall x σ γ γ' γ'' τ.
-       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
+       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ
+       ,WFVar x σ γ)
     => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
   (^) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (σ :: LType) (τ :: LType).
          CMerge γ1 γ2 γ
@@ -42,7 +46,7 @@ class HasLolli (exp :: Sig) where
 
 
 letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
-         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
+         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2, WFFresh σ γ2)
       => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
 letin e f = λ f ^ e
 
@@ -71,6 +75,14 @@ class HasTensor exp where
   (⊗) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (τ1 :: LType) (τ2 :: LType).
          CMerge γ1 γ2 γ
       => exp γ1 τ1 -> exp γ2 τ2 -> exp γ (τ1 ⊗ τ2)
+  letPair :: forall x1 x2 σ1 σ2 τ γ1 γ2 γ γ2''.
+             ( CMerge γ1 γ2 γ
+             , WFVarTwo x1 σ1 x2 σ2 γ2 γ2''
+             )
+          => exp γ1 (σ1 ⊗ σ2)
+          -> ((Var exp x1 σ1, Var exp x2 σ2) -> exp γ2'' τ)
+          -> exp γ τ
+{-
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
                     (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
                     (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
@@ -84,14 +96,16 @@ class HasTensor exp where
       => exp γ1 (σ1 ⊗ σ2)
       -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
       -> exp γ τ
+-}
 
 λpair :: (HasTensor exp, HasLolli exp
-         , CSingletonCtx x1 σ1 γ1, CSingletonCtx x2 σ2 γ2
-         , CAddCtx x1 σ1 γ γ', CAddCtx x2 σ2 γ' γ''
-         , x1 ~ Fresh γ, x2 ~ Fresh γ'
+--         , CSingletonCtx x1 σ1 γ1, CSingletonCtx x2 σ2 γ2
+         , WFVarTwo x1 σ1 x2 σ2 γ γ''
+--         , CAddCtx x1 σ1 γ γ', CAddCtx x2 σ2 γ' γ''
+--         , x1 ~ Fresh γ, x2 ~ Fresh γ'
          , WFVar x1 (σ1 ⊗ σ2) γ, WFVar x2 (σ1 ⊗ σ2) γ
          )
-        => ((exp γ1 σ1, exp γ2 σ2) -> exp γ'' τ) -> exp γ (σ1⊗σ2 ⊸ τ)
+        => ((Var exp x1 σ1, Var exp x2 σ2) -> exp γ'' τ) -> exp γ (σ1⊗σ2 ⊸ τ)
 λpair f = λ $ \z -> z `letPair` f
 
 
@@ -124,7 +138,7 @@ class HasPlus exp where
   caseof :: ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
             , x ~ Fresh γ
-            , CMerge γ1 γ2 γ )
+            , CMerge γ1 γ2 γ)
         => exp γ1 (σ1 ⊕ σ2)
         -> (exp γ21' σ1 -> exp γ21 τ)
         -> (exp γ22' σ2 -> exp γ22 τ)
@@ -163,9 +177,10 @@ type Lower a = (MkLType ('LowerSig a) :: LType)
 
 class HasLower exp where
   put  :: a -> exp '[] (Lower a)
-  (>!) :: CMerge γ1 γ2 γ => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
+  (>!) :: (CMerge γ1 γ2 γ) 
+       => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> exp γ τ
 
-λbang :: ( HasLower exp, HasLolli exp, WFFresh (Lower a) γ)
+λbang :: ( HasLower exp, HasLolli exp, WFFresh (Lower a) γ )
    => (a -> exp γ τ) -> exp γ (Lower a ⊸ τ)
 λbang f = λ $ (>! f)
 
@@ -228,7 +243,8 @@ uncurryL = suspend . λ $ \f -> λ $ \x ->
     x `letPair` \(x1,x2) -> 
     f ^ x1 ^ x2
 
-uncurry :: (HasMILL exp, WFCtx γ) => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
+uncurry :: (HasMILL exp, WFCtx γ, KnownDomain γ)
+        => exp γ (σ1 ⊸ σ2 ⊸ τ) -> exp γ (σ1 ⊗ σ2 ⊸ τ)
 uncurry e = force uncurryL ^ e
 
 
@@ -336,7 +352,8 @@ class LFunctor exp (f :: LType ~> LType) where
   (<$$>) :: CMerge γ1 γ2 γ 
          => exp γ1 (σ ⊸ τ) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
 class LFunctor exp f => LApplicative exp f where
-  lpure  :: WFCtx γ => exp γ τ -> exp γ (f @@ τ)
+  lpure :: forall γ τ. (WFCtx γ, KnownDomain γ)
+        => exp γ τ -> exp γ (f @@ τ)
   (<**>) :: CMerge γ1 γ2 γ
          => exp γ1 (f @@ (σ ⊸ τ)) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
 class LApplicative exp m => LMonad exp m where
@@ -352,17 +369,69 @@ type family (f :: k1 ~> k2) @@ (x :: k1) = (r :: b) | r -> f x
 type instance (LState' σ) @@ τ = σ ⊸ σ ⊗ τ
 type LState σ τ = LState' σ @@ τ
 
+
+{-
+lfmap :: forall exp ρ γ1 γ2 γ σ τ x y1 y2 γ' γ2''. 
+            ( HasMILL exp
+            , CMerge γ1 γ2 γ
+            , x ~ Fresh γ
+            , CAddCtx x ρ γ γ', WFVarTwo y1 ρ y2 σ γ2 γ2''
+            )
+         => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmap f e = case wfFreshMerge @x @ρ @γ1 @γ2 @γ of 
+              Dict -> λ $ \r -> e ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+-}
+lfmap :: forall exp ρ γ1 γ2 γ σ τ. 
+            ( HasMILL exp
+            , CMerge γ1 γ2 γ
+            )
+         => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmap f e = case ( wfFreshMerge @(Fresh γ) @ρ @γ1 @γ2 @γ
+                 , wfVarTwo @γ2 @ρ @σ
+                 , wfFresh @ρ @γ) of 
+               (Dict, Dict,Dict) -> λ $ \r -> 
+                      e ^ r `letPair` \(r,s) -> 
+                      r ⊗ (f ^ s)
+
+
+{-
+lapp :: forall exp γ1 γ2 γ ρ σ τ. CMerge γ1 γ2 γ
+     => exp γ1 (LState ρ (σ ⊸ τ)) -> exp γ2 (LState ρ σ) -> exp γ (LState ρ τ)
+lapp f e = case wfFresh @ρ @γ of
+             Dict -> λ $ \r -> 
+                e ^ r `letPair` \(r,s) ->
+                f ^ r `letPair` \(r,f') ->
+                _ 
+-- r ⊗ (f' ^ s)
+-}
+
+lbind :: forall γ1 γ2 γ ρ σ τ exp.
+         (HasMILL exp, CMerge γ1 γ2 γ)
+      => exp γ1 (LState ρ σ) → exp γ2 ((σ ⊸ LState ρ τ)) → exp γ (LState ρ τ)
+lbind op opF = trace "in lbind" $ 
+  case (wfVarTwo @γ2 @ρ @σ, wfFresh @ρ @γ, wfFreshMerge @(Fresh γ) @ρ @γ1 @γ2 @γ) of 
+     (Dict,Dict,Dict) -> λ $ \r -> op ^ r `letPair` \ (y,z) ->
+                                                      opF ^ z ^ y
+
 instance HasMILL exp => LFunctor exp (LState' ρ) where
-  f <$$> e = force lfmap ^ f ^ e
-    where
-      lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
-      lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
-        x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+  (<$$>) :: forall γ1 γ2 γ σ τ. (CMerge γ1 γ2 γ)
+         => exp γ1 (σ ⊸ τ) -> exp γ2 (LState ρ σ) -> exp γ (LState ρ τ)
+  f <$$> e = lfmap f e
+
+--      lfmap f e = λ f0 -- $ \r -> e ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+    -- force lfmap ^ f ^ e
+    -- where
+    --   lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
+    --   lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
+    --     x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
 instance HasMILL exp => LApplicative exp (LState' ρ) where
-  lpure e = force lpure' ^ e
-    where
-      lpure' :: Lift exp (σ ⊸ LState ρ σ)
-      lpure' = suspend . λ $ \x -> λ $ \r -> r ⊗ x
+  lpure :: forall γ τ. (WFCtx γ, KnownDomain γ)
+        => exp γ τ -> exp γ (LState ρ τ)
+  lpure e = trace "in lpure" $ case wfFresh @ρ @γ of Dict -> λ $ \r -> r ⊗ e
+--force lpure' ^ e
+--    where
+--      lpure' :: Lift exp (σ ⊸ LState ρ σ)
+--      lpure' = suspend . λ $ \x -> λ $ \r -> r ⊗ x
   f <**> e = force lapp ^ e ^ f
     where
       lapp :: Lift exp (LState ρ σ ⊸ LState ρ (σ ⊸ τ) ⊸ LState ρ τ)
@@ -371,11 +440,11 @@ instance HasMILL exp => LApplicative exp (LState' ρ) where
         stF ^ r `letPair` \(r,f) ->
         r ⊗ (f ^ s)
 instance HasMILL exp => LMonad exp (LState' ρ) where
-  e =>>= f = force lbind ^ e ^ f
+  e =>>= f = lbind e f --force lbind ^ e ^ f
     where
-      lbind :: Lift exp (LState ρ σ ⊸ (σ ⊸ LState ρ τ) ⊸ LState ρ τ)
-      lbind = suspend . λ $ \st -> λ $ \f -> λ $ \ r ->
-                st ^ r `letPair` \(r,s) -> f ^ s ^ r
+--      lbind :: Lift exp (LState ρ σ ⊸ (σ ⊸ LState ρ τ) ⊸ LState ρ τ)
+--      lbind = suspend . λ $ \st -> λ $ \f -> λ $ \ r ->
+--                st ^ r `letPair` \(r,s) -> f ^ s ^ r
 
 lstate1 :: HasMILL exp => Lift exp (σ ⊸ σ) -> LStateT exp σ ()
 lstate1 f = suspend . λ $ \s -> force f ^ s ⊗ put ()

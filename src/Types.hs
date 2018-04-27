@@ -6,7 +6,7 @@ import Data.Kind
 import GHC.TypeLits hiding (Div)
 import Data.Proxy
 --import Data.Singletons
---import Data.Constraint
+import Data.Constraint
 import Unsafe.Coerce
 import Prelude hiding (lookup)
 import qualified Data.IntMap as M
@@ -76,12 +76,31 @@ removeECtx γ = (unsafeLookupECtx @x γ, eRemove x γ)
 
 class KnownDomain (γ :: Ctx) where
   domain :: S.IntSet
+  addDomain' :: forall σ x. (KnownNat x, Lookup γ x ~ 'Nothing)
+            => Proxy x -> Proxy σ -> Dict (KnownDomain (AddF x σ γ))
+  knownFresh :: KnownDomain γ => Dict (KnownNat (Fresh γ))
+
+addDomain :: forall x σ γ. (KnownDomain γ, KnownNat x)
+          => Dict (KnownDomain (AddF x σ γ))
+addDomain = case pf of Dict -> addDomain' @γ (Proxy :: Proxy x) (Proxy :: Proxy σ)
+  where
+    pf :: Dict (Lookup γ x ~ 'Nothing)
+    pf = unsafeCoerce (Dict :: Dict ())
 
 instance KnownDomain '[] where
   domain = S.empty
-instance (KnownNat x, KnownDomain γ) => KnownDomain ('(x,σ) ': γ) where
-  domain = S.insert x $ domain @γ
-    where x = knownInt @x
+  addDomain' _ _ = Dict
+  knownFresh = Dict
+instance (KnownNat y, KnownDomain γ) => KnownDomain ('(y,τ) ': γ) where
+  domain = S.insert y $ domain @γ
+    where y = knownInt @y
+  addDomain' x (σ :: Proxy σ) = case cmpNat x (Proxy :: Proxy y) of
+                CLT Dict -> Dict
+                CGT Dict -> case addDomain' @γ x σ of Dict -> Dict
+                CEQ pf   -> case pf of
+  knownFresh = unsafeCoerce (Dict :: Dict ())
+
+
 
 splitECtx :: forall γ1 γ2 γ sig. (KnownDomain γ1, γ ~ MergeF γ1 γ2)
           => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
@@ -96,6 +115,8 @@ type family Fresh (γ :: Ctx) :: Nat where
   Fresh '[] = 0
   Fresh '[ '(x,_) ] = x+1
   Fresh (_ ': γ)    = Fresh γ -- since contexts are ordered
+
+
 
 -- Type families
 

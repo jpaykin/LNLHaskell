@@ -57,17 +57,13 @@ instance Monad (Effect Shallow) => HasTensor Shallow where
        v2 <- runSExp e2 γ2
        return $ VPair (v1,v2)
 
-  letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
-                    (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
-                    (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
+  letPair :: forall x1 x2 σ1 σ2 τ γ1 γ2 γ γ2''.
              ( CMerge γ1 γ2 γ
-             , CAddCtx x1 σ1 γ2 γ2'
-             , CAddCtx x2 σ2 γ2' γ2''
-             , CSingletonCtx x1 σ1 γ21
-             , CSingletonCtx x2 σ2 γ22 
-             , x1 ~ Fresh γ2, x2 ~ Fresh γ2')
+             , WFVarTwo x1 σ1 x2 σ2 γ2 γ2''
+             , KnownDomain γ1, KnownDomain γ2
+             )
       => Shallow γ1 (σ1 ⊗ σ2)
-      -> ((Shallow γ21 σ1, Shallow γ22 σ2) -> Shallow γ2'' τ)
+      -> ((Var Shallow x1 σ1, Var Shallow x2 σ2) -> Shallow γ2'' τ)
       -> Shallow γ τ
   letPair e f = SExp $ \ρ -> do let (ρ1,ρ2) = splitECtx @γ1 @γ2 ρ
                                 VPair (v1,v2) <- runSExp e ρ1
@@ -88,7 +84,8 @@ instance Monad (Effect Shallow) => HasPlus Shallow where
   caseof :: forall x σ1 σ2 τ γ γ1 γ2 γ21 γ21' γ22 γ22'.
             ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
             , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
-            , CMerge γ1 γ2 γ, x ~ Fresh γ )
+            , CMerge γ1 γ2 γ, x ~ Fresh γ
+            , KnownDomain γ1, KnownDomain γ2 )
         => Shallow γ1 (σ1 ⊕ σ2)
         -> (Shallow γ21' σ1 -> Shallow γ21 τ)
         -> (Shallow γ22' σ2 -> Shallow γ22 τ)

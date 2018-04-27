@@ -77,7 +77,7 @@ free_appendT b1 = lstate1 . suspend $ λ $ \b2 →
 singleton :: HasByteString exp => Word8 -> Lift exp Buffer
 singleton w = Suspend $ cons w ^ empty
 
-cons' :: (HasByteString exp, WFCtx γ)
+cons' :: (HasByteString exp, WFCtx γ, KnownDomain γ)
       => exp γ Buffer ->  Word8 -> exp γ Buffer
 cons' b w = cons w ^ b
 
