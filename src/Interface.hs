@@ -10,11 +10,15 @@ import qualified Data.Singletons as Sing
 import Data.Singletons (Proxy)
 import Data.Singletons.TypeLits
 import Data.Singletons.Prelude.Num
--- import Data.Constraint (Dict(..))
+import Data.Constraint (Dict(..))
 
 type (~>) a b = Sing.TyFun a b -> Type
 
+type Var exp x σ = exp (SingletonF x σ) σ
 
+--------------------------------------------------
+
+--------------------------------------------------
 
 class Eval (exp :: Sig) where
   eval     :: Monad (Effect exp) => exp γ τ -> ECtx exp γ -> Effect exp (LVal exp τ)
@@ -33,17 +37,16 @@ infixr 0 ⊸
 -- 3) Define an interface
 -- Exp = Ctx -> LType -> Type
 class HasLolli (exp :: Sig) where
-  λ :: forall x σ γ γ' γ'' τ.
-       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-    => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
+  λ :: forall x σ γ τ.
+       (WFFreshVar x σ γ)
+    => (Var exp x σ -> exp (AddF x σ γ) τ) -> exp γ (σ ⊸ τ)
   (^) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (σ :: LType) (τ :: LType).
          CMerge γ1 γ2 γ
       => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
-letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
-         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
-      => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
+letin :: ( HasLolli exp, WFFreshVar x σ γ2, CMerge γ1 γ2 γ)
+      => exp γ1 σ -> (Var exp x σ -> exp (AddF x σ γ2) τ) -> exp γ τ
 letin e f = λ f ^ e
 
 -- One -----------------------------------------------
@@ -61,7 +64,6 @@ class HasOne exp where
 
 -- Tensor ---------------------------------------------  
 
-type Var exp x σ = exp (SingletonF x σ) σ
 
 data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
@@ -72,26 +74,20 @@ class HasTensor exp where
          CMerge γ1 γ2 γ
       => exp γ1 τ1 -> exp γ2 τ2 -> exp γ (τ1 ⊗ τ2)
   letPair :: forall x1 x2 (σ1 :: LType) (σ2 :: LType) (τ :: LType) 
-                    (γ1 :: Ctx) (γ2 :: Ctx) (γ2' :: Ctx) (γ :: Ctx) 
-                    (γ2'' :: Ctx) (γ21 :: Ctx) (γ22 :: Ctx).
+                    (γ1 :: Ctx) (γ2 :: Ctx)  (γ :: Ctx) 
+                    (γ2'' :: Ctx).
              ( CMerge γ1 γ2 γ
-             , CAddCtx x1 σ1 γ2 γ2'
-             , CAddCtx x2 σ2 γ2' γ2''
-             , CSingletonCtx x1 σ1 γ21
-             , CSingletonCtx x2 σ2 γ22
-             , x1 ~ Fresh γ2, x2 ~ Fresh γ2'
+             , WFVarTwo x1 σ1 x2 σ2 γ2 γ2''
              )
       => exp γ1 (σ1 ⊗ σ2)
-      -> ((exp γ21 σ1, exp γ22 σ2) -> exp γ2'' τ)
+      -> ((Var exp x1 σ1, Var exp x2 σ2) -> exp γ2'' τ)
       -> exp γ τ
 
-λpair :: (HasTensor exp, HasLolli exp
-         , CSingletonCtx x1 σ1 γ1, CSingletonCtx x2 σ2 γ2
-         , CAddCtx x1 σ1 γ γ', CAddCtx x2 σ2 γ' γ''
-         , x1 ~ Fresh γ, x2 ~ Fresh γ'
+λpair :: ( HasTensor exp, HasLolli exp
+         , WFVarTwo x1 σ1 x2 σ2 γ γ''
          , WFVar x1 (σ1 ⊗ σ2) γ, WFVar x2 (σ1 ⊗ σ2) γ
          )
-        => ((exp γ1 σ1, exp γ2 σ2) -> exp γ'' τ) -> exp γ (σ1⊗σ2 ⊸ τ)
+        => ((Var exp x1 σ1, Var exp x2 σ2) -> exp γ'' τ) -> exp γ (σ1⊗σ2 ⊸ τ)
 λpair f = λ $ \z -> z `letPair` f
 
 
@@ -121,13 +117,12 @@ type (⊕) (σ :: LType) (τ :: LType) = MkLType ('PlusSig σ τ)
 class HasPlus exp where
   inl :: exp γ τ1 -> exp γ (τ1 ⊕ τ2)
   inr :: exp γ τ2 -> exp γ (τ1 ⊕ τ2)
-  caseof :: ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
-            , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
+  caseof :: ( WFVar x σ1 γ2, WFVar x σ2 γ2
             , x ~ Fresh γ
             , CMerge γ1 γ2 γ )
         => exp γ1 (σ1 ⊕ σ2)
-        -> (exp γ21' σ1 -> exp γ21 τ)
-        -> (exp γ22' σ2 -> exp γ22 τ)
+        -> (Var exp x σ1 -> exp (AddF x σ1 γ2) τ)
+        -> (Var exp x σ2 -> exp (AddF x σ2 γ2) τ)
         -> exp γ τ
 
 
@@ -343,6 +338,18 @@ class LApplicative exp m => LMonad exp m where
   (=>>=) :: CMerge γ1 γ2 γ
          => exp γ1 (m @@ σ) -> exp γ2 (σ ⊸ m @@ τ) -> exp γ (m @@ τ)
 
+lfmap' :: ( HasMILL exp, CMerge γ1 γ2 γ
+         , WFVarTwoFresh ρ σ γ2 γ2''
+         , WFVarFreshMerge ρ γ1 γ2 γ
+         )
+      => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmap' f e = λ $ \r -> e ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+
+lfmap :: forall ρ σ τ γ1 γ2 γ exp.
+         ( HasMILL exp, CMerge γ1 γ2 γ)
+      => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmap = case (wfVarTwoFresh @ρ @σ @γ2, wfFreshMerge @ρ @γ1 @γ2 @γ) of 
+          (Dict,Dict) -> lfmap'
 
 -- State monad
 
@@ -353,13 +360,13 @@ type instance (LState' σ) @@ τ = σ ⊸ σ ⊗ τ
 type LState σ τ = LState' σ @@ τ
 
 instance HasMILL exp => LFunctor exp (LState' ρ) where
-  f <$$> e = force lfmap ^ f ^ e
-    where
-      lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
-      lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
-        x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+  f <$$> e = lfmap f e
+--    where
+--      lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
+--      lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
+--        x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
 instance HasMILL exp => LApplicative exp (LState' ρ) where
-  lpure e = force lpure' ^ e
+  lpure e = force lpure' ^ e --  λ $ \r → r ⊗ e
     where
       lpure' :: Lift exp (σ ⊸ LState ρ σ)
       lpure' = suspend . λ $ \x -> λ $ \r -> r ⊗ x

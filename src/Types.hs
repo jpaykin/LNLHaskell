@@ -67,33 +67,10 @@ addECtx :: forall σ x γ sig proxy. KnownNat x
         => proxy x -> LVal sig σ -> ECtx sig γ -> ECtx sig (AddF x σ γ)
 addECtx _ v (ECtx γ) = ECtx $ M.insert (knownInt @x) (EVal v) γ
 
-{-
-eRemove :: Int -> ECtx sig γ -> ECtx sig γ'
-eRemove x (ECtx γ) = ECtx $ M.delete x γ
-
-
-removeECtx :: forall x σ γ sig. 
-              KnownNat x 
-           => ECtx sig (AddF x σ γ) -> (LVal sig σ, ECtx sig γ)
-removeECtx γ = (unsafeLookupECtx @x γ, eRemove x γ)
-  where x = knownInt @x
-
-class KnownDomain (γ :: Ctx) where
-  domain :: S.IntSet
-
-instance KnownDomain '[] where
-  domain = S.empty
-instance (KnownNat x, KnownDomain γ) => KnownDomain ('(x,σ) ': γ) where
-  domain = S.insert x $ domain @γ
-    where x = knownInt @x
--}
 
 splitECtx :: forall γ1 γ2 γ sig. (γ ~ MergeF γ1 γ2)
           => ECtx sig γ -> (ECtx sig γ1, ECtx sig γ2)
 splitECtx (ECtx γ) = (ECtx γ, ECtx γ)
---splitECtx (ECtx γ) = let (γ1',γ2') = M.partitionWithKey (\x _ -> S.member x γ1) γ
---                     in (ECtx γ1', ECtx γ2')
---  where γ1 = domain @γ1
 
 
 -- Fresh variables ------------------------------------------

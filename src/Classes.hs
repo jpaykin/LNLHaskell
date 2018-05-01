@@ -21,16 +21,12 @@ instance (CIn x σ γ) => CIn x σ ('(y,τ) ': γ)
 
 -- Add To Context --------------------------------------------
 
-class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
-      , KnownNat x)
+--
+class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ, KnownNat x, WFCtx γ)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
     | x σ γ -> γ', x γ' -> σ γ
-  -- where
-  --   addLookupNEq :: (x == y) ~ False
-  --                => Proxy x -> Proxy y -> Dict (Lookup γ' y ~ Lookup γ y)
 
-instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
-         , KnownNat x)
+instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ, KnownNat x, WFCtx γ)
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
 
 addLookupNEq :: (γ' ~ AddF x σ γ, (x == y) ~ False)
@@ -96,16 +92,46 @@ split (ECtx f) = (ECtx $ \Dict x -> f (lookupMerge1 @γ1 @γ2 @γ x) x
 
 type WFCtx γ = (Div γ '[] ~ γ, Div  γ γ ~ '[]
                , MergeF '[] γ ~ γ, MergeF γ '[] ~ γ)
---               , KnownDomain γ ) 
 
 
 -- Helper stuff -----------------------------------
-
 
 type WFVar x σ γ = ( CSingletonCtx x σ (SingletonF x σ)
                    , CAddCtx x σ γ (AddF x σ γ) 
                    , CMerge γ (SingletonF x σ) (AddF x σ γ)
                    , WFCtx γ
                    )
+type WFFreshVar x σ γ = (WFVar x σ γ, x ~ Fresh γ)
 class WFVar (Fresh γ) σ γ => WFFresh σ γ
 instance WFVar (Fresh γ) σ γ => WFFresh σ γ
+
+
+type WFVarTwo' x σ y τ γ γ' = ( x ~ Fresh γ, y ~ Fresh (AddF x σ γ)
+                              , WFVar x σ γ, WFVar y τ (AddF x σ γ)
+                              , WFVar y τ γ, WFVar x σ (AddF y τ γ)
+                              , CAddCtx x σ (AddF y τ γ) γ'
+                              , CAddCtx y τ (AddF x σ γ) γ'
+                              , AddF x σ (AddF y τ γ) ~ AddF y τ (AddF x σ γ)
+                              )
+class WFVarTwo' x σ y τ γ γ' => WFVarTwo x σ y τ γ γ'
+instance WFVarTwo' x σ y τ γ γ' => WFVarTwo x σ y τ γ γ'
+
+type WFVarTwoFresh σ τ γ γ' = WFVarTwo (Fresh γ) σ (Fresh (AddF (Fresh γ) σ γ)) τ γ γ'
+
+wfVarTwoFresh :: forall σ τ γ x y γ'. 
+                 (x ~ Fresh γ, y ~ Fresh (AddF x σ γ), γ' ~ AddF y τ (AddF x σ γ))
+              => Dict (WFVarTwo x σ y τ γ γ')
+wfVarTwoFresh = unsafeCoerce (Dict :: Dict ())
+
+
+
+type WFVarMerge x σ γ1 γ2 γ = ( WFVar x σ γ1, WFVar x σ γ2, WFVar x σ γ
+                              , CMerge (AddF x σ γ1) γ2 (AddF x σ γ)
+                              , CMerge γ1 (AddF x σ γ2) (AddF x σ γ)
+                              )
+class (WFVarMerge (Fresh γ) σ γ1 γ2 γ) => WFVarFreshMerge σ γ1 γ2 γ
+instance (WFVarMerge (Fresh γ) σ γ1 γ2 γ) => WFVarFreshMerge σ γ1 γ2 γ
+
+wfFreshMerge :: forall σ γ1 γ2 γ. CMerge γ1 γ2 γ
+              => Dict (WFVarFreshMerge σ γ1 γ2 γ)
+wfFreshMerge = unsafeCoerce (Dict :: Dict ())

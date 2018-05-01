@@ -85,14 +85,14 @@ newtype instance LVal Shallow (MkLType ('PlusSig σ τ)) =
 instance Monad (Effect Shallow) => HasPlus Shallow where
   inl e = SExp $ \γ -> VPlus . Left <$> runSExp e γ
   inr e = SExp $ \γ -> VPlus . Right <$> runSExp e γ
-  caseof :: forall x σ1 σ2 τ γ γ1 γ2 γ21 γ21' γ22 γ22'.
-            ( CAddCtx x σ1 γ2 γ21, CSingletonCtx x σ1 γ21'
-            , CAddCtx x σ2 γ2 γ22, CSingletonCtx x σ2 γ22'
-            , CMerge γ1 γ2 γ, x ~ Fresh γ )
-        => Shallow γ1 (σ1 ⊕ σ2)
-        -> (Shallow γ21' σ1 -> Shallow γ21 τ)
-        -> (Shallow γ22' σ2 -> Shallow γ22 τ)
-        -> Shallow γ τ
+  caseof ::  forall x σ1 σ2 γ τ γ1 γ2. 
+             ( WFVar x σ1 γ2, WFVar x σ2 γ2
+             , x ~ Fresh γ
+             , CMerge γ1 γ2 γ )
+          => Shallow γ1 (σ1 ⊕ σ2)
+          -> (Var Shallow x σ1 -> Shallow (AddF x σ1 γ2) τ)
+          -> (Var Shallow x σ2 -> Shallow (AddF x σ2 γ2) τ)
+          -> Shallow γ τ
   caseof e f1 f2 = SExp $ \γ ->
       let (γ1,γ2) = splitECtx @γ1 @γ2 γ
       in runSExp e γ1 >>= \case
