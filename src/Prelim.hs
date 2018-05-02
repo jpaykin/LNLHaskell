@@ -28,12 +28,14 @@ eqSNat x y = if natVal x == natVal y
              else Right $ unsafeCoerce (Dict :: Dict ((),()))
 
 data COrdering m n where
-  CLT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False, CmpNat m n ~ 'LT, CmpNat n m ~ 'GT)
+  CLT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False
+              , CmpNat m n ~ 'LT, CmpNat n m ~ 'GT)
       -> COrdering m n
   CEQ :: Dict ( m ~ n, (m == n) ~ 'True, (n == m) ~ 'True
-         , CmpNat m n ~ 'EQ, CmpNat n m ~ 'EQ)
+              , CmpNat m n ~ 'EQ, CmpNat n m ~ 'EQ)
       -> COrdering m n
-  CGT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False, CmpNat m n ~ 'GT, CmpNat n m ~ 'LT)
+  CGT :: Dict ( (m == n) ~ 'False, (n == m) ~ 'False
+              , CmpNat m n ~ 'GT, CmpNat n m ~ 'LT)
       -> COrdering m n
 
 unsafeCLT :: COrdering m n

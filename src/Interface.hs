@@ -11,6 +11,7 @@ import Data.Singletons (Proxy)
 import Data.Singletons.TypeLits
 import Data.Singletons.Prelude.Num
 import Data.Constraint (Dict(..))
+import Debug.Trace (trace)
 
 type (~>) a b = Sing.TyFun a b -> Type
 
@@ -331,25 +332,56 @@ class LFunctor exp (f :: LType ~> LType) where
   (<$$>) :: CMerge γ1 γ2 γ 
          => exp γ1 (σ ⊸ τ) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
 class LFunctor exp f => LApplicative exp f where
-  lpure  :: WFCtx γ => exp γ τ -> exp γ (f @@ τ)
+  lpure  :: exp γ τ -> exp γ (f @@ τ)
   (<**>) :: CMerge γ1 γ2 γ
          => exp γ1 (f @@ (σ ⊸ τ)) -> exp γ2 (f @@ σ) -> exp γ (f @@ τ)
 class LApplicative exp m => LMonad exp m where
   (=>>=) :: CMerge γ1 γ2 γ
          => exp γ1 (m @@ σ) -> exp γ2 (σ ⊸ m @@ τ) -> exp γ (m @@ τ)
 
-lfmap' :: ( HasMILL exp, CMerge γ1 γ2 γ
-         , WFVarTwoFresh ρ σ γ2 γ2''
-         , WFVarFreshMerge ρ γ1 γ2 γ
-         )
-      => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
-lfmap' f e = λ $ \r -> e ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
+lfmapLState' :: ( HasMILL exp, CMerge γ1 γ2 γ
+                , WFVarTwoFresh ρ σ γ2 γ2''
+                , WFVarFreshMerge ρ γ1 γ2 γ
+                )
+             => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmapLState' f e = λ $ \r -> e ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
 
-lfmap :: forall ρ σ τ γ1 γ2 γ exp.
-         ( HasMILL exp, CMerge γ1 γ2 γ)
-      => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
-lfmap = case (wfVarTwoFresh @ρ @σ @γ2, wfFreshMerge @ρ @γ1 @γ2 @γ) of 
-          (Dict,Dict) -> lfmap'
+lfmapLState :: forall ρ σ τ γ1 γ2 γ exp.
+               ( HasMILL exp, CMerge γ1 γ2 γ)
+            => exp γ2 (σ ⊸ τ) -> exp γ1 (LState ρ σ) -> exp γ (LState ρ τ)
+lfmapLState = case (wfVarTwoFresh @ρ @σ @γ2, wfFreshMerge @ρ @γ1 @γ2 @γ) of 
+                (Dict,Dict) -> lfmapLState'
+
+lpureLState :: forall ρ τ γ exp. (HasMILL exp) => exp γ τ -> exp γ (LState ρ τ)
+lpureLState e = case wfFresh @ρ @γ of Dict -> λ $ \r -> r ⊗ e
+  -- force lpureLStateLift ^ e
+  -- case wfFresh @ρ @γ of Dict -> force lpureLStateLift ^ e
+  -- lpureLState' e
+  -- case wfFresh @ρ @γ of Dict -> λ $ \r -> r ⊗ e
+
+--lpureLStateLift :: HasMILL exp => Lift exp (σ ⊸ LState ρ σ)
+--lpureLStateLift = suspend . λ $ \x -> λ $ \r -> r ⊗ x
+
+-- lappLState :: (HasMILL exp, CMerge γ1 γ2 γ
+--               , WFVarTwoFresh ρ σ γ2 γ2'
+--               )
+--            => exp γ1 (LState ρ (σ ⊸ τ)) -> exp γ2 (LState ρ σ) -> exp γ (LState ρ τ)
+-- lappLState stF stE = λ $ \ρ -> stE ^ r `letPair` \(r,s) ->
+--                                stF ^ r `letPair` \(r,f) ->
+--                                r ⊗ (f ^ s)
+
+lbindLState' :: ( HasMILL exp, CMerge γ1 γ2 γ
+                , WFVarFreshMerge ρ γ1 γ2 γ
+                , WFVarTwoFresh ρ σ γ2 γ2'
+                )
+             => exp γ1 (LState ρ σ) -> exp γ2 (σ ⊸ LState ρ τ) -> exp γ (LState ρ τ)
+lbindLState' stE stF = λ $ \r -> stE ^ r `letPair` \(r,x) ->
+                                stF ^ x ^ r 
+lbindLState :: forall γ1 γ2 γ exp ρ σ τ. ( HasMILL exp, CMerge γ1 γ2 γ )
+            => exp γ1 (LState ρ σ) -> exp γ2 (σ ⊸ LState ρ τ) -> exp γ (LState ρ τ)
+lbindLState = case (wfFreshMerge @ρ @γ1 @γ2 @γ, wfVarTwoFresh @ρ @σ @γ2) of
+                (Dict,Dict) -> lbindLState'
+
 
 -- State monad
 
@@ -360,16 +392,17 @@ type instance (LState' σ) @@ τ = σ ⊸ σ ⊗ τ
 type LState σ τ = LState' σ @@ τ
 
 instance HasMILL exp => LFunctor exp (LState' ρ) where
-  f <$$> e = lfmap f e
+  f <$$> e = lfmapLState f e
 --    where
 --      lfmap :: Lift exp ((σ ⊸ τ) ⊸ LState ρ σ ⊸ LState ρ τ)
 --      lfmap = suspend . λ $ \f -> λ $ \x -> λ $ \r ->
 --        x ^ r `letPair` \(r,s) -> r ⊗ (f ^ s)
 instance HasMILL exp => LApplicative exp (LState' ρ) where
-  lpure e = force lpure' ^ e --  λ $ \r → r ⊗ e
-    where
-      lpure' :: Lift exp (σ ⊸ LState ρ σ)
-      lpure' = suspend . λ $ \x -> λ $ \r -> r ⊗ x
+  lpure e = lpureLState e
+-- lpureLState e 
+-- force lpureLStateLift ^ e
+--  λ $ \r → r ⊗ e
+
   f <**> e = force lapp ^ e ^ f
     where
       lapp :: Lift exp (LState ρ σ ⊸ LState ρ (σ ⊸ τ) ⊸ LState ρ τ)
@@ -378,7 +411,8 @@ instance HasMILL exp => LApplicative exp (LState' ρ) where
         stF ^ r `letPair` \(r,f) ->
         r ⊗ (f ^ s)
 instance HasMILL exp => LMonad exp (LState' ρ) where
-  e =>>= f = force lbind ^ e ^ f
+  e =>>= f = lbindLState e f
+--      force lbind ^ e ^ f
     where
       lbind :: Lift exp (LState ρ σ ⊸ (σ ⊸ LState ρ τ) ⊸ LState ρ τ)
       lbind = suspend . λ $ \st -> λ $ \f -> λ $ \ r ->
