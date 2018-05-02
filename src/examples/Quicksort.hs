@@ -26,18 +26,27 @@ import ShallowEmbedding
 import Arrays
 import Range
 
+-- precondition: 0 <= i < length array
 slice3 :: (HasArray sig, Show α)
        => Int
        -> LStateT sig (Array token α) ()
        -> LStateT sig (Array token α) ()
 slice3 i op = -- apply op on indices < i and indices > i, do nothing at index i
       do len <- sizeT
-         slice3' len 
-  where
-    slice3' len | len <= 2 = return ()
-                | i == 0   = sliceT 1 (return ()) op
-                | i == len-1 = sliceT i op (return ())
-                | otherwise  = sliceT i op $ sliceT 1 (return ()) op
+         -- know: 0 <= i < len
+         if len <= 2    then return ()
+         else if i == 0 then sliceT 1 (return ()) op
+         else if i == len-1 then sliceT i op (return ())
+         else sliceT i op $ sliceT 1 (return ()) op
+
+
+--         slice3' len 
+  -- where
+  --   slice3' len | len <= 2   = return ()
+  --               | i == 0     = sliceT 1 (return ()) op
+  --               | i == len-1 = sliceT i op (return ())
+  --               | otherwise  = sliceT i op $ sliceT 1 (return ()) op
+
          -- if i == 0 then sliceT 1 (return ()) op
          -- else if i == len-1 then sliceT i op (return ())
          -- else sliceT i op $ sliceT 1 (return ()) op
@@ -56,7 +65,6 @@ quicksort = do len <- sizeT
 -- partition pivot (i,j) 
 -- assumes all indices less than i in the array are < pivot
 -- and all indices greater than j in the array are >= pivot
--- so we are working our way in
 -- if i = j, then we're done, and return i
 -- otherwise, if arr[i] < pivot: recurse on (i+1,j)
 -- otherwise, if arr[i] >= pivot: swap indices i and j, recurse on (i,j-1)
