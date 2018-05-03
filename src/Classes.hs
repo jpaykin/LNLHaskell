@@ -16,8 +16,8 @@ import Types
 
 class CIn (x :: Nat) (σ :: LType) (γ :: Ctx)
 
-instance CIn x σ ('(x,σ) ': γ)
-instance (CIn x σ γ) => CIn x σ ('(y,τ) ': γ)
+instance CIn x σ ('(x,σ) : γ)
+instance (CIn x σ γ) => CIn x σ ('(y,τ) : γ)
 
 -- Add To Context --------------------------------------------
 
@@ -40,14 +40,14 @@ addLookupNEq _ _ = unsafeCoerce (Dict :: Dict ())
 
 -- Singleton Contexts ------------------------------------------
 
-class (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ 'Just σ, KnownNat x
+class (γ ~ SingletonF x σ, Remove x γ ~ '[], Lookup γ x ~ Just σ, KnownNat x
       ,γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)
       | x σ -> γ, γ -> x σ 
 
 instance (γ ~ SingletonF x σ
          , Remove x γ ~ '[]
-         , Lookup γ x ~ 'Just σ
+         , Lookup γ x ~ Just σ
          , KnownNat x
          , γ ~ '[ '(x,σ) ])
    => CSingletonCtx (x :: Nat) (σ :: LType) (γ :: Ctx)

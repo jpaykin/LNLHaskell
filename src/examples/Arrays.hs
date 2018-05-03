@@ -210,6 +210,3 @@ evalArrayList op ls = do (ls,_) <- runArrayList op ls
 
 test :: Lin Shallow [Int]
 test = evalArrayList (return ()) [1,2,3]
-
-
-

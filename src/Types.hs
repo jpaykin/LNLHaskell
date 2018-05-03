@@ -41,19 +41,17 @@ eEmpty :: ECtx sig '[]
 eEmpty = ECtx M.empty
 
 eCons :: forall x σ γ sig. KnownNat x 
-      => LVal sig σ -> ECtx sig γ -> ECtx sig ('(x,σ) ': γ)
+      => LVal sig σ -> ECtx sig γ -> ECtx sig ('(x,σ) : γ)
 eCons v (ECtx γ) = ECtx (M.insert (knownInt @x) (EVal v) γ)
 
 
-knownInt :: forall n. KnownNat n => Int
-knownInt = fromIntegral $ natVal (Proxy :: Proxy n)
 
 unsafeLookupECtx :: forall x σ γ sig. 
                 KnownNat x 
              => ECtx sig γ -> LVal sig σ
 unsafeLookupECtx (ECtx γ) = unsafeEValCoerce $ γ M.! knownInt @x
 
-lookupECtx :: forall x σ γ sig. (KnownNat x, Lookup γ x ~ 'Just σ)
+lookupECtx :: forall x σ γ sig. (KnownNat x, Lookup γ x ~ Just σ)
            => ECtx sig γ -> LVal sig σ
 lookupECtx = unsafeLookupECtx @x
 --lookupECtx (ECtx γ) = unsafeCoerce $ γ ! knownInt @x
@@ -129,10 +127,10 @@ type family SingletonF x (σ :: LType) :: Ctx where
 -- insertion sort
 type family AddF (x :: Nat) (σ :: LType) (γ :: Ctx) :: Ctx where
   AddF x σ '[] = '[ '(x,σ) ]
-  AddF x σ ('(y,τ) ': γ) = CompareOrd (CmpNat x y) 
-                                      ('(x,σ) ': '(y,τ) ': γ) -- x < y
-                                      (TypeError ('Text "Error in AddF")) -- x == y
-                                      ('(y,τ) ': AddF x σ γ) -- x > y
+  AddF x σ ('(y,τ) : γ) = CompareOrd (CmpNat x y) 
+                                     ('(x,σ) : '(y,τ) ': γ) -- x < y
+                                     (TypeError ('Text "Error in AddF")) -- x == y
+                                     ('(y,τ) : AddF x σ γ) -- x > y
 
 
 --If (x ==? y) (TypeError (Text "Error in AddF")) 
