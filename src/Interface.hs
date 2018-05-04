@@ -14,7 +14,12 @@ import Data.Singletons.Prelude.Num
 
 type (~>) a b = Sing.TyFun a b -> Type
 
-type Var exp x σ = exp (SingletonF x σ) σ
+type Var exp x σ = exp '[ '(x,σ) ] σ
+class HasVar exp where
+  var :: KnownNat x => 
+         proxy x -> Var exp x σ
+--         CSingletonCtx x σ γ => proxy x -> exp γ σ
+
 
 
 
@@ -37,17 +42,17 @@ infixr 0 ⊸
 -- 3) Define an interface
 -- Exp = Ctx -> LType -> Type
 class HasLolli (exp :: Sig) where
-  λ :: forall x σ γ γ' γ'' τ.
-       (CAddCtx x σ γ γ', CSingletonCtx x σ γ'', x ~ Fresh γ)
-    => (exp γ'' σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
+  λ :: forall x σ γ γ' τ.
+       (CAddCtx x σ γ γ', x ~ Fresh γ) -- CSingletonCtx x σ γ'', x ~ Fresh γ)
+    => (Var exp x σ -> exp γ' τ) -> exp γ (σ ⊸ τ)
   (^) :: forall (γ1 :: Ctx) (γ2 :: Ctx) (γ :: Ctx) (σ :: LType) (τ :: LType).
          CMerge γ1 γ2 γ
       => exp γ1 (σ ⊸ τ) -> exp γ2 σ -> exp γ τ
 
 
 letin :: (HasLolli exp, CAddCtx x σ γ2 γ2'
-         , CSingletonCtx x σ γ2'', CMerge γ1 γ2 γ, x ~ Fresh γ2)
-      => exp γ1 σ -> (exp γ2'' σ -> exp γ2' τ) -> exp γ τ
+         , CMerge γ1 γ2 γ, x ~ Fresh γ2)
+      => exp γ1 σ -> (Var exp x σ -> exp γ2' τ) -> exp γ τ
 letin e f = λ f ^ e
 
 -- One -----------------------------------------------
@@ -415,8 +420,4 @@ evalLStateT st s free = suspend $ force (runLStateT st s) `letPair` \(s,a) ->
 
 -- for convenience
 type LStateT exp σ α = LinT exp (LState' σ) α
-
-class HasVar exp where
-  var :: forall x (σ :: LType) (γ :: Ctx). 
-         CSingletonCtx x σ γ => Proxy x -> exp γ σ
 

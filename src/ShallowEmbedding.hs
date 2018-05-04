@@ -18,7 +18,7 @@ instance Monad (Effect Shallow) => Eval Shallow where
   fromVPut (VPut a) = return a
 
 instance Monad (Effect Shallow) => HasVar Shallow where
-  var (_ :: Proxy x) = SExp $ \γ -> return $ lookupSingleton @x γ
+  var (_ :: proxy x) = SExp $ \γ -> return $ lookupSingleton @x γ
 
 -----------------------------------------------------------
 -----------------------------------------------------------

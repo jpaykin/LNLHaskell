@@ -9,6 +9,7 @@ import Data.Proxy
 --import GHC.TypeLits (Symbol(..))
 import Control.Monad (liftM2)
 --import Data.Singletons
+import GHC.TypeLits (KnownNat)
 
 -- import Prelim hiding (One)
 import Types
@@ -16,7 +17,7 @@ import Classes
 import Interface 
 
 data Deep γ τ where
-  Var :: CSingletonCtx x τ γ => Proxy x -> Deep γ τ
+  Var :: KnownNat x => proxy x -> Deep '[ '(x,τ) ] τ
   Dom :: forall (dom :: Sig) (γ :: Ctx) (τ :: LType).
          Domain dom 
       => dom γ τ
@@ -38,7 +39,7 @@ class Domain (dom :: Sig) where
 instance Eval Deep where
   eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
           Deep γ τ -> ECtx Deep γ -> Effect Deep (LVal Deep τ)
-  eval (Var (_ :: Proxy x)) γ = return $ lookupSingleton @x γ
+  eval (Var (_ :: proxy x)) γ = return $ lookupSingleton @x γ
   eval (Dom e) γ = evalDomain e γ
 
   fromVPut (VPut a) = return a
@@ -51,7 +52,7 @@ instance Eval Deep where
 data VarName x σ = VarName (Proxy x)
 
 instance HasVar Deep where
-  var :: forall x σ γ. CSingletonCtx x σ γ => Proxy x -> Deep γ σ
+  var :: KnownNat x => proxy x -> Deep '[ '(x,σ) ] σ
   var = Var
 
 -- Lolli -------------------------------------------------
