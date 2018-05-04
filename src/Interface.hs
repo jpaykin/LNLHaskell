@@ -14,6 +14,8 @@ import Data.Singletons.Prelude.Num
 
 type (~>) a b = Sing.TyFun a b -> Type
 
+type Var exp x σ = exp (SingletonF x σ) σ
+
 
 
 class Eval (exp :: Sig) where
@@ -29,6 +31,8 @@ data LolliSig ty = LolliSig ty ty
 -- 2) embed it into LType
 type (σ :: LType) ⊸ (τ :: LType) = MkLType ('LolliSig σ τ)
 infixr 0 ⊸
+
+
 
 -- 3) Define an interface
 -- Exp = Ctx -> LType -> Type
@@ -61,7 +65,6 @@ class HasOne exp where
 
 -- Tensor ---------------------------------------------  
 
-type Var exp x σ = exp (SingletonF x σ) σ
 
 data TensorSig ty = TensorSig ty ty
 type (σ1 :: LType) ⊗ (σ2 :: LType) = MkLType ('TensorSig σ1 σ2)
