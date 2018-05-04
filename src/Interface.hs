@@ -7,7 +7,7 @@ import Classes
 
 import Data.Kind
 import qualified Data.Singletons as Sing
-import Data.Singletons (Proxy)
+import Data.Singletons (Proxy(..))
 import Data.Singletons.TypeLits
 import Data.Singletons.Prelude.Num
 -- import Data.Constraint (Dict(..))
@@ -287,6 +287,20 @@ instance (HasLower exp) => Monad (Lin exp) where
 
 run :: forall exp a. (Monad (Effect exp), Eval exp) => Lin exp a -> Effect exp a
 run e = eval (force e) eEmpty >>= fromVPut
+
+
+subst  :: forall x σ τ γ₁ γ₂ γ₂' γ₂'' γ exp.
+        ( Eval exp, HasVar exp, HasLolli exp, Monad (Effect exp)
+        , CAddCtx x σ γ₂ γ₂', CSingletonCtx x σ γ₂'', CMerge γ₁ γ₂ γ, x ~ Fresh γ₂)
+       ⇒ ( exp γ₂'' σ → exp γ₂' τ) → exp γ₁ σ 
+       → ECtx exp γ → Effect exp (LVal exp τ)
+subst f e ρ = do let (ρ₁, ρ₂) = splitECtx @γ₁ @γ₂ ρ
+                 v ← eval e ρ₁
+                 eval (f $ var x) (addECtx x v ρ₂)
+  where
+    x :: Proxy x
+    x = Proxy
+
 
 ---------------------------------------------------------------
 -- Linearity Monad Transformer --------------------------------

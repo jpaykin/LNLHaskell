@@ -22,7 +22,7 @@ instance (CIn x σ γ) => CIn x σ ('(y,τ) : γ)
 -- Add To Context --------------------------------------------
 
 class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
-      , KnownNat x)
+      , KnownNat x, WFCtx γ, WFCtx γ')
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
     | x σ γ -> γ', x γ' -> σ γ
   -- where
@@ -30,7 +30,7 @@ class (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
   --                => Proxy x -> Proxy y -> Dict (Lookup γ' y ~ Lookup γ y)
 
 instance (γ' ~ AddF x σ γ, γ ~ Remove x γ', Lookup γ' x ~ Just σ
-         , KnownNat x)
+         , KnownNat x, WFCtx γ, WFCtx γ')
    => CAddCtx (x :: Nat) (σ :: LType) (γ :: Ctx) (γ' :: Ctx) 
 
 addLookupNEq :: (γ' ~ AddF x σ γ, (x == y) ~ False)

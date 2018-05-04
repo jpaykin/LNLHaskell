@@ -45,17 +45,17 @@ type instance Effect Deep = DensityMonad
 data instance LVal Deep Qubit = QId Int
 
   
-data QuantumExp :: Sig -> Sig where
-  New     :: Bool -> QuantumExp exp '[] Qubit
-  Meas    :: exp γ Qubit -> QuantumExp exp γ (Lower Bool)
-  Unitary :: KnownType σ => Unitary σ -> exp γ σ -> QuantumExp exp γ σ
+data QuantumExp :: Sig where
+  New     :: Bool -> QuantumExp '[] Qubit
+  Meas    :: Deep γ Qubit -> QuantumExp γ (Lower Bool)
+  Unitary :: KnownType σ => Unitary σ -> Deep γ σ -> QuantumExp γ σ
 
 instance HasQuantum Deep where
   new = Dom . New
   meas = Dom . Meas
   unitary u = Dom . Unitary u
 
-instance Domain Deep QuantumExp where
+instance Domain QuantumExp where
   evalDomain (New b) _ = QId <$> newM b
   evalDomain (Meas e) ρ = do QId i <- eval e ρ
                              VPut <$> measM i

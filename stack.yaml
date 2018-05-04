@@ -17,7 +17,7 @@
 
 # TODO: update to lts package when available
 # can use nightly or lts resolvers
-resolver: nightly-2018-04-21
+resolver: nightly-2018-04-20
 
 
 # User packages to be built.

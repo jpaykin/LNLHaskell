@@ -17,9 +17,9 @@ import Interface
 
 data Deep γ τ where
   Var :: CSingletonCtx x τ γ => Proxy x -> Deep γ τ
-  Dom :: forall (dom :: Dom) (γ :: Ctx) (τ :: LType).
-         Domain Deep dom 
-      => dom Deep γ τ
+  Dom :: forall (dom :: Sig) (γ :: Ctx) (τ :: LType).
+         Domain dom 
+      => dom γ τ
       -> Deep γ τ
 
 -- Expressions and values are indexed by languages, which are collections of
@@ -29,11 +29,11 @@ type Dom = Sig -> Sig
 -- The domain type class characterizes well-formed domains in which
 -- expressions in the domain evaluate to values in the langauge,
 -- under the monad
-class Domain exp (dom :: Dom) where
-  evalDomain  :: Monad (Effect exp) 
-              => dom exp g σ
-              -> ECtx exp g
-              -> Effect exp (LVal exp σ)
+class Domain (dom :: Sig) where
+  evalDomain  :: Monad (Effect Deep) 
+              => dom g σ
+              -> ECtx Deep g
+              -> Effect Deep (LVal Deep σ)
 
 instance Eval Deep where
   eval :: forall (γ :: Ctx) τ. Monad (Effect Deep) =>
@@ -56,15 +56,15 @@ instance HasVar Deep where
 
 -- Lolli -------------------------------------------------
 
-data LolliExp :: Sig -> Sig where
+data LolliExp :: Sig where
   Abs :: CAddCtx x σ γ γ'
       => Proxy x
-      -> exp γ' τ
-      -> LolliExp exp γ (σ ⊸ τ)
+      -> Deep γ' τ
+      -> LolliExp γ (σ ⊸ τ)
   App :: CMerge γ1 γ2 γ
-      => exp γ1 (σ ⊸ τ)
-      -> exp γ2 σ
-      -> LolliExp exp γ τ
+      => Deep γ1 (σ ⊸ τ)
+      -> Deep γ2 σ
+      -> LolliExp γ τ
 data instance LVal Deep (σ ⊸ τ) where
   VAbs :: CAddCtx x σ γ γ'
        => ECtx Deep γ
@@ -79,7 +79,7 @@ instance HasLolli Deep where
   λ f     = Dom $ Abs x (f $ Var x) where x = (Proxy :: Proxy x)
   e1 ^ e2 = Dom $ App e1 e2
 
-instance Domain Deep LolliExp where
+instance Domain LolliExp where
   evalDomain (Abs x e) γ = return $ VAbs γ x e
   evalDomain (App (e1 :: Deep γ1 (σ ⊸ τ)) (e2 :: Deep γ2 σ)) ρ = do
     VAbs ρ' x e1' <- eval e1 ρ1
@@ -92,16 +92,16 @@ instance Domain Deep LolliExp where
 
 -- One -------------------------------------------------
 
-data OneExp :: Sig -> Sig where
-  Unit :: OneExp exp '[] One
-  LetUnit :: CMerge γ1 γ2 γ => exp γ1 One -> exp γ2 τ -> OneExp exp γ τ
+data OneExp :: Sig where
+  Unit :: OneExp '[] One
+  LetUnit :: CMerge γ1 γ2 γ => Deep γ1 One -> Deep γ2 τ -> OneExp γ τ
 data instance LVal Deep One = VUnit
 
 instance HasOne Deep where
   unit = Dom Unit
   letUnit e1 e2 = Dom $ LetUnit e1 e2
 
-instance Domain Deep OneExp where
+instance Domain OneExp where
   evalDomain Unit _ = return VUnit
   evalDomain (LetUnit (e1 :: Deep γ1 One) (e2 :: Deep γ2 τ)) ρ = do
       VUnit <- eval e1 ρ1
@@ -112,17 +112,17 @@ instance Domain Deep OneExp where
 
 -- Tensor -------------------------------------------------
 
-data TensorExp :: Sig -> Sig where
+data TensorExp :: Sig where
   Pair :: CMerge γ1 γ2 γ
-       => exp γ1 τ1 -> exp γ2 τ2 -> TensorExp exp γ (τ1 ⊗ τ2)
+       => Deep γ1 τ1 -> Deep γ2 τ2 -> TensorExp γ (τ1 ⊗ τ2)
   LetPair :: ( CMerge γ1 γ2 γ
              , CAddCtx x1 σ1 γ2 γ2'
              , CAddCtx x2 σ2 γ2' γ2'' )
 --          => VarName x1 σ1 -> VarName x2 σ2
           => Proxy x1 -> Proxy x2
-          -> exp γ1 (σ1 ⊗ σ2)
-          -> exp γ2'' τ
-          -> TensorExp exp γ τ
+          -> Deep γ1 (σ1 ⊗ σ2)
+          -> Deep γ2'' τ
+          -> TensorExp γ τ
 data instance LVal Deep (σ1 ⊗ σ2) = VPair (LVal Deep σ1) (LVal Deep σ2)
 
 
@@ -147,14 +147,14 @@ instance HasTensor Deep where
       x2 :: Proxy x2
       x2 = Proxy
 
-instance  Domain Deep TensorExp where
+instance Domain TensorExp where
   evalDomain (Pair (e1 :: Deep γ1 τ1) (e2 :: Deep γ2 τ2)) ρ =
       liftM2 VPair (eval e1 ρ1) (eval e2 ρ2)
     where
       (ρ1,ρ2) = splitECtx ρ
   evalDomain (LetPair x1 x2
                       (e  :: Deep γ1 (σ1 ⊗ σ2))
-                      e' :: TensorExp Deep γ τ) ρ = do
+                      e' :: TensorExp γ τ) ρ = do
       VPair v1 v2 <- eval e ρ1
       eval e' (addECtx x2 v2 (addECtx x1 v1 ρ2))
     where
@@ -166,12 +166,12 @@ instance  Domain Deep TensorExp where
 
 -- Plus -------------------------------------------------
 
-data PlusExp :: Sig -> Sig where
-  Inl :: exp γ σ1 -> PlusExp exp γ (σ1 ⊕ σ2)
-  Inr :: exp γ σ2 -> PlusExp exp γ (σ1 ⊕ σ2)
+data PlusExp :: Sig where
+  Inl :: Deep γ σ1 -> PlusExp γ (σ1 ⊕ σ2)
+  Inr :: Deep γ σ2 -> PlusExp γ (σ1 ⊕ σ2)
   Case :: (CMerge γ1 γ2 γ, CAddCtx x1 σ1 γ2 γ21, CAddCtx x2 σ2 γ2 γ22)
        => Proxy x1 -> Proxy x2
-       -> exp γ1 (σ1 ⊕ σ2) -> exp γ21 τ -> exp γ22 τ -> PlusExp exp γ τ
+       -> Deep γ1 (σ1 ⊕ σ2) -> Deep γ21 τ -> Deep γ22 τ -> PlusExp γ τ
 data instance LVal Deep (σ1 ⊕ σ2) = 
     VInl (LVal Deep σ1) | VInr (LVal Deep σ2)
 
@@ -192,11 +192,11 @@ instance  HasPlus Deep where
     where
       x = (Proxy :: Proxy x)
 
-instance  Domain Deep PlusExp where
+instance Domain PlusExp where
   evalDomain (Inl e) ρ = VInl <$> eval e ρ
   evalDomain (Inr e) ρ = VInr <$> eval e ρ
   evalDomain (Case x1 x2
-                   (e :: Deep γ1 (σ1 ⊕ σ2)) e1 e2 :: PlusExp Deep γ τ) ρ = 
+                   (e :: Deep γ1 (σ1 ⊕ σ2)) e1 e2 :: PlusExp γ τ) ρ = 
       eval e ρ1 >>= \case 
         VInl v1 -> eval e1 (addECtx x1 v1 ρ2)
         VInr v2 -> eval e2 (addECtx x2 v2 ρ2)
@@ -206,10 +206,10 @@ instance  Domain Deep PlusExp where
 
 -- With -------------------------------------------------
 
-data WithExp :: Sig -> Sig where
-  With :: exp γ τ1 -> exp γ τ2 -> WithExp exp γ (τ1 & τ2)
-  Proj1 :: exp γ (τ1 & τ2) -> WithExp exp γ τ1
-  Proj2 :: exp γ (τ1 & τ2) -> WithExp exp γ τ2
+data WithExp :: Sig where
+  With :: Deep γ τ1 -> Deep γ τ2 -> WithExp γ (τ1 & τ2)
+  Proj1 :: Deep γ (τ1 & τ2) -> WithExp γ τ1
+  Proj2 :: Deep γ (τ1 & τ2) -> WithExp γ τ2
 data instance LVal Deep (σ1 & σ2) where
   VWith :: ECtx Deep γ -> Deep γ σ1 -> Deep γ σ2 
         -> LVal Deep (σ1 & σ2)
@@ -219,7 +219,7 @@ instance  HasWith Deep where
   proj1 = Dom . Proj1
   proj2 = Dom . Proj2
 
-instance  Domain Deep WithExp where
+instance Domain WithExp where
   evalDomain (With e1 e2) ρ = return $ VWith ρ e1 e2
   evalDomain (Proj1 e) ρ = do
     VWith ρ' e1 _ <- eval e ρ
@@ -230,17 +230,17 @@ instance  Domain Deep WithExp where
 
 -- Lower -------------------------------------------------
 
-data LowerExp :: Sig -> Sig where
-  Put :: a -> LowerExp exp '[] (Lower a)
+data LowerExp :: Sig where
+  Put :: a -> LowerExp '[] (Lower a)
   LetBang :: CMerge γ1 γ2 γ
-          => exp γ1 (Lower a) -> (a -> exp γ2 τ) -> LowerExp exp γ τ
+          => Deep γ1 (Lower a) -> (a -> Deep γ2 τ) -> LowerExp γ τ
 data instance LVal Deep (Lower a) = VPut a
 
 instance  HasLower Deep where
   put = Dom . Put
   e >! f = Dom $ LetBang e f
 
-instance  Domain Deep LowerExp where
+instance Domain LowerExp where
   evalDomain (Put a) _ = return $ VPut a
   evalDomain (LetBang (e1 :: Deep γ1 (Lower a)) (e2 :: a -> Deep γ2 τ)) ρ = do
       VPut a <- eval e1 ρ1

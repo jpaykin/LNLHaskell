@@ -44,13 +44,13 @@ instance HasFH Shallow where
                             IO.hClose h
                             return $ S.VUnit ()
                              
-data FHExp :: Sig -> Sig where
-  Open :: String -> FHExp exp '[] Handle
-  Read :: exp γ Handle -> FHExp exp γ (Handle ⊗ Lower Char)
-  Write :: exp γ Handle -> Char -> FHExp exp γ Handle
-  Close :: exp γ Handle -> FHExp exp γ One
+data FHExp :: Sig where
+  Open :: String -> FHExp '[] Handle
+  Read :: Deep γ Handle -> FHExp γ (Handle ⊗ Lower Char)
+  Write :: Deep γ Handle -> Char -> FHExp γ Handle
+  Close :: Deep γ Handle -> FHExp γ One
 
-instance Domain Deep FHExp where
+instance Domain FHExp where
   evalDomain (Open s)    _ = VHandle <$> IO.openFile s IO.ReadWriteMode
   evalDomain (Read e)    ρ = do VHandle h <- eval e ρ
                                 c <- IO.hGetChar h
